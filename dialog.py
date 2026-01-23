@@ -76,7 +76,13 @@ class JLCImportDialog(wx.Dialog):
         self.min_stock_choice = wx.Choice(panel, choices=self._min_stock_labels)
         self.min_stock_choice.SetSelection(1)  # Default to "1+" (in stock)
         self.min_stock_choice.Bind(wx.EVT_CHOICE, self._on_min_stock_change)
-        hbox_filter.Add(self.min_stock_choice, 0, wx.ALIGN_CENTER_VERTICAL)
+        hbox_filter.Add(self.min_stock_choice, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 20)
+        hbox_filter.Add(wx.StaticText(panel, label="Package:"), 0,
+                        wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
+        self.package_choice = wx.Choice(panel, choices=["All"])
+        self.package_choice.SetSelection(0)
+        self.package_choice.Bind(wx.EVT_CHOICE, self._on_filter_change)
+        hbox_filter.Add(self.package_choice, 0, wx.ALIGN_CENTER_VERTICAL)
         search_box.Add(hbox_filter, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 5)
 
         vbox.Add(search_box, 0, wx.EXPAND | wx.ALL, 5)
@@ -275,6 +281,8 @@ class JLCImportDialog(wx.Dialog):
         self.results_list.DeleteAllItems()
         self._search_results = []
         self._raw_search_results = []
+        self.package_choice.Set(["All"])
+        self.package_choice.SetSelection(0)
         self.results_count_label.SetLabel("")
         self.status_text.Clear()
         self._log(f"Searching for \"{keyword}\"...")
@@ -329,6 +337,7 @@ class JLCImportDialog(wx.Dialog):
         results.sort(key=lambda r: r['stock'] or 0, reverse=True)
 
         self._raw_search_results = results
+        self._populate_package_choices()
         self._sort_col = 3  # sorted by stock
         self._sort_ascending = False
         self._apply_filters()
@@ -418,10 +427,30 @@ class JLCImportDialog(wx.Dialog):
             return "Extended"
         return ""
 
+    def _populate_package_choices(self):
+        """Populate the package dropdown from current raw results."""
+        packages = sorted(set(
+            r.get('package', '') for r in self._raw_search_results
+            if r.get('package')
+        ))
+        self.package_choice.Set(["All"] + packages)
+        self.package_choice.SetSelection(0)
+
+    def _get_package_filter(self) -> str:
+        """Return the selected package filter value."""
+        idx = self.package_choice.GetSelection()
+        if idx <= 0:  # "All" or nothing selected
+            return ""
+        return self.package_choice.GetString(idx)
+
     def _apply_filters(self):
-        """Apply type and stock filters to _raw_search_results."""
+        """Apply type, stock, and package filters to _raw_search_results."""
         filtered = filter_by_type(self._raw_search_results, self._get_type_filter())
-        self._search_results = filter_by_min_stock(filtered, self._get_min_stock())
+        filtered = filter_by_min_stock(filtered, self._get_min_stock())
+        pkg = self._get_package_filter()
+        if pkg:
+            filtered = [r for r in filtered if r.get('package') == pkg]
+        self._search_results = filtered
 
     def _on_filter_change(self, event):
         """Re-filter and repopulate results when any filter changes."""
