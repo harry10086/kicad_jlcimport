@@ -49,6 +49,8 @@ from kicad_jlcimport.library import (
     update_global_lib_tables,
     get_global_lib_dir,
     sanitize_name,
+    load_config,
+    save_config,
 )
 
 
@@ -182,7 +184,9 @@ class JLCImportTUI(App):
         height: 10;
     }
     #detail-info { width: 1fr; height: 10; }
-    .detail-field { height: 1; }
+    .detail-row { height: 1; width: 100%; }
+    .detail-left { width: 1fr; height: 1; }
+    .detail-right { width: 1fr; height: 1; }
     #detail-desc { height: auto; max-height: 3; width: 100%; color: #666666; }
     #detail-buttons {
         dock: bottom;
@@ -198,11 +202,14 @@ class JLCImportTUI(App):
         border-top: solid #333333;
         padding: 0;
     }
-    #dest-selector RadioButton { width: auto; margin-right: 2; }
+    #dest-selector { layout: vertical; height: auto; }
+    #dest-selector RadioButton { width: auto; }
     #import-options {
         height: auto;
         width: 100%;
     }
+    #lib-name-label { width: auto; margin: 0 1; }
+    #lib-name-input { width: 16; margin-right: 2; }
     #part-input { width: 16; }
     #overwrite-cb { margin: 0 1; width: auto; }
     #import-btn { margin-left: 1; }
@@ -236,10 +243,8 @@ class JLCImportTUI(App):
     def __init__(self, project_dir: str = ""):
         super().__init__()
         self._project_dir = project_dir
-        try:
-            self._global_lib_dir = get_global_lib_dir()
-        except Exception:
-            self._global_lib_dir = "(unavailable)"
+        self._lib_name = load_config().get("lib_name", "JLCImport")
+        self._global_lib_dir = get_global_lib_dir()
         self._search_results: list = []
         self._raw_search_results: list = []
         self._sort_col: int = -1
@@ -294,10 +299,15 @@ class JLCImportTUI(App):
                         yield TIImage(id="detail-image")
                         yield HalfcellImage(id="detail-skeleton")
                     with Vertical(id="detail-info"):
-                        yield Label("", id="detail-part", classes="detail-field")
-                        yield Label("", id="detail-lcsc", classes="detail-field")
-                        yield Label("", id="detail-brand-pkg", classes="detail-field")
-                        yield Label("", id="detail-price-stock", classes="detail-field")
+                        with Horizontal(classes="detail-row"):
+                            yield Label("", id="detail-part", classes="detail-left")
+                            yield Label("", id="detail-lcsc", classes="detail-right")
+                        with Horizontal(classes="detail-row"):
+                            yield Label("", id="detail-brand", classes="detail-left")
+                            yield Label("", id="detail-package", classes="detail-right")
+                        with Horizontal(classes="detail-row"):
+                            yield Label("", id="detail-price", classes="detail-left")
+                            yield Label("", id="detail-stock", classes="detail-right")
                         yield Label("", id="detail-desc")
                         with Horizontal(id="detail-buttons"):
                             yield Button("Import", id="detail-import-btn", variant="success", disabled=True)
@@ -308,15 +318,17 @@ class JLCImportTUI(App):
                 with Horizontal(id="import-options"):
                     with RadioSet(id="dest-selector"):
                         yield RadioButton(
-                            f"Proj:{self._project_dir or 'n/a'}",
+                            f"Proj [b]{self._project_dir or 'n/a'}[/b]",
                             value=bool(self._project_dir),
                             id="dest-project",
                         )
                         yield RadioButton(
-                            "Global",
+                            f"Global [b]{self._global_lib_dir}[/b]",
                             value=not bool(self._project_dir),
                             id="dest-global",
                         )
+                    yield Label("Lib", id="lib-name-label")
+                    yield Input(value=self._lib_name, id="lib-name-input")
                     yield Input(placeholder="C427602", id="part-input")
                     yield Checkbox("Overwrite", id="overwrite-cb")
                     yield Button("Import", id="import-btn", variant="success")
@@ -342,9 +354,27 @@ class JLCImportTUI(App):
     # --- Search ---
 
     def on_input_submitted(self, event: Input.Submitted):
-        """Handle Enter key in search input."""
+        """Handle Enter key in inputs."""
         if event.input.id == "search-input":
             self._do_search()
+        elif event.input.id == "lib-name-input":
+            self._persist_lib_name()
+
+    def on_input_blurred(self, event: Input.Blurred):
+        """Persist lib name when input loses focus."""
+        if event.input.id == "lib-name-input":
+            self._persist_lib_name()
+
+    def _persist_lib_name(self):
+        """Save the library name if it changed."""
+        new_name = self.query_one("#lib-name-input", Input).value.strip()
+        if new_name and new_name != self._lib_name:
+            self._lib_name = new_name
+            config = load_config()
+            config["lib_name"] = new_name
+            save_config(config)
+        elif not new_name:
+            self.query_one("#lib-name-input", Input).value = self._lib_name
 
     def on_button_pressed(self, event: Button.Pressed):
         """Handle button clicks."""
@@ -536,12 +566,13 @@ class JLCImportTUI(App):
         import re as _re
 
         self._imported_ids = set()
+        lib_name = self._lib_name
         paths = []
         if self._project_dir:
-            paths.append(os.path.join(self._project_dir, "JLCImport.kicad_sym"))
+            paths.append(os.path.join(self._project_dir, f"{lib_name}.kicad_sym"))
         try:
             global_dir = get_global_lib_dir()
-            paths.append(os.path.join(global_dir, "JLCImport.kicad_sym"))
+            paths.append(os.path.join(global_dir, f"{lib_name}.kicad_sym"))
         except Exception:
             pass
         for p in paths:
@@ -648,18 +679,16 @@ class JLCImportTUI(App):
         self.query_one("#part-input", Input).value = r["lcsc"]
 
         # Update detail fields
-        self.query_one("#detail-part", Label).update(f"Part: {r['model']}")
+        self.query_one("#detail-part", Label).update(f"Part [b]{r['model']}[/b]")
         self.query_one("#detail-lcsc", Label).update(
-            f"LCSC: {r['lcsc']}  ({r['type']})"
+            f"LCSC [b]{r['lcsc']}[/b]  ({r['type']})"
         )
-        self.query_one("#detail-brand-pkg", Label).update(
-            f"Brand: {r['brand']}  |  Package: {r['package']}"
-        )
+        self.query_one("#detail-brand", Label).update(f"Brand [b]{r['brand']}[/b]")
+        self.query_one("#detail-package", Label).update(f"Package [b]{r['package']}[/b]")
         price_str = f"${r['price']:.4f}" if r["price"] else "N/A"
         stock_str = f"{r['stock']:,}" if r["stock"] else "N/A"
-        self.query_one("#detail-price-stock", Label).update(
-            f"Price: {price_str}  |  Stock: {stock_str}"
-        )
+        self.query_one("#detail-price", Label).update(f"Price [b]{price_str}[/b]")
+        self.query_one("#detail-stock", Label).update(f"Stock [b]{stock_str}[/b]")
         self.query_one("#detail-desc", Label).update(r.get("description", ""))
 
         # URLs
@@ -704,6 +733,7 @@ class JLCImportTUI(App):
 
     def _do_import_action(self):
         """Start the import process."""
+        self._persist_lib_name()
         part_input = self.query_one("#part-input", Input)
         raw_id = part_input.value.strip()
         if not raw_id:
@@ -755,7 +785,7 @@ class JLCImportTUI(App):
 
     def _do_import(self, lcsc_id: str, lib_dir: str, overwrite: bool, use_global: bool):
         """Execute the import process."""
-        lib_name = "JLCImport"
+        lib_name = self._lib_name
         log = lambda msg: self.app.call_from_thread(self._log, msg)
 
         log(f"Fetching component {lcsc_id}...")
@@ -803,9 +833,9 @@ class JLCImportTUI(App):
                     model_path = os.path.join(paths["models_dir"], f"{name}.step")
                 else:
                     model_path = f"${{KIPRJMOD}}/{lib_name}.3dshapes/{name}.step"
-                log("  STEP saved")
+                log(f"  STEP saved: {step_path}")
             if wrl_path:
-                log("  WRL saved")
+                log(f"  WRL saved: {wrl_path}")
         else:
             log("No 3D model available")
 
@@ -821,11 +851,12 @@ class JLCImportTUI(App):
             model_offset=model_offset,
             model_rotation=model_rotation,
         )
+        fp_path = os.path.join(paths["fp_dir"], f"{name}.kicad_mod")
         fp_saved = save_footprint(paths["fp_dir"], name, fp_content, overwrite)
         if fp_saved:
-            log(f"  Saved: {name}.kicad_mod")
+            log(f"  Saved: {fp_path}")
         else:
-            log("  Skipped (exists, overwrite=off)")
+            log(f"  Skipped: {fp_path} (exists, overwrite=off)")
 
         # Parse and write symbol
         if comp["symbol_data_list"]:
@@ -852,9 +883,9 @@ class JLCImportTUI(App):
 
             sym_added = add_symbol_to_lib(paths["sym_path"], name, sym_content, overwrite)
             if sym_added:
-                log(f"  Symbol added to {lib_name}.kicad_sym")
+                log(f"  Symbol added: {paths['sym_path']}")
             else:
-                log("  Symbol skipped (exists, overwrite=off)")
+                log(f"  Symbol skipped: {paths['sym_path']} (exists, overwrite=off)")
         else:
             log("No symbol data available")
 

@@ -16,7 +16,7 @@ from .model3d import download_and_save_models, compute_model_transform
 from .library import (
     ensure_lib_structure, add_symbol_to_lib, save_footprint,
     update_project_lib_tables, update_global_lib_tables,
-    get_global_lib_dir, sanitize_name,
+    get_global_lib_dir, sanitize_name, load_config, save_config,
 )
 
 
@@ -98,6 +98,7 @@ class JLCImportDialog(wx.Dialog):
         self.results_list.InsertColumn(3, "Stock", width=75)
         self.results_list.InsertColumn(4, "Part", width=200)
         self.results_list.InsertColumn(5, "Package", width=80)
+        self.results_list.InsertColumn(6, "Description", width=300)
         self.results_list.Bind(wx.EVT_LIST_ITEM_SELECTED, self._on_result_select)
         self.results_list.Bind(wx.EVT_LIST_COL_CLICK, self._on_col_click)
         self._sort_col = -1
@@ -122,26 +123,36 @@ class JLCImportDialog(wx.Dialog):
         detail_grid.AddGrowableCol(1)
         detail_grid.AddGrowableCol(3)
 
-        detail_grid.Add(wx.StaticText(panel, label="Part:"), 0, wx.ALIGN_RIGHT)
+        bold_font = wx.Font(wx.FontInfo().Bold())
+
+        bold_font = panel.GetFont().Bold()
+
+        detail_grid.Add(wx.StaticText(panel, label="Part"), 0, wx.ALIGN_RIGHT | wx.ALIGN_CENTER_VERTICAL)
         self.detail_part = wx.StaticText(panel, label="")
-        detail_grid.Add(self.detail_part, 1, wx.EXPAND)
-        detail_grid.Add(wx.StaticText(panel, label="LCSC:"), 0, wx.ALIGN_RIGHT)
+        self.detail_part.SetFont(bold_font)
+        detail_grid.Add(self.detail_part, 1, wx.EXPAND | wx.ALIGN_CENTER_VERTICAL)
+        detail_grid.Add(wx.StaticText(panel, label="LCSC"), 0, wx.ALIGN_RIGHT | wx.ALIGN_CENTER_VERTICAL)
         self.detail_lcsc = wx.StaticText(panel, label="")
-        detail_grid.Add(self.detail_lcsc, 0)
+        self.detail_lcsc.SetFont(bold_font)
+        detail_grid.Add(self.detail_lcsc, 0, wx.ALIGN_CENTER_VERTICAL)
 
-        detail_grid.Add(wx.StaticText(panel, label="Brand:"), 0, wx.ALIGN_RIGHT)
+        detail_grid.Add(wx.StaticText(panel, label="Brand"), 0, wx.ALIGN_RIGHT | wx.ALIGN_CENTER_VERTICAL)
         self.detail_brand = wx.StaticText(panel, label="")
-        detail_grid.Add(self.detail_brand, 1, wx.EXPAND)
-        detail_grid.Add(wx.StaticText(panel, label="Package:"), 0, wx.ALIGN_RIGHT)
+        self.detail_brand.SetFont(bold_font)
+        detail_grid.Add(self.detail_brand, 1, wx.EXPAND | wx.ALIGN_CENTER_VERTICAL)
+        detail_grid.Add(wx.StaticText(panel, label="Package"), 0, wx.ALIGN_RIGHT | wx.ALIGN_CENTER_VERTICAL)
         self.detail_package = wx.StaticText(panel, label="")
-        detail_grid.Add(self.detail_package, 0)
+        self.detail_package.SetFont(bold_font)
+        detail_grid.Add(self.detail_package, 0, wx.ALIGN_CENTER_VERTICAL)
 
-        detail_grid.Add(wx.StaticText(panel, label="Price:"), 0, wx.ALIGN_RIGHT)
+        detail_grid.Add(wx.StaticText(panel, label="Price"), 0, wx.ALIGN_RIGHT | wx.ALIGN_CENTER_VERTICAL)
         self.detail_price = wx.StaticText(panel, label="")
-        detail_grid.Add(self.detail_price, 0)
-        detail_grid.Add(wx.StaticText(panel, label="Stock:"), 0, wx.ALIGN_RIGHT)
+        self.detail_price.SetFont(bold_font)
+        detail_grid.Add(self.detail_price, 0, wx.ALIGN_CENTER_VERTICAL)
+        detail_grid.Add(wx.StaticText(panel, label="Stock"), 0, wx.ALIGN_RIGHT | wx.ALIGN_CENTER_VERTICAL)
         self.detail_stock = wx.StaticText(panel, label="")
-        detail_grid.Add(self.detail_stock, 0)
+        self.detail_stock.SetFont(bold_font)
+        detail_grid.Add(self.detail_stock, 0, wx.ALIGN_CENTER_VERTICAL)
 
         info_sizer.Add(detail_grid, 0, wx.EXPAND | wx.BOTTOM, 4)
 
@@ -173,25 +184,48 @@ class JLCImportDialog(wx.Dialog):
         # --- Import section ---
         import_box = wx.StaticBoxSizer(wx.HORIZONTAL, panel, "Import")
 
-        # Left side: destination
+        # Left side: destination + library name
         dest_sizer = wx.BoxSizer(wx.VERTICAL)
         project_dir = self._get_project_dir()
         global_dir = get_global_lib_dir()
-        self.dest_project = wx.RadioButton(panel, label=f"Project: {project_dir or '(no board open)'}",
-                                           style=wx.RB_GROUP)
-        self.dest_global = wx.RadioButton(panel, label=f"Global: {global_dir}")
+        bold_font = panel.GetFont().Bold()
+
+        proj_row = wx.BoxSizer(wx.HORIZONTAL)
+        self.dest_project = wx.RadioButton(panel, label="Project", style=wx.RB_GROUP)
+        proj_row.Add(self.dest_project, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
+        proj_path_label = wx.StaticText(panel, label=project_dir or "(no board open)")
+        proj_path_label.SetFont(bold_font)
+        proj_row.Add(proj_path_label, 0, wx.ALIGN_CENTER_VERTICAL)
+
+        global_row = wx.BoxSizer(wx.HORIZONTAL)
+        self.dest_global = wx.RadioButton(panel, label="Global")
+        global_row.Add(self.dest_global, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
+        global_path_label = wx.StaticText(panel, label=global_dir)
+        global_path_label.SetFont(bold_font)
+        global_row.Add(global_path_label, 0, wx.ALIGN_CENTER_VERTICAL)
+
         self.dest_project.SetValue(True)
         if not project_dir:
             self.dest_project.Disable()
             self.dest_global.SetValue(True)
-        dest_sizer.Add(self.dest_project, 0, wx.BOTTOM, 2)
-        dest_sizer.Add(self.dest_global, 0)
+        dest_sizer.Add(proj_row, 0, wx.BOTTOM, 2)
+        dest_sizer.Add(global_row, 0, wx.BOTTOM, 2)
+
+        lib_name_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        lib_name_sizer.Add(wx.StaticText(panel, label="Library"), 0,
+                           wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
+        self._lib_name = load_config().get("lib_name", "JLCImport")
+        self.lib_name_input = wx.TextCtrl(panel, size=(120, -1), value=self._lib_name)
+        self.lib_name_input.Bind(wx.EVT_KILL_FOCUS, self._on_lib_name_change)
+        lib_name_sizer.Add(self.lib_name_input, 0, wx.ALIGN_CENTER_VERTICAL)
+        dest_sizer.Add(lib_name_sizer, 0, wx.TOP, 2)
+
         import_box.Add(dest_sizer, 1, wx.ALL, 5)
 
         # Right side: options and button
         right_sizer = wx.BoxSizer(wx.VERTICAL)
         opts_sizer = wx.BoxSizer(wx.HORIZONTAL)
-        opts_sizer.Add(wx.StaticText(panel, label="Part #:"), 0,
+        opts_sizer.Add(wx.StaticText(panel, label="Part #"), 0,
                        wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
         self.part_input = wx.TextCtrl(panel, size=(100, -1))
         self.part_input.SetHint("C427602")
@@ -267,6 +301,18 @@ class JLCImportDialog(wx.Dialog):
             if board_path:
                 return os.path.dirname(board_path)
         return ""
+
+    def _on_lib_name_change(self, event):
+        """Persist library name when the input loses focus."""
+        new_name = self.lib_name_input.GetValue().strip()
+        if new_name and new_name != self._lib_name:
+            self._lib_name = new_name
+            config = load_config()
+            config["lib_name"] = new_name
+            save_config(config)
+        elif not new_name:
+            self.lib_name_input.SetValue(self._lib_name)
+        event.Skip()
 
     def _log(self, msg: str):
         self.status_text.AppendText(msg + "\n")
@@ -372,6 +418,7 @@ class JLCImportDialog(wx.Dialog):
             3: lambda r: r.get('stock') or 0,
             4: lambda r: r.get('model', '').lower(),
             5: lambda r: r.get('package', '').lower(),
+            6: lambda r: r.get('description', '').lower(),
         }
         key_fn = key_map.get(col)
         if key_fn:
@@ -379,7 +426,7 @@ class JLCImportDialog(wx.Dialog):
             self._update_col_headers()
             self._repopulate_results()
 
-    _col_names = ["LCSC", "Type", "Price", "Stock", "Part", "Package"]
+    _col_names = ["LCSC", "Type", "Price", "Stock", "Part", "Package", "Description"]
 
     def _update_col_headers(self):
         """Update column headers with sort indicator."""
@@ -398,11 +445,12 @@ class JLCImportDialog(wx.Dialog):
         import re
         self._imported_ids = set()
         paths = []
+        lib_name = self._lib_name
         project_dir = self._get_project_dir()
         if project_dir:
-            paths.append(os.path.join(project_dir, "JLCImport.kicad_sym"))
+            paths.append(os.path.join(project_dir, f"{lib_name}.kicad_sym"))
         global_dir = get_global_lib_dir()
-        paths.append(os.path.join(global_dir, "JLCImport.kicad_sym"))
+        paths.append(os.path.join(global_dir, f"{lib_name}.kicad_sym"))
         for p in paths:
             if os.path.exists(p):
                 try:
@@ -476,6 +524,7 @@ class JLCImportDialog(wx.Dialog):
             self.results_list.SetItem(i, 3, stock_str)
             self.results_list.SetItem(i, 4, r['model'])
             self.results_list.SetItem(i, 5, r.get('package', ''))
+            self.results_list.SetItem(i, 6, r.get('description', ''))
         self._update_results_count()
 
     def _update_results_count(self):
@@ -882,7 +931,7 @@ class JLCImportDialog(wx.Dialog):
             self.import_btn.Enable()
 
     def _do_import(self, lcsc_id: str, lib_dir: str, overwrite: bool, use_global: bool):
-        lib_name = "JLCImport"
+        lib_name = self._lib_name
         self._log(f"Fetching component {lcsc_id}...")
         self._log(f"Destination: {lib_dir}")
 
@@ -924,9 +973,9 @@ class JLCImportDialog(wx.Dialog):
                     model_path = os.path.join(paths["models_dir"], f"{name}.step")
                 else:
                     model_path = f"${{KIPRJMOD}}/{lib_name}.3dshapes/{name}.step"
-                self._log(f"  STEP saved")
+                self._log(f"  STEP saved: {step_path}")
             if wrl_path:
-                self._log(f"  WRL saved")
+                self._log(f"  WRL saved: {wrl_path}")
         else:
             self._log("No 3D model available")
 
@@ -940,11 +989,12 @@ class JLCImportDialog(wx.Dialog):
             model_offset=model_offset,
             model_rotation=model_rotation,
         )
+        fp_path = os.path.join(paths["fp_dir"], f"{name}.kicad_mod")
         fp_saved = save_footprint(paths["fp_dir"], name, fp_content, overwrite)
         if fp_saved:
-            self._log(f"  Saved: {name}.kicad_mod")
+            self._log(f"  Saved: {fp_path}")
         else:
-            self._log(f"  Skipped (exists, overwrite=off)")
+            self._log(f"  Skipped: {fp_path} (exists, overwrite=off)")
 
         # Parse and write symbol
         if comp["symbol_data_list"]:
@@ -967,9 +1017,9 @@ class JLCImportDialog(wx.Dialog):
 
             sym_added = add_symbol_to_lib(paths["sym_path"], name, sym_content, overwrite)
             if sym_added:
-                self._log(f"  Symbol added to {lib_name}.kicad_sym")
+                self._log(f"  Symbol added: {paths['sym_path']}")
             else:
-                self._log(f"  Symbol skipped (exists, overwrite=off)")
+                self._log(f"  Symbol skipped: {paths['sym_path']} (exists, overwrite=off)")
         else:
             self._log("No symbol data available")
 
