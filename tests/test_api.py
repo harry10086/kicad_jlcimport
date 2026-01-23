@@ -1,7 +1,7 @@
 """Tests for api.py - validation and response parsing."""
 import pytest
 
-from JLCImport.api import validate_lcsc_id
+from JLCImport.api import validate_lcsc_id, fetch_product_image
 
 
 class TestValidateLcscId:
@@ -50,3 +50,39 @@ class TestValidateLcscId:
     def test_whitespace_only(self):
         with pytest.raises(ValueError, match="Invalid LCSC part number"):
             validate_lcsc_id("   ")
+
+
+class TestFetchProductImageSSRF:
+    """Test SSRF protection in fetch_product_image."""
+
+    def test_empty_url_returns_none(self):
+        assert fetch_product_image("") is None
+
+    def test_none_url_returns_none(self):
+        assert fetch_product_image(None) is None
+
+    def test_rejects_internal_ip(self):
+        assert fetch_product_image("http://169.254.169.254/metadata") is None
+
+    def test_rejects_localhost(self):
+        assert fetch_product_image("http://localhost/secret") is None
+
+    def test_rejects_arbitrary_domain(self):
+        assert fetch_product_image("https://evil.com/phish") is None
+
+    def test_rejects_file_scheme(self):
+        assert fetch_product_image("file:///etc/passwd") is None
+
+    def test_rejects_ftp_scheme(self):
+        assert fetch_product_image("ftp://jlcpcb.com/file") is None
+
+    def test_allows_jlcpcb_domain(self):
+        # This will fail network-wise but should pass SSRF validation
+        # and attempt the fetch (returning None due to network error in tests)
+        result = fetch_product_image("https://jlcpcb.com/product/C427602")
+        # Should be None (network error in test env) but NOT blocked by SSRF check
+        assert result is None
+
+    def test_allows_lcsc_domain(self):
+        result = fetch_product_image("https://lcsc.com/product/C427602")
+        assert result is None

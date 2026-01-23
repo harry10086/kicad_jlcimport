@@ -1,4 +1,5 @@
 """Shared formatting utilities for KiCad file output."""
+import math
 import uuid as _uuid_mod
 
 
@@ -11,8 +12,10 @@ def fmt_float(v: float) -> str:
     """Format a float for KiCad S-expression output.
 
     Returns integers without decimals, otherwise up to 6 decimal places
-    with trailing zeros stripped.
+    with trailing zeros stripped. NaN/Inf values are clamped to 0.
     """
+    if math.isnan(v) or math.isinf(v):
+        return "0"
     if v == int(v) and abs(v) < 1e10:
         return str(int(v))
     return f"{v:.6f}".rstrip("0").rstrip(".")

@@ -60,6 +60,15 @@ class TestFmtFloat:
         result = fmt_float(1e11 + 0.5)
         assert "." in result
 
+    def test_nan_returns_zero(self):
+        assert fmt_float(float("nan")) == "0"
+
+    def test_inf_returns_zero(self):
+        assert fmt_float(float("inf")) == "0"
+
+    def test_negative_inf_returns_zero(self):
+        assert fmt_float(float("-inf")) == "0"
+
 
 class TestEscapeSexpr:
     def test_no_escaping_needed(self):
