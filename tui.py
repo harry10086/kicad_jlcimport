@@ -2,6 +2,7 @@
 """TUI (Text User Interface) for JLCImport using Textual."""
 from __future__ import annotations
 
+import base64
 import io
 import os
 import sys
@@ -29,6 +30,8 @@ from textual.widgets import (
 )
 from textual.message import Message
 from rich.text import Text
+from rich.segment import Segment
+from rich.style import Style
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -52,6 +55,237 @@ from kicad_jlcimport.library import (
     get_global_lib_dir,
     sanitize_name,
 )
+
+
+# --- Terminal Image Protocol Support ---
+
+# Protocol types
+PROTO_HALFBLOCK = "halfblock"
+PROTO_KITTY = "kitty"
+PROTO_ITERM2 = "iterm2"
+PROTO_SIXEL = "sixel"
+
+
+def detect_terminal_graphics() -> str:
+    """Detect which image protocol the terminal supports.
+
+    Checks environment variables to determine terminal capabilities.
+    Returns one of: 'kitty', 'iterm2', 'sixel', 'halfblock'
+    """
+    term = os.environ.get("TERM", "")
+    term_program = os.environ.get("TERM_PROGRAM", "")
+    lc_terminal = os.environ.get("LC_TERMINAL", "")
+
+    # Kitty terminal
+    if term == "xterm-kitty" or term_program == "kitty":
+        return PROTO_KITTY
+
+    # WezTerm supports both Kitty and iTerm2 protocols
+    if term_program == "WezTerm":
+        return PROTO_KITTY
+
+    # iTerm2
+    if term_program == "iTerm.app" or lc_terminal == "iTerm2":
+        return PROTO_ITERM2
+
+    # Ghostty supports Kitty graphics protocol
+    if term_program == "ghostty":
+        return PROTO_KITTY
+
+    # Konsole supports Sixel
+    if "konsole" in term_program.lower():
+        return PROTO_SIXEL
+
+    # foot terminal supports Sixel
+    if term_program == "foot" or term.startswith("foot"):
+        return PROTO_SIXEL
+
+    # Check SIXEL support hint
+    if os.environ.get("TERM_SIXEL") == "1":
+        return PROTO_SIXEL
+
+    # Default: half-block characters (works everywhere)
+    return PROTO_HALFBLOCK
+
+
+# Detect once at module load
+_GRAPHICS_PROTO = detect_terminal_graphics()
+
+
+def render_image_kitty(img_data: bytes, width: int, height: int) -> str:
+    """Render image using Kitty Graphics Protocol.
+
+    The Kitty protocol transmits PNG data via APC escape sequences.
+    The terminal renders the image at actual pixel resolution within
+    the specified cell dimensions.
+    """
+    try:
+        from PIL import Image
+
+        img = Image.open(io.BytesIO(img_data))
+        img = img.convert("RGBA")
+
+        # Scale to fit the cell dimensions (assume ~8px per cell width, ~16px height)
+        px_width = width * 8
+        px_height = height * 16
+        img.thumbnail((px_width, px_height), Image.LANCZOS)
+
+        # Encode as PNG
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        png_data = buf.getvalue()
+        b64_data = base64.b64encode(png_data).decode("ascii")
+
+        # Kitty protocol: chunk base64 data (max 4096 bytes per chunk)
+        chunks = [b64_data[i:i + 4096] for i in range(0, len(b64_data), 4096)]
+
+        escape_seq = ""
+        for i, chunk in enumerate(chunks):
+            is_last = (i == len(chunks) - 1)
+            if i == 0:
+                # First chunk: specify format, action, dimensions
+                escape_seq += (
+                    f"\033_Ga=T,f=100,t=d,c={width},r={height}"
+                    f",m={'0' if is_last else '1'};{chunk}\033\\"
+                )
+            else:
+                # Continuation chunks
+                escape_seq += (
+                    f"\033_Gm={'0' if is_last else '1'};{chunk}\033\\"
+                )
+
+        # Return escape sequence followed by blank lines to reserve space
+        lines = [escape_seq]
+        for _ in range(height - 1):
+            lines.append(" " * width)
+        return "\n".join(lines)
+    except Exception:
+        return image_to_halfblock(img_data, width, height)
+
+
+def render_image_iterm2(img_data: bytes, width: int, height: int) -> str:
+    """Render image using iTerm2 Inline Images Protocol.
+
+    Uses OSC 1337 escape sequence to display images inline.
+    Supported by iTerm2, WezTerm, and others.
+    """
+    try:
+        from PIL import Image
+
+        img = Image.open(io.BytesIO(img_data))
+        img = img.convert("RGB")
+
+        # Scale to fit
+        px_width = width * 8
+        px_height = height * 16
+        img.thumbnail((px_width, px_height), Image.LANCZOS)
+
+        # Encode as PNG
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        b64_data = base64.b64encode(buf.getvalue()).decode("ascii")
+
+        # iTerm2 protocol: OSC 1337
+        escape_seq = (
+            f"\033]1337;File=inline=1"
+            f";width={width}"
+            f";height={height}"
+            f";preserveAspectRatio=1"
+            f":{b64_data}\007"
+        )
+
+        # Return escape sequence followed by blank lines
+        lines = [escape_seq]
+        for _ in range(height - 1):
+            lines.append(" " * width)
+        return "\n".join(lines)
+    except Exception:
+        return image_to_halfblock(img_data, width, height)
+
+
+def render_image_sixel(img_data: bytes, width: int, height: int) -> str:
+    """Render image using Sixel graphics.
+
+    Sixel encodes images as 6-pixel-high horizontal strips with a
+    palette of up to 256 colors. Widely supported by terminals.
+    """
+    try:
+        from PIL import Image
+
+        img = Image.open(io.BytesIO(img_data))
+        img = img.convert("RGB")
+
+        # Scale to cell dimensions (rough px per cell)
+        px_width = width * 8
+        px_height = height * 16
+        img.thumbnail((px_width, px_height), Image.LANCZOS)
+
+        # Quantize to 256 colors for sixel palette
+        img_quantized = img.quantize(colors=256, method=Image.Quantize.MEDIANCUT)
+        palette = img_quantized.getpalette()  # flat list [R,G,B,R,G,B,...]
+        pixels = list(img_quantized.getdata())
+        w, h = img_quantized.size
+
+        # Build sixel output
+        sixel = "\033Pq"
+
+        # Set raster attributes: pixel aspect 1:1, width x height
+        sixel += f'"1;1;{w};{h}'
+
+        # Define palette entries
+        num_colors = min(256, len(palette) // 3)
+        for i in range(num_colors):
+            r = palette[i * 3] * 100 // 255
+            g = palette[i * 3 + 1] * 100 // 255
+            b = palette[i * 3 + 2] * 100 // 255
+            sixel += f"#{i};2;{r};{g};{b}"
+
+        # Encode pixel data in 6-row strips
+        for strip_y in range(0, h, 6):
+            for color in range(num_colors):
+                # Check if this color appears in this strip
+                has_color = False
+                for row in range(6):
+                    y = strip_y + row
+                    if y >= h:
+                        break
+                    for x in range(w):
+                        if pixels[y * w + x] == color:
+                            has_color = True
+                            break
+                    if has_color:
+                        break
+
+                if not has_color:
+                    continue
+
+                # Select color
+                sixel += f"#{color}"
+
+                # Encode this color's contribution to the strip
+                for x in range(w):
+                    sixel_char = 0
+                    for row in range(6):
+                        y = strip_y + row
+                        if y < h and pixels[y * w + x] == color:
+                            sixel_char |= (1 << row)
+                    sixel += chr(63 + sixel_char)
+
+                # Carriage return (stay in same strip for next color)
+                sixel += "$"
+
+            # Move to next strip
+            sixel += "-"
+
+        sixel += "\033\\"
+
+        # Return sixel sequence followed by blank lines
+        lines = [sixel]
+        for _ in range(height - 1):
+            lines.append(" " * width)
+        return "\n".join(lines)
+    except Exception:
+        return image_to_halfblock(img_data, width, height)
 
 
 def image_to_halfblock(img_data: bytes, width: int = 40, height: int = 20) -> str:
@@ -93,8 +327,40 @@ def image_to_halfblock(img_data: bytes, width: int = 40, height: int = 20) -> st
         return "[dim]No image available[/dim]"
 
 
+def render_image(img_data: bytes, width: int = 40, height: int = 20,
+                 protocol: str | None = None) -> str:
+    """Render image using the best available terminal protocol.
+
+    Args:
+        img_data: Raw image bytes (JPEG/PNG)
+        width: Width in terminal columns
+        height: Height in terminal rows
+        protocol: Override auto-detected protocol (for testing)
+
+    Returns:
+        String containing the rendered image (escape sequences or Rich markup)
+    """
+    proto = protocol or _GRAPHICS_PROTO
+
+    if proto == PROTO_KITTY:
+        return render_image_kitty(img_data, width, height)
+    elif proto == PROTO_ITERM2:
+        return render_image_iterm2(img_data, width, height)
+    elif proto == PROTO_SIXEL:
+        return render_image_sixel(img_data, width, height)
+    else:
+        return image_to_halfblock(img_data, width, height)
+
+
 class ImageWidget(Static):
-    """Widget that displays an image using half-block characters."""
+    """Widget that displays images using the best available terminal protocol.
+
+    Supports:
+    - Kitty Graphics Protocol (Kitty, WezTerm, Ghostty)
+    - iTerm2 Inline Images (iTerm2, WezTerm)
+    - Sixel Graphics (foot, Konsole, xterm)
+    - Half-block characters (universal fallback)
+    """
 
     def __init__(self, width: int = 40, height: int = 20, **kwargs):
         super().__init__(**kwargs)
@@ -104,7 +370,7 @@ class ImageWidget(Static):
     def set_image(self, img_data: bytes | None):
         """Update the displayed image."""
         if img_data:
-            markup = image_to_halfblock(img_data, self._img_width, self._img_height)
+            markup = render_image(img_data, self._img_width, self._img_height)
         else:
             markup = "[dim italic]No image[/dim italic]"
         self.update(markup)
