@@ -312,7 +312,7 @@ class JLCImportDialog(wx.Dialog):
     def _fetch_search_results(self, keyword, request_id):
         """Background thread: fetch search results from API."""
         try:
-            result = search_components(keyword, page_size=200)
+            result = search_components(keyword, page_size=500)
             wx.CallAfter(self._on_search_complete, result, request_id)
         except APIError as e:
             wx.CallAfter(self._on_search_error, f"Search error: {e}", request_id)
