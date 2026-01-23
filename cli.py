@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
 """CLI tool for testing JLCImport search and import."""
 import argparse
-import json
 import os
 import sys
-import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from JLCImport.api import search_components, fetch_full_component, APIError
+from JLCImport.api import search_components, fetch_full_component, APIError, validate_lcsc_id
 from JLCImport.parser import parse_footprint_shapes, parse_symbol_shapes
 from JLCImport.footprint_writer import write_footprint
 from JLCImport.symbol_writer import write_symbol
 from JLCImport.library import sanitize_name
+from JLCImport.model3d import compute_model_transform
 
 
 def cmd_search(args):
@@ -59,9 +58,11 @@ def cmd_search(args):
 
 def cmd_import(args):
     """Import a component and show/save the output."""
-    lcsc_id = args.part.upper()
-    if not lcsc_id.startswith("C"):
-        lcsc_id = "C" + lcsc_id
+    try:
+        lcsc_id = validate_lcsc_id(args.part)
+    except ValueError as e:
+        print(f"  Error: {e}")
+        return
 
     print(f"\n  Fetching {lcsc_id}...")
 
@@ -93,12 +94,9 @@ def cmd_import(args):
     model_rotation = (0.0, 0.0, 0.0)
     if footprint.model:
         model_path = f"${{KIPRJMOD}}/JLCImport.3dshapes/{name}.step"
-        model_offset = (
-            (footprint.model.origin_x - comp["fp_origin_x"]) / 100.0,
-            -(footprint.model.origin_y - comp["fp_origin_y"]) / 100.0,
-            footprint.model.z / 100.0,
+        model_offset, model_rotation = compute_model_transform(
+            footprint.model, comp["fp_origin_x"], comp["fp_origin_y"]
         )
-        model_rotation = footprint.model.rotation
 
     fp_content = write_footprint(
         footprint, name, lcsc_id=lcsc_id,

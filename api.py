@@ -1,20 +1,39 @@
 """EasyEDA/LCSC HTTP client using only urllib."""
 import json
+import re
 import ssl
 import urllib.request
+import warnings
 from typing import Any, Dict, List, Optional
 
 
-# macOS/KiCad Python often lacks certificate store - use unverified as fallback
-try:
-    _SSL_CTX = ssl.create_default_context()
-    # Test if certs work by just creating the context
-    _SSL_CTX.check_hostname = True
-except Exception:
-    _SSL_CTX = ssl.create_default_context()
+def _get_ssl_context() -> ssl.SSLContext:
+    """Get SSL context with fallback for KiCad's bundled Python."""
+    try:
+        ctx = ssl.create_default_context()
+        return ctx
+    except Exception:
+        warnings.warn(
+            "SSL certificate verification unavailable, using unverified context",
+            stacklevel=2,
+        )
+        return ssl._create_unverified_context()
 
-# Always allow unverified for compatibility with KiCad's bundled Python
-_SSL_CTX = ssl._create_unverified_context()
+
+_SSL_CTX = _get_ssl_context()
+
+
+def validate_lcsc_id(lcsc_id: str) -> str:
+    """Validate and normalize an LCSC part number.
+
+    Raises ValueError if the ID doesn't match the expected C<digits> format.
+    """
+    lcsc_id = lcsc_id.strip().upper()
+    if not lcsc_id.startswith("C"):
+        lcsc_id = "C" + lcsc_id
+    if not re.match(r'^C\d{1,12}$', lcsc_id):
+        raise ValueError(f"Invalid LCSC part number: {lcsc_id}")
+    return lcsc_id
 
 
 EASYEDA_API = "https://easyeda.com/api"
@@ -130,7 +149,6 @@ def search_components(keyword: str, page: int = 1, page_size: int = 10,
 
 def fetch_product_image(lcsc_url: str) -> Optional[bytes]:
     """Fetch product image from LCSC product page. Returns JPEG bytes or None."""
-    import re
     if not lcsc_url:
         return None
     req = urllib.request.Request(lcsc_url, headers={
@@ -148,6 +166,8 @@ def fetch_product_image(lcsc_url: str) -> Optional[bytes]:
         return None
 
     img_url = match.group(0)
+    if not img_url.startswith("https://assets.lcsc.com/"):
+        return None
     req2 = urllib.request.Request(img_url, headers=_HEADERS)
     try:
         with urllib.request.urlopen(req2, timeout=10, context=_SSL_CTX) as resp:
@@ -188,6 +208,7 @@ def fetch_full_component(lcsc_id: str) -> Dict[str, Any]:
         footprint_data (shape data dict),
         description, manufacturer, manufacturer_part
     """
+    lcsc_id = validate_lcsc_id(lcsc_id)
     uuids = fetch_component_uuids(lcsc_id)
 
     # Last UUID is footprint, others are symbol parts

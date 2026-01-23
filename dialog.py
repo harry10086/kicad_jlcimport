@@ -8,11 +8,11 @@ import webbrowser
 
 import wx
 
-from .api import fetch_full_component, search_components, fetch_product_image, APIError
+from .api import fetch_full_component, search_components, fetch_product_image, APIError, validate_lcsc_id
 from .parser import parse_footprint_shapes, parse_symbol_shapes
 from .footprint_writer import write_footprint
 from .symbol_writer import write_symbol
-from .model3d import download_and_save_models
+from .model3d import download_and_save_models, compute_model_transform
 from .library import (
     ensure_lib_structure, add_symbol_to_lib, save_footprint,
     update_project_lib_tables, update_global_lib_tables,
@@ -26,8 +26,8 @@ class JLCImportDialog(wx.Dialog):
                          style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER)
         self.board = board
         self._search_results = []
-        self._image_request_url = ""
-        self._gallery_request_url = ""
+        self._image_request_id = 0
+        self._gallery_request_id = 0
         self._init_ui()
         self.Centre()
 
@@ -396,10 +396,11 @@ class JLCImportDialog(wx.Dialog):
 
         # Fetch image in background
         lcsc_url = r.get('url', '')
-        self._image_request_url = lcsc_url
+        self._image_request_id += 1
+        request_id = self._image_request_id
         if lcsc_url:
             self._show_skeleton()
-            threading.Thread(target=self._fetch_image, args=(lcsc_url,), daemon=True).start()
+            threading.Thread(target=self._fetch_image, args=(lcsc_url, request_id), daemon=True).start()
         else:
             self._stop_skeleton()
             self._show_no_image()
@@ -531,9 +532,10 @@ class JLCImportDialog(wx.Dialog):
 
         # Fetch image
         lcsc_url = r.get('url', '')
-        self._gallery_request_url = lcsc_url
+        self._gallery_request_id += 1
+        request_id = self._gallery_request_id
         if lcsc_url:
-            threading.Thread(target=self._fetch_gallery_image, args=(lcsc_url,), daemon=True).start()
+            threading.Thread(target=self._fetch_gallery_image, args=(lcsc_url, request_id), daemon=True).start()
         else:
             self._stop_gallery_skeleton()
             self._show_gallery_no_image()
@@ -615,18 +617,18 @@ class JLCImportDialog(wx.Dialog):
         w, h = self.GetClientSize()
         return max(min(w - 100, h - 120), 100)
 
-    def _fetch_gallery_image(self, lcsc_url):
+    def _fetch_gallery_image(self, lcsc_url, request_id):
         """Fetch full-size image for gallery."""
         try:
             img_data = fetch_product_image(lcsc_url)
         except Exception:
             img_data = None
-        if self._gallery_request_url == lcsc_url:
-            wx.CallAfter(self._set_gallery_image, img_data, lcsc_url)
+        if self._gallery_request_id == request_id:
+            wx.CallAfter(self._set_gallery_image, img_data, request_id)
 
-    def _set_gallery_image(self, img_data, lcsc_url):
+    def _set_gallery_image(self, img_data, request_id):
         """Set gallery image on main thread."""
-        if self._gallery_request_url != lcsc_url:
+        if self._gallery_request_id != request_id:
             return
         self._stop_gallery_skeleton()
         if not img_data:
@@ -685,18 +687,18 @@ class JLCImportDialog(wx.Dialog):
         if self._lcsc_page_url:
             webbrowser.open(self._lcsc_page_url)
 
-    def _fetch_image(self, lcsc_url):
+    def _fetch_image(self, lcsc_url, request_id):
         """Fetch product image in background thread."""
         try:
             img_data = fetch_product_image(lcsc_url)
         except Exception:
             img_data = None
-        if self._image_request_url == lcsc_url:
-            wx.CallAfter(self._set_image, img_data, lcsc_url)
+        if self._image_request_id == request_id:
+            wx.CallAfter(self._set_image, img_data, request_id)
 
-    def _set_image(self, img_data, lcsc_url):
+    def _set_image(self, img_data, request_id):
         """Set the detail image from raw bytes (called on main thread)."""
-        if self._image_request_url != lcsc_url:
+        if self._image_request_id != request_id:
             return  # User selected a different item
         self._stop_skeleton()
         if not img_data:
@@ -723,13 +725,16 @@ class JLCImportDialog(wx.Dialog):
             self.Layout()
 
     def _on_import(self, event):
-        lcsc_id = self.part_input.GetValue().strip().upper()
-        if not lcsc_id:
+        raw_id = self.part_input.GetValue().strip()
+        if not raw_id:
             self._log("Error: Enter an LCSC part number or double-click a search result")
             return
 
-        if not lcsc_id.startswith("C"):
-            lcsc_id = "C" + lcsc_id
+        try:
+            lcsc_id = validate_lcsc_id(raw_id)
+        except ValueError as e:
+            self._log(f"Error: {e}")
+            return
 
         use_global = self.dest_global.GetValue()
         if use_global:
@@ -782,12 +787,9 @@ class JLCImportDialog(wx.Dialog):
         uuid_3d = ""
         if footprint.model:
             uuid_3d = footprint.model.uuid
-            model_offset = (
-                (footprint.model.origin_x - comp["fp_origin_x"]) / 100.0,
-                -(footprint.model.origin_y - comp["fp_origin_y"]) / 100.0,
-                footprint.model.z / 100.0,
+            model_offset, model_rotation = compute_model_transform(
+                footprint.model, comp["fp_origin_x"], comp["fp_origin_y"]
             )
-            model_rotation = footprint.model.rotation
 
         if not uuid_3d:
             uuid_3d = comp.get("uuid_3d", "")

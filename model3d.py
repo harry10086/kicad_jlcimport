@@ -3,6 +3,21 @@ import os
 from typing import Optional, Tuple
 
 from .api import download_step, download_wrl_source
+from .ee_types import EE3DModel
+
+
+def compute_model_transform(model: EE3DModel, fp_origin_x: float, fp_origin_y: float
+                            ) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
+    """Compute 3D model offset and rotation from footprint model data.
+
+    Returns (offset, rotation) tuples.
+    """
+    offset = (
+        (model.origin_x - fp_origin_x) / 100.0,
+        -(model.origin_y - fp_origin_y) / 100.0,
+        model.z / 100.0,
+    )
+    return offset, model.rotation
 
 
 def download_and_save_models(uuid_3d: str, output_dir: str, name: str) -> Tuple[Optional[str], Optional[str]]:

@@ -1,20 +1,9 @@
 """Generate KiCad 9 .kicad_sym symbol blocks."""
-import uuid as uuid_mod
-from typing import List, Optional
+from typing import List
 
+from ._kicad_format import fmt_float as _fmt, escape_sexpr as _escape
 from .ee_types import EESymbol
 from .parser import compute_arc_midpoint
-
-
-def _uuid() -> str:
-    return str(uuid_mod.uuid4())
-
-
-def _fmt(v: float) -> str:
-    """Format float for KiCad output."""
-    if v == int(v) and abs(v) < 1e10:
-        return str(int(v))
-    return f"{v:.6f}".rstrip("0").rstrip(".")
 
 
 def write_symbol(symbol: EESymbol, name: str, prefix: str = "U",
@@ -178,8 +167,3 @@ def _estimate_bottom(symbol: EESymbol) -> float:
     for pin in symbol.pins:
         ys.append(pin.y)
     return min(ys) if ys else -5.0
-
-
-def _escape(s: str) -> str:
-    """Escape special characters for S-expression strings."""
-    return s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ")
