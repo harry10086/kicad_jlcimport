@@ -42,7 +42,7 @@ class JLCImportDialog(wx.Dialog):
         vbox = wx.BoxSizer(wx.VERTICAL)
 
         # --- Search section ---
-        search_box = wx.StaticBoxSizer(wx.VERTICAL, panel, "Search")
+        search_box = wx.BoxSizer(wx.VERTICAL)
 
         # Search input row
         hbox_search = wx.BoxSizer(wx.HORIZONTAL)
@@ -71,8 +71,8 @@ class JLCImportDialog(wx.Dialog):
         hbox_filter.Add(self.type_extended, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 20)
         hbox_filter.Add(wx.StaticText(panel, label="Min stock:"), 0,
                         wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
-        self._min_stock_choices = [0, 1, 10, 100, 1000, 10000]
-        self._min_stock_labels = ["Any", "1+", "10+", "100+", "1000+", "10000+"]
+        self._min_stock_choices = [0, 1, 10, 100, 1000, 10000, 100000]
+        self._min_stock_labels = ["Any", "1+", "10+", "100+", "1000+", "10000+", "100000+"]
         self.min_stock_choice = wx.Choice(panel, choices=self._min_stock_labels)
         self.min_stock_choice.SetSelection(1)  # Default to "1+" (in stock)
         self.min_stock_choice.Bind(wx.EVT_CHOICE, self._on_min_stock_change)
@@ -83,7 +83,7 @@ class JLCImportDialog(wx.Dialog):
         self.package_choice.SetSelection(0)
         self.package_choice.Bind(wx.EVT_CHOICE, self._on_filter_change)
         hbox_filter.Add(self.package_choice, 0, wx.ALIGN_CENTER_VERTICAL)
-        search_box.Add(hbox_filter, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 5)
+        search_box.Add(hbox_filter, 0, wx.LEFT | wx.RIGHT, 5)
 
         vbox.Add(search_box, 0, wx.EXPAND | wx.ALL, 5)
 
@@ -106,7 +106,7 @@ class JLCImportDialog(wx.Dialog):
         vbox.Add(self.results_list, 2, wx.EXPAND | wx.LEFT | wx.RIGHT, 5)
 
         # --- Detail panel (shown on selection) ---
-        self._detail_box = wx.StaticBoxSizer(wx.HORIZONTAL, panel, "Details")
+        self._detail_box = wx.BoxSizer(wx.HORIZONTAL)
 
         # Image on left (click to zoom)
         self.detail_image = wx.StaticBitmap(panel, size=(100, 100))
