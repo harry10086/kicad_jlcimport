@@ -8,7 +8,7 @@ import webbrowser
 
 import wx
 
-from .api import fetch_full_component, search_components, fetch_product_image, APIError, validate_lcsc_id
+from .api import fetch_full_component, search_components, fetch_product_image, filter_by_min_stock, APIError, validate_lcsc_id
 from .parser import parse_footprint_shapes, parse_symbol_shapes
 from .footprint_writer import write_footprint
 from .symbol_writer import write_symbol
@@ -26,6 +26,7 @@ class JLCImportDialog(wx.Dialog):
                          style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER)
         self.board = board
         self._search_results = []
+        self._raw_search_results = []
         self._image_request_id = 0
         self._gallery_request_id = 0
         self._init_ui()
@@ -64,9 +65,14 @@ class JLCImportDialog(wx.Dialog):
         hbox_filter.Add(self.type_both, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 8)
         hbox_filter.Add(self.type_basic, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 8)
         hbox_filter.Add(self.type_extended, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 20)
-        self.in_stock_cb = wx.CheckBox(panel, label="In stock only")
-        self.in_stock_cb.SetValue(True)
-        hbox_filter.Add(self.in_stock_cb, 0, wx.ALIGN_CENTER_VERTICAL)
+        hbox_filter.Add(wx.StaticText(panel, label="Min stock:"), 0,
+                        wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
+        self._min_stock_choices = [0, 1, 10, 100, 1000, 10000]
+        self._min_stock_labels = ["Any", "1+", "10+", "100+", "1000+", "10000+"]
+        self.min_stock_choice = wx.Choice(panel, choices=self._min_stock_labels)
+        self.min_stock_choice.SetSelection(1)  # Default to "1+" (in stock)
+        self.min_stock_choice.Bind(wx.EVT_CHOICE, self._on_min_stock_change)
+        hbox_filter.Add(self.min_stock_choice, 0, wx.ALIGN_CENTER_VERTICAL)
         search_box.Add(hbox_filter, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 5)
 
         vbox.Add(search_box, 0, wx.EXPAND | wx.ALL, 5)
@@ -267,6 +273,7 @@ class JLCImportDialog(wx.Dialog):
         self.search_btn.Disable()
         self.results_list.DeleteAllItems()
         self._search_results = []
+        self._raw_search_results = []
         self.status_text.Clear()
         self._log(f"Searching for \"{keyword}\"...")
 
@@ -274,15 +281,13 @@ class JLCImportDialog(wx.Dialog):
             result = search_components(keyword, page_size=25, part_type=part_type)
             results = result["results"]
 
-            if self.in_stock_cb.GetValue():
-                results = [r for r in results if r['stock'] and r['stock'] > 0]
-
             results.sort(key=lambda r: r['stock'] or 0, reverse=True)
 
-            self._search_results = results
+            self._raw_search_results = results
             self._sort_col = 3  # sorted by stock
             self._sort_ascending = False
-            self._log(f"  {result['total']} total results, showing {len(results)}")
+            self._apply_stock_filter()
+            self._log(f"  {result['total']} total results, showing {len(self._search_results)}")
             self._refresh_imported_ids()
             self._update_col_headers()
             self._repopulate_results()
@@ -353,21 +358,40 @@ class JLCImportDialog(wx.Dialog):
                 except Exception:
                     pass
 
+    def _get_min_stock(self) -> int:
+        """Return the minimum stock threshold from the dropdown."""
+        idx = self.min_stock_choice.GetSelection()
+        if idx == wx.NOT_FOUND:
+            return 0
+        return self._min_stock_choices[idx]
+
+    def _apply_stock_filter(self):
+        """Filter _raw_search_results by minimum stock into _search_results."""
+        self._search_results = filter_by_min_stock(
+            self._raw_search_results, self._get_min_stock()
+        )
+
+    def _on_min_stock_change(self, event):
+        """Re-filter and repopulate results when min stock selection changes."""
+        if not self._raw_search_results:
+            return
+        self._apply_stock_filter()
+        self._repopulate_results()
+
     def _repopulate_results(self):
         """Repopulate the list control from _search_results."""
         self.results_list.DeleteAllItems()
-        for r in self._search_results:
-            idx = self.results_list.GetItemCount()
+        for i, r in enumerate(self._search_results):
             lcsc = r['lcsc']
             prefix = "\u2713 " if lcsc in self._imported_ids else ""
-            self.results_list.InsertItem(idx, prefix + lcsc)
-            self.results_list.SetItem(idx, 1, r['type'])
+            self.results_list.InsertItem(i, prefix + lcsc)
+            self.results_list.SetItem(i, 1, r['type'])
             price_str = f"${r['price']:.4f}" if r['price'] else "N/A"
-            self.results_list.SetItem(idx, 2, price_str)
+            self.results_list.SetItem(i, 2, price_str)
             stock_str = f"{r['stock']:,}" if r['stock'] else "N/A"
-            self.results_list.SetItem(idx, 3, stock_str)
-            self.results_list.SetItem(idx, 4, r['model'])
-            self.results_list.SetItem(idx, 5, r.get('package', ''))
+            self.results_list.SetItem(i, 3, stock_str)
+            self.results_list.SetItem(i, 4, r['model'])
+            self.results_list.SetItem(i, 5, r.get('package', ''))
 
     def _on_result_select(self, event):
         """Select a search result to populate the part number and show details."""

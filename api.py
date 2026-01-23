@@ -172,6 +172,20 @@ def search_components(keyword: str, page: int = 1, page_size: int = 10,
     return {"total": total, "results": results}
 
 
+def filter_by_min_stock(results: list, min_stock: int) -> list:
+    """Filter search results by minimum stock count.
+
+    Args:
+        results: List of result dicts from search_components()
+        min_stock: Minimum stock threshold (0 means no filter)
+
+    Returns filtered list (original list unchanged).
+    """
+    if min_stock <= 0:
+        return list(results)
+    return [r for r in results if r.get('stock') and r['stock'] >= min_stock]
+
+
 _ALLOWED_IMAGE_HOSTS = ("jlcpcb.com", "www.jlcpcb.com", "lcsc.com", "www.lcsc.com")
 
 
