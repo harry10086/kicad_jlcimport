@@ -1,19 +1,14 @@
-#!/usr/bin/env python3
-"""TUI (Text User Interface) for JLCImport using Textual."""
+"""Main TUI application for JLCImport."""
 from __future__ import annotations
 
-import io
 import os
-import sys
 import traceback
 import webbrowser
 
-from PIL import Image as PILImage
 from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
-from textual.screen import Screen
 from textual.widgets import (
     Button,
     Checkbox,
@@ -27,22 +22,11 @@ from textual.widgets import (
     RichLog,
     Select,
 )
-from textual_image.widget import Image as _AutoTIImage, HalfcellImage as _HalfcellTIImage, SixelImage as _SixelTIImage
 
-# Warp terminal falsely reports Sixel support via device attributes query,
-# so force half-cell rendering there.
-# Rio supports Sixel but doesn't advertise it in DA1 response.
-_term_program = os.environ.get("TERM_PROGRAM", "")
-if _term_program == "WarpTerminal":
-    TIImage = _HalfcellTIImage
-elif _term_program == "rio":
-    TIImage = _SixelTIImage
-else:
-    TIImage = _AutoTIImage
+from .helpers import TIImage, pil_from_bytes, make_skeleton_frame
+from .gallery import GalleryScreen
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from kicad_jlcimport.api import (
+from ..api import (
     fetch_full_component,
     search_components,
     fetch_product_image,
@@ -51,11 +35,11 @@ from kicad_jlcimport.api import (
     APIError,
     validate_lcsc_id,
 )
-from kicad_jlcimport.parser import parse_footprint_shapes, parse_symbol_shapes
-from kicad_jlcimport.footprint_writer import write_footprint
-from kicad_jlcimport.symbol_writer import write_symbol
-from kicad_jlcimport.model3d import download_and_save_models, compute_model_transform
-from kicad_jlcimport.library import (
+from ..parser import parse_footprint_shapes, parse_symbol_shapes
+from ..footprint_writer import write_footprint
+from ..symbol_writer import write_symbol
+from ..model3d import download_and_save_models, compute_model_transform
+from ..library import (
     ensure_lib_structure,
     add_symbol_to_lib,
     save_footprint,
@@ -64,202 +48,6 @@ from kicad_jlcimport.library import (
     get_global_lib_dir,
     sanitize_name,
 )
-
-
-# --- Image Helpers ---
-
-
-def _pil_from_bytes(data: bytes | None) -> PILImage.Image | None:
-    """Convert raw image bytes to a PIL Image, or None."""
-    if not data:
-        return None
-    try:
-        return PILImage.open(io.BytesIO(data))
-    except Exception:
-        return None
-
-
-def _make_skeleton_frame(width: int, height: int, phase: int) -> PILImage.Image:
-    """Generate a skeleton shimmer frame as a PIL Image.
-
-    Draws a dark gray rectangle with a lighter band sweeping left to right.
-    """
-    import math
-    from PIL import ImageDraw
-    img = PILImage.new("RGB", (width, height), (30, 30, 30))
-    draw = ImageDraw.Draw(img)
-    band_center = int(phase * (width + width // 2) / 100) - width // 4
-    band_width = width // 3
-    half_band = band_width // 2
-    for x in range(max(0, band_center - half_band), min(width, band_center + half_band)):
-        t = abs(x - band_center) / half_band
-        boost = int(20 * (1 + math.cos(t * math.pi)) / 2)
-        if boost > 0:
-            c = 30 + boost
-            draw.line([(x, 0), (x, height - 1)], fill=(c, c, c))
-    return img
-
-
-class GalleryScreen(Screen):
-    """Full-screen gallery view for component images."""
-
-    BINDINGS = [
-        Binding("escape", "close", "Back"),
-        Binding("left", "prev", "Previous"),
-        Binding("right", "next", "Next"),
-    ]
-
-    CSS = """
-    GalleryScreen {
-        background: #0a0a0a;
-    }
-    #gallery-container {
-        width: 100%;
-        height: 100%;
-        align: center middle;
-    }
-    #gallery-image-wrap {
-        width: 100%;
-        height: 1fr;
-        align: center middle;
-        padding: 1 2;
-    }
-    #gallery-image {
-        width: auto;
-        height: 100%;
-    }
-    #gallery-info {
-        text-align: center;
-        width: 100%;
-        height: 1;
-        color: #aaaaaa;
-    }
-    #gallery-desc {
-        text-align: center;
-        width: 100%;
-        height: 1;
-        color: #666666;
-        margin-bottom: 1;
-    }
-    #gallery-nav {
-        height: 1;
-        width: 100%;
-        align: center middle;
-    }
-    #gallery-nav Button {
-        height: 1;
-        min-height: 1;
-        border: none;
-        padding: 0 2;
-        background: #1a1a1a;
-        color: #33ff33;
-        margin: 0 1;
-    }
-    """
-
-    def __init__(self, results: list, index: int = 0):
-        super().__init__()
-        self._results = results
-        self._index = index
-        self._image_cache: dict[int, bytes | None] = {}
-        self._skeleton_timer = None
-        self._skeleton_phase: int = 0
-
-    def compose(self) -> ComposeResult:
-        with Vertical(id="gallery-container"):
-            with Horizontal(id="gallery-nav"):
-                yield Button("\u25C0 Prev", id="gallery-prev", variant="default")
-                yield Button("Back", id="gallery-back", variant="primary")
-                yield Button("Next \u25B6", id="gallery-next", variant="default")
-            with Container(id="gallery-image-wrap"):
-                yield TIImage(id="gallery-image")
-            yield Label("", id="gallery-info")
-            yield Label("", id="gallery-desc")
-
-    def on_mount(self):
-        self._update_gallery()
-
-    def _update_gallery(self):
-        if not self._results:
-            return
-        r = self._results[self._index]
-
-        # Update info
-        price_str = f"${r['price']:.4f}" if r['price'] else "N/A"
-        stock_str = f"{r['stock']:,}" if r['stock'] else "N/A"
-        info = f"{r['lcsc']}  |  {r['model']}  |  {r['brand']}  |  {r['package']}  |  {price_str}  |  Stock: {stock_str}"
-        self.query_one("#gallery-info", Label).update(info)
-        self.query_one("#gallery-desc", Label).update(r.get("description", ""))
-
-        # Update nav buttons
-        self.query_one("#gallery-prev", Button).disabled = self._index <= 0
-        self.query_one("#gallery-next", Button).disabled = self._index >= len(self._results) - 1
-
-        # Load image
-        img_widget = self.query_one("#gallery-image", TIImage)
-        if self._index in self._image_cache:
-            self._stop_skeleton()
-            img_widget.image = _pil_from_bytes(self._image_cache[self._index])
-        else:
-            self._start_skeleton()
-            self._fetch_image(self._index)
-
-    @work(thread=True)
-    def _fetch_image(self, index: int):
-        """Fetch image in background thread."""
-        r = self._results[index]
-        lcsc_url = r.get("url", "")
-        img_data = None
-        if lcsc_url:
-            try:
-                img_data = fetch_product_image(lcsc_url)
-            except Exception:
-                pass
-        self._image_cache[index] = img_data
-        self.app.call_from_thread(self._set_image, index, img_data)
-
-    def _set_image(self, index: int, img_data: bytes | None):
-        if index == self._index:
-            self._stop_skeleton()
-            self.query_one("#gallery-image", TIImage).image = _pil_from_bytes(img_data)
-
-    def _start_skeleton(self):
-        self._stop_skeleton()
-        self._skeleton_phase = 0
-        img_widget = self.query_one("#gallery-image", TIImage)
-        img_widget.image = _make_skeleton_frame(200, 200, 0)
-        self._skeleton_timer = self.set_interval(1 / 15, self._on_skeleton_tick)
-
-    def _on_skeleton_tick(self):
-        self._skeleton_phase = (self._skeleton_phase + 5) % 100
-        img_widget = self.query_one("#gallery-image", TIImage)
-        img_widget.image = _make_skeleton_frame(200, 200, self._skeleton_phase)
-
-    def _stop_skeleton(self):
-        if self._skeleton_timer:
-            self._skeleton_timer.stop()
-            self._skeleton_timer = None
-
-    def on_button_pressed(self, event: Button.Pressed):
-        if event.button.id == "gallery-prev":
-            self.action_prev()
-        elif event.button.id == "gallery-next":
-            self.action_next()
-        elif event.button.id == "gallery-back":
-            self.action_close()
-
-    def action_close(self):
-        self.app.pop_screen()
-
-    def action_prev(self):
-        if self._index > 0:
-            self._index -= 1
-            self._update_gallery()
-
-    def action_next(self):
-        if self._index < len(self._results) - 1:
-            self._index += 1
-            self._update_gallery()
 
 
 class JLCImportTUI(App):
@@ -599,14 +387,14 @@ class JLCImportTUI(App):
         self._stop_skeleton()
         self._skeleton_phase = 0
         img_widget = self.query_one("#detail-image", TIImage)
-        img_widget.image = _make_skeleton_frame(100, 100, 0)
+        img_widget.image = make_skeleton_frame(100, 100, 0)
         self._skeleton_timer = self.set_interval(1 / 15, self._on_skeleton_tick)
 
     def _on_skeleton_tick(self):
         """Advance skeleton shimmer."""
         self._skeleton_phase = (self._skeleton_phase + 5) % 100
         img_widget = self.query_one("#detail-image", TIImage)
-        img_widget.image = _make_skeleton_frame(100, 100, self._skeleton_phase)
+        img_widget.image = make_skeleton_frame(100, 100, self._skeleton_phase)
 
     def _stop_skeleton(self):
         """Stop skeleton animation."""
@@ -616,10 +404,7 @@ class JLCImportTUI(App):
 
     @work(thread=True)
     def _do_search(self):
-        """Perform the search in a background thread.
-
-        Fetches up to 500 results and applies client-side filters.
-        """
+        """Perform the search in a background thread."""
         search_input = self.query_one("#search-input", Input)
         keyword = search_input.value.strip()
         if not keyword:
@@ -880,7 +665,7 @@ class JLCImportTUI(App):
         if self._image_request_id != request_id:
             return
         self._stop_skeleton()
-        self.query_one("#detail-image", TIImage).image = _pil_from_bytes(img_data)
+        self.query_one("#detail-image", TIImage).image = pil_from_bytes(img_data)
 
     # --- Import ---
 
@@ -1053,28 +838,3 @@ class JLCImportTUI(App):
         log(f"\n[green bold]Done! '{title}' imported as {lib_name}:{name}[/green bold]")
         self.app.call_from_thread(self._refresh_imported_ids)
         self.app.call_from_thread(self._repopulate_results)
-
-
-def main():
-    import argparse
-
-    parser = argparse.ArgumentParser(
-        description="JLCImport TUI - interactive terminal interface for JLCPCB component import"
-    )
-    parser.add_argument(
-        "-p", "--project",
-        help="KiCad project directory (where .kicad_pro file is)",
-        default="",
-    )
-    args = parser.parse_args()
-
-    project_dir = args.project
-    if project_dir:
-        project_dir = os.path.abspath(project_dir)
-
-    app = JLCImportTUI(project_dir=project_dir)
-    app.run()
-
-
-if __name__ == "__main__":
-    main()
