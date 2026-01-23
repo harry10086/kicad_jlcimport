@@ -146,9 +146,10 @@ def search_components(keyword: str, page: int = 1, page_size: int = 10,
     except (urllib.error.HTTPError, urllib.error.URLError) as e:
         raise APIError(f"Search failed: {e}") from e
 
-    page_info = raw.get("data", {}).get("componentPageInfo", {})
+    page_info = raw.get("data") or {}
+    page_info = page_info.get("componentPageInfo") or {}
     total = page_info.get("total", 0)
-    items = page_info.get("list", [])
+    items = page_info.get("list") or []
 
     results = []
     for item in items:
