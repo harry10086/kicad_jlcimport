@@ -39,6 +39,8 @@ def download_and_save_models(uuid_3d: str, output_dir: str, name: str) -> Tuple[
     step_data = download_step(uuid_3d)
     if step_data:
         step_path = os.path.join(output_dir, f"{name}.step")
+        if not os.path.abspath(step_path).startswith(os.path.abspath(output_dir)):
+            raise ValueError(f"Invalid model name: {name}")
         with open(step_path, "wb") as f:
             f.write(step_data)
 
@@ -48,6 +50,8 @@ def download_and_save_models(uuid_3d: str, output_dir: str, name: str) -> Tuple[
         wrl_content = convert_to_vrml(wrl_source)
         if wrl_content:
             wrl_path = os.path.join(output_dir, f"{name}.wrl")
+            if not os.path.abspath(wrl_path).startswith(os.path.abspath(output_dir)):
+                raise ValueError(f"Invalid model name: {name}")
             with open(wrl_path, "w", encoding="utf-8") as f:
                 f.write(wrl_content)
 

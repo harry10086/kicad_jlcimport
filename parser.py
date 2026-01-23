@@ -66,6 +66,8 @@ def _parse_svg_arc_path(svg_path: str):
     sweep = int(match.group(7))
     ex = float(match.group(8))
     ey = float(match.group(9))
+    if rx <= 0 or ry <= 0:
+        return None
     return (sx, sy, rx, ry, large_arc, sweep, ex, ey)
 
 
