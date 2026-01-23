@@ -285,19 +285,18 @@ class JLCImportDialog(wx.Dialog):
         ).start()
 
     def _start_search_pulse(self):
-        """Start pulsing the search button label."""
+        """Start animating dots on the search button."""
         self._pulse_phase = 0
         if not hasattr(self, '_pulse_timer'):
             self._pulse_timer = wx.Timer(self)
             self.Bind(wx.EVT_TIMER, self._on_pulse_tick, self._pulse_timer)
-        self._pulse_timer.Start(400)
-        self.search_btn.SetLabel("Searching")
+        self._pulse_timer.Start(300)
+        self.search_btn.SetLabel("\u00b7")
 
     def _on_pulse_tick(self, event):
-        """Cycle the search button label dots."""
-        self._pulse_phase = (self._pulse_phase + 1) % 4
-        dots = "." * self._pulse_phase
-        self.search_btn.SetLabel(f"Searching{dots}")
+        """Cycle the search button through animated dots."""
+        self._pulse_phase = (self._pulse_phase + 1) % 3
+        self.search_btn.SetLabel("\u00b7" * (self._pulse_phase + 1))
 
     def _stop_search_pulse(self):
         """Stop pulsing and restore the search button."""
