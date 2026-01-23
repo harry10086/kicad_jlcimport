@@ -540,17 +540,34 @@ def _parse_sym_polyline(shape_str: str, origin_x: float, origin_y: float) -> EEP
     parts = shape_str.split("~")
     is_polygon = parts[0] == "PG"
 
-    # Points are consecutive x,y pairs, last fields are stroke/layer
+    # Points are consecutive x,y pairs.
+    # Format 1 (space-separated in one field): PL~13 -8 13 8~#880000~...
+    # Format 2 (tilde-separated): PL~100~100~200~200~0~3
     points = []
-    i = 1
-    while i < len(parts) - 2:
-        try:
-            x = float(parts[i])
-            y = float(parts[i + 1])
-            points.append((mil_to_mm(x - origin_x), -mil_to_mm(y - origin_y)))
-            i += 2
-        except (ValueError, IndexError):
-            break
+
+    # Check if coordinates are space-separated in a single field
+    if len(parts) > 1 and " " in parts[1]:
+        coords = parts[1].strip().split()
+        i = 0
+        while i + 1 < len(coords):
+            try:
+                x = float(coords[i])
+                y = float(coords[i + 1])
+                points.append((mil_to_mm(x - origin_x), -mil_to_mm(y - origin_y)))
+                i += 2
+            except (ValueError, IndexError):
+                break
+    else:
+        # Tilde-separated: last fields are stroke/layer
+        i = 1
+        while i < len(parts) - 2:
+            try:
+                x = float(parts[i])
+                y = float(parts[i + 1])
+                points.append((mil_to_mm(x - origin_x), -mil_to_mm(y - origin_y)))
+                i += 2
+            except (ValueError, IndexError):
+                break
 
     if len(points) < 2:
         return None

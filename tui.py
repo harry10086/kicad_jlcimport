@@ -2,14 +2,13 @@
 """TUI (Text User Interface) for JLCImport using Textual."""
 from __future__ import annotations
 
-import base64
 import io
 import os
 import sys
-import threading
 import traceback
 import webbrowser
 
+from PIL import Image as PILImage
 from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -27,12 +26,19 @@ from textual.widgets import (
     RadioSet,
     RichLog,
     Select,
-    Static,
 )
-from textual.message import Message
-from rich.text import Text
-from rich.segment import Segment
-from rich.style import Style
+from textual_image.widget import Image as _AutoTIImage, HalfcellImage as _HalfcellTIImage, SixelImage as _SixelTIImage
+
+# Warp terminal falsely reports Sixel support via device attributes query,
+# so force half-cell rendering there.
+# Rio supports Sixel but doesn't advertise it in DA1 response.
+_term_program = os.environ.get("TERM_PROGRAM", "")
+if _term_program == "WarpTerminal":
+    TIImage = _HalfcellTIImage
+elif _term_program == "rio":
+    TIImage = _SixelTIImage
+else:
+    TIImage = _AutoTIImage
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -60,439 +66,38 @@ from kicad_jlcimport.library import (
 )
 
 
-# --- Terminal Image Protocol Support ---
-
-# Protocol types
-PROTO_HALFBLOCK = "halfblock"
-PROTO_KITTY = "kitty"
-PROTO_ITERM2 = "iterm2"
-PROTO_SIXEL = "sixel"
+# --- Image Helpers ---
 
 
-def detect_terminal_graphics() -> str:
-    """Detect which image protocol the terminal supports.
-
-    Checks environment variables to determine terminal capabilities.
-    Returns one of: 'kitty', 'iterm2', 'sixel', 'halfblock'
-    """
-    term = os.environ.get("TERM", "")
-    term_program = os.environ.get("TERM_PROGRAM", "")
-    lc_terminal = os.environ.get("LC_TERMINAL", "")
-
-    # Kitty terminal
-    if term == "xterm-kitty" or term_program == "kitty":
-        return PROTO_KITTY
-
-    # WezTerm supports both Kitty and iTerm2 protocols
-    if term_program == "WezTerm":
-        return PROTO_KITTY
-
-    # iTerm2
-    if term_program == "iTerm.app" or lc_terminal == "iTerm2":
-        return PROTO_ITERM2
-
-    # Warp terminal supports iTerm2 inline images protocol
-    if term_program == "WarpTerminal":
-        return PROTO_ITERM2
-
-    # Ghostty supports Kitty graphics protocol
-    if term_program == "ghostty":
-        return PROTO_KITTY
-
-    # Konsole supports Sixel
-    if "konsole" in term_program.lower():
-        return PROTO_SIXEL
-
-    # foot terminal supports Sixel
-    if term_program == "foot" or term.startswith("foot"):
-        return PROTO_SIXEL
-
-    # Check SIXEL support hint
-    if os.environ.get("TERM_SIXEL") == "1":
-        return PROTO_SIXEL
-
-    # Default: half-block characters (works everywhere)
-    return PROTO_HALFBLOCK
-
-
-# Detect once at module load
-_GRAPHICS_PROTO = detect_terminal_graphics()
-
-
-def render_image_kitty(img_data: bytes, width: int, height: int) -> str:
-    """Render image using Kitty Graphics Protocol.
-
-    The Kitty protocol transmits PNG data via APC escape sequences.
-    The terminal renders the image at actual pixel resolution within
-    the specified cell dimensions.
-    """
+def _pil_from_bytes(data: bytes | None) -> PILImage.Image | None:
+    """Convert raw image bytes to a PIL Image, or None."""
+    if not data:
+        return None
     try:
-        from PIL import Image
-
-        img = Image.open(io.BytesIO(img_data))
-        img = img.convert("RGBA")
-
-        # Scale to fit the cell dimensions (assume ~8px per cell width, ~16px height)
-        px_width = width * 8
-        px_height = height * 16
-        img.thumbnail((px_width, px_height), Image.LANCZOS)
-
-        # Encode as PNG
-        buf = io.BytesIO()
-        img.save(buf, format="PNG")
-        png_data = buf.getvalue()
-        b64_data = base64.b64encode(png_data).decode("ascii")
-
-        # Kitty protocol: chunk base64 data (max 4096 bytes per chunk)
-        chunks = [b64_data[i:i + 4096] for i in range(0, len(b64_data), 4096)]
-
-        escape_seq = ""
-        for i, chunk in enumerate(chunks):
-            is_last = (i == len(chunks) - 1)
-            if i == 0:
-                # First chunk: specify format, action, dimensions
-                escape_seq += (
-                    f"\033_Ga=T,f=100,t=d,c={width},r={height}"
-                    f",m={'0' if is_last else '1'};{chunk}\033\\"
-                )
-            else:
-                # Continuation chunks
-                escape_seq += (
-                    f"\033_Gm={'0' if is_last else '1'};{chunk}\033\\"
-                )
-
-        # Return escape sequence followed by blank lines to reserve space
-        lines = [escape_seq]
-        for _ in range(height - 1):
-            lines.append(" " * width)
-        return "\n".join(lines)
+        return PILImage.open(io.BytesIO(data))
     except Exception:
-        return image_to_halfblock(img_data, width, height)
+        return None
 
 
-def render_image_iterm2(img_data: bytes, width: int, height: int) -> str:
-    """Render image using iTerm2 Inline Images Protocol.
+def _make_skeleton_frame(width: int, height: int, phase: int) -> PILImage.Image:
+    """Generate a skeleton shimmer frame as a PIL Image.
 
-    Uses OSC 1337 escape sequence to display images inline.
-    Supported by iTerm2, WezTerm, and others.
+    Draws a dark gray rectangle with a lighter band sweeping left to right.
     """
-    try:
-        from PIL import Image
-
-        img = Image.open(io.BytesIO(img_data))
-        img = img.convert("RGB")
-
-        # Scale to fit
-        px_width = width * 8
-        px_height = height * 16
-        img.thumbnail((px_width, px_height), Image.LANCZOS)
-
-        # Encode as PNG
-        buf = io.BytesIO()
-        img.save(buf, format="PNG")
-        b64_data = base64.b64encode(buf.getvalue()).decode("ascii")
-
-        # iTerm2 protocol: OSC 1337
-        escape_seq = (
-            f"\033]1337;File=inline=1"
-            f";width={width}"
-            f";height={height}"
-            f";preserveAspectRatio=1"
-            f":{b64_data}\007"
-        )
-
-        # Return escape sequence followed by blank lines
-        lines = [escape_seq]
-        for _ in range(height - 1):
-            lines.append(" " * width)
-        return "\n".join(lines)
-    except Exception:
-        return image_to_halfblock(img_data, width, height)
-
-
-def render_image_sixel(img_data: bytes, width: int, height: int) -> str:
-    """Render image using Sixel graphics.
-
-    Sixel encodes images as 6-pixel-high horizontal strips with a
-    palette of up to 256 colors. Widely supported by terminals.
-    """
-    try:
-        from PIL import Image
-
-        img = Image.open(io.BytesIO(img_data))
-        img = img.convert("RGB")
-
-        # Scale to cell dimensions (rough px per cell)
-        px_width = width * 8
-        px_height = height * 16
-        img.thumbnail((px_width, px_height), Image.LANCZOS)
-
-        # Quantize to 256 colors for sixel palette
-        img_quantized = img.quantize(colors=256, method=Image.Quantize.MEDIANCUT)
-        palette = img_quantized.getpalette()  # flat list [R,G,B,R,G,B,...]
-        pixels = list(img_quantized.getdata())
-        w, h = img_quantized.size
-
-        # Build sixel output
-        sixel = "\033Pq"
-
-        # Set raster attributes: pixel aspect 1:1, width x height
-        sixel += f'"1;1;{w};{h}'
-
-        # Define palette entries
-        num_colors = min(256, len(palette) // 3)
-        for i in range(num_colors):
-            r = palette[i * 3] * 100 // 255
-            g = palette[i * 3 + 1] * 100 // 255
-            b = palette[i * 3 + 2] * 100 // 255
-            sixel += f"#{i};2;{r};{g};{b}"
-
-        # Encode pixel data in 6-row strips
-        for strip_y in range(0, h, 6):
-            for color in range(num_colors):
-                # Check if this color appears in this strip
-                has_color = False
-                for row in range(6):
-                    y = strip_y + row
-                    if y >= h:
-                        break
-                    for x in range(w):
-                        if pixels[y * w + x] == color:
-                            has_color = True
-                            break
-                    if has_color:
-                        break
-
-                if not has_color:
-                    continue
-
-                # Select color
-                sixel += f"#{color}"
-
-                # Encode this color's contribution to the strip
-                for x in range(w):
-                    sixel_char = 0
-                    for row in range(6):
-                        y = strip_y + row
-                        if y < h and pixels[y * w + x] == color:
-                            sixel_char |= (1 << row)
-                    sixel += chr(63 + sixel_char)
-
-                # Carriage return (stay in same strip for next color)
-                sixel += "$"
-
-            # Move to next strip
-            sixel += "-"
-
-        sixel += "\033\\"
-
-        # Return sixel sequence followed by blank lines
-        lines = [sixel]
-        for _ in range(height - 1):
-            lines.append(" " * width)
-        return "\n".join(lines)
-    except Exception:
-        return image_to_halfblock(img_data, width, height)
-
-
-def image_to_halfblock(img_data: bytes, width: int = 40, height: int = 20) -> str:
-    """Convert image bytes to half-block character art with ANSI colors.
-
-    Uses the upper half block character (U+2580) where:
-    - Foreground color = top pixel
-    - Background color = bottom pixel
-
-    This gives 2 vertical pixels per character cell.
-    """
-    try:
-        from PIL import Image
-
-        img = Image.open(io.BytesIO(img_data))
-        img = img.convert("RGB")
-        # Height in pixels is 2x character rows (2 pixels per char)
-        pixel_height = height * 2
-        img = img.resize((width, pixel_height), Image.LANCZOS)
-
-        lines = []
-        for row in range(0, pixel_height, 2):
-            line = ""
-            for col in range(width):
-                # Top pixel (foreground)
-                r1, g1, b1 = img.getpixel((col, row))
-                # Bottom pixel (background)
-                if row + 1 < pixel_height:
-                    r2, g2, b2 = img.getpixel((col, row + 1))
-                else:
-                    r2, g2, b2 = r1, g1, b1
-                # Use Rich markup for colors
-                line += (
-                    f"[rgb({r1},{g1},{b1}) on rgb({r2},{g2},{b2})]\u2580[/]"
-                )
-            lines.append(line)
-        return "\n".join(lines)
-    except Exception:
-        return "[dim]No image available[/dim]"
-
-
-def render_image(img_data: bytes, width: int = 40, height: int = 20,
-                 protocol: str | None = None) -> str:
-    """Render image using the best available terminal protocol.
-
-    Args:
-        img_data: Raw image bytes (JPEG/PNG)
-        width: Width in terminal columns
-        height: Height in terminal rows
-        protocol: Override auto-detected protocol (for testing)
-
-    Returns:
-        String containing the rendered image (escape sequences or Rich markup)
-    """
-    proto = protocol or _GRAPHICS_PROTO
-
-    if proto == PROTO_KITTY:
-        return render_image_kitty(img_data, width, height)
-    elif proto == PROTO_ITERM2:
-        return render_image_iterm2(img_data, width, height)
-    elif proto == PROTO_SIXEL:
-        return render_image_sixel(img_data, width, height)
-    else:
-        return image_to_halfblock(img_data, width, height)
-
-
-def _build_native_escape(img_data: bytes, width: int, height: int) -> str | None:
-    """Build the native image protocol escape sequence for the detected terminal.
-
-    Returns the escape sequence string, or None if native protocol unavailable.
-    """
-    if _GRAPHICS_PROTO == PROTO_KITTY:
-        try:
-            from PIL import Image
-            img = Image.open(io.BytesIO(img_data))
-            img = img.convert("RGBA")
-            px_w, px_h = width * 8, height * 16
-            img.thumbnail((px_w, px_h), Image.LANCZOS)
-            buf = io.BytesIO()
-            img.save(buf, format="PNG")
-            b64 = base64.b64encode(buf.getvalue()).decode("ascii")
-            chunks = [b64[i:i + 4096] for i in range(0, len(b64), 4096)]
-            seq = ""
-            for i, chunk in enumerate(chunks):
-                last = (i == len(chunks) - 1)
-                if i == 0:
-                    seq += f"\033_Ga=T,f=100,t=d,c={width},r={height},m={'0' if last else '1'};{chunk}\033\\"
-                else:
-                    seq += f"\033_Gm={'0' if last else '1'};{chunk}\033\\"
-            return seq
-        except Exception:
-            return None
-    elif _GRAPHICS_PROTO == PROTO_ITERM2:
-        try:
-            from PIL import Image
-            img = Image.open(io.BytesIO(img_data))
-            img = img.convert("RGB")
-            px_w, px_h = width * 8, height * 16
-            img.thumbnail((px_w, px_h), Image.LANCZOS)
-            buf = io.BytesIO()
-            img.save(buf, format="PNG")
-            b64 = base64.b64encode(buf.getvalue()).decode("ascii")
-            return f"\033]1337;File=inline=1;width={width};height={height};preserveAspectRatio=1:{b64}\007"
-        except Exception:
-            return None
-    elif _GRAPHICS_PROTO == PROTO_SIXEL:
-        try:
-            from PIL import Image
-            img = Image.open(io.BytesIO(img_data))
-            img = img.convert("RGB")
-            px_w, px_h = width * 8, height * 16
-            img.thumbnail((px_w, px_h), Image.LANCZOS)
-            img_q = img.quantize(colors=256, method=Image.Quantize.MEDIANCUT)
-            palette = img_q.getpalette()
-            pixels = list(img_q.getdata())
-            w, h = img_q.size
-            sixel = f"\033Pq\"1;1;{w};{h}"
-            num_colors = min(256, len(palette) // 3)
-            for i in range(num_colors):
-                r = palette[i*3] * 100 // 255
-                g = palette[i*3+1] * 100 // 255
-                b = palette[i*3+2] * 100 // 255
-                sixel += f"#{i};2;{r};{g};{b}"
-            for strip_y in range(0, h, 6):
-                for color in range(num_colors):
-                    has = any(
-                        pixels[(strip_y + row) * w + x] == color
-                        for row in range(min(6, h - strip_y))
-                        for x in range(w)
-                    )
-                    if not has:
-                        continue
-                    sixel += f"#{color}"
-                    for x in range(w):
-                        val = 0
-                        for row in range(6):
-                            y = strip_y + row
-                            if y < h and pixels[y * w + x] == color:
-                                val |= (1 << row)
-                        sixel += chr(63 + val)
-                    sixel += "$"
-                sixel += "-"
-            sixel += "\033\\"
-            return sixel
-        except Exception:
-            return None
-    return None
-
-
-class ImageWidget(Static):
-    """Widget that displays images, using native terminal protocols when available.
-
-    For terminals supporting Kitty/iTerm2/Sixel, renders actual pixel images
-    by writing escape sequences directly to the terminal after Textual renders,
-    bypassing Rich's pipeline. Falls back to half-block characters otherwise.
-    """
-
-    def __init__(self, width: int = 40, height: int = 20, **kwargs):
-        super().__init__(**kwargs)
-        self._img_width = width
-        self._img_height = height
-        self._native_escape: str | None = None
-        self._use_native = _GRAPHICS_PROTO != PROTO_HALFBLOCK
-
-    def set_image(self, img_data: bytes | None):
-        """Update the displayed image."""
-        self._native_escape = None
-        if not img_data:
-            self.update("[dim italic]No image[/dim italic]")
-            return
-
-        # Always render half-block as base (visible fallback)
-        markup = image_to_halfblock(img_data, self._img_width, self._img_height)
-        self.update(markup)
-
-        # If native protocol available, build escape and punch through on top
-        if self._use_native:
-            self._native_escape = _build_native_escape(
-                img_data, self._img_width, self._img_height
-            )
-            if self._native_escape:
-                self.call_after_refresh(self._punch_through)
-
-    def set_loading(self):
-        """Show a loading placeholder."""
-        self._native_escape = None
-        self.update("[dim italic]Loading image...[/dim italic]")
-
-    def _punch_through(self):
-        """Write the image escape sequence directly to the terminal."""
-        if not self._native_escape:
-            return
-        region = self.content_region
-        # Move cursor to widget's screen position and write the image
-        seq = f"\033[{region.y + 1};{region.x + 1}H{self._native_escape}"
-        try:
-            sys.stdout.write(seq)
-            sys.stdout.flush()
-        except Exception:
-            pass
+    import math
+    from PIL import ImageDraw
+    img = PILImage.new("RGB", (width, height), (30, 30, 30))
+    draw = ImageDraw.Draw(img)
+    band_center = int(phase * (width + width // 2) / 100) - width // 4
+    band_width = width // 3
+    half_band = band_width // 2
+    for x in range(max(0, band_center - half_band), min(width, band_center + half_band)):
+        t = abs(x - band_center) / half_band
+        boost = int(20 * (1 + math.cos(t * math.pi)) / 2)
+        if boost > 0:
+            c = 30 + boost
+            draw.line([(x, 0), (x, height - 1)], fill=(c, c, c))
+    return img
 
 
 class GalleryScreen(Screen):
@@ -506,39 +111,49 @@ class GalleryScreen(Screen):
 
     CSS = """
     GalleryScreen {
-        align: center middle;
-        background: $surface;
+        background: #0a0a0a;
     }
     #gallery-container {
         width: 100%;
         height: 100%;
         align: center middle;
     }
+    #gallery-image-wrap {
+        width: 100%;
+        height: 1fr;
+        align: center middle;
+        padding: 1 2;
+    }
     #gallery-image {
         width: auto;
-        height: auto;
-        content-align: center middle;
-        margin: 1 2;
+        height: 100%;
     }
     #gallery-info {
         text-align: center;
         width: 100%;
-        margin: 0 2;
-        color: $text;
+        height: 1;
+        color: #aaaaaa;
     }
     #gallery-desc {
         text-align: center;
         width: 100%;
-        margin: 0 2;
-        color: $text-muted;
+        height: 1;
+        color: #666666;
+        margin-bottom: 1;
     }
     #gallery-nav {
-        align: center middle;
-        height: 3;
+        height: 1;
         width: 100%;
+        align: center middle;
     }
     #gallery-nav Button {
-        margin: 0 2;
+        height: 1;
+        min-height: 1;
+        border: none;
+        padding: 0 2;
+        background: #1a1a1a;
+        color: #33ff33;
+        margin: 0 1;
     }
     """
 
@@ -547,6 +162,8 @@ class GalleryScreen(Screen):
         self._results = results
         self._index = index
         self._image_cache: dict[int, bytes | None] = {}
+        self._skeleton_timer = None
+        self._skeleton_phase: int = 0
 
     def compose(self) -> ComposeResult:
         with Vertical(id="gallery-container"):
@@ -554,7 +171,8 @@ class GalleryScreen(Screen):
                 yield Button("\u25C0 Prev", id="gallery-prev", variant="default")
                 yield Button("Back", id="gallery-back", variant="primary")
                 yield Button("Next \u25B6", id="gallery-next", variant="default")
-            yield ImageWidget(width=80, height=35, id="gallery-image")
+            with Container(id="gallery-image-wrap"):
+                yield TIImage(id="gallery-image")
             yield Label("", id="gallery-info")
             yield Label("", id="gallery-desc")
 
@@ -578,11 +196,12 @@ class GalleryScreen(Screen):
         self.query_one("#gallery-next", Button).disabled = self._index >= len(self._results) - 1
 
         # Load image
-        img_widget = self.query_one("#gallery-image", ImageWidget)
+        img_widget = self.query_one("#gallery-image", TIImage)
         if self._index in self._image_cache:
-            img_widget.set_image(self._image_cache[self._index])
+            self._stop_skeleton()
+            img_widget.image = _pil_from_bytes(self._image_cache[self._index])
         else:
-            img_widget.set_loading()
+            self._start_skeleton()
             self._fetch_image(self._index)
 
     @work(thread=True)
@@ -601,7 +220,25 @@ class GalleryScreen(Screen):
 
     def _set_image(self, index: int, img_data: bytes | None):
         if index == self._index:
-            self.query_one("#gallery-image", ImageWidget).set_image(img_data)
+            self._stop_skeleton()
+            self.query_one("#gallery-image", TIImage).image = _pil_from_bytes(img_data)
+
+    def _start_skeleton(self):
+        self._stop_skeleton()
+        self._skeleton_phase = 0
+        img_widget = self.query_one("#gallery-image", TIImage)
+        img_widget.image = _make_skeleton_frame(200, 200, 0)
+        self._skeleton_timer = self.set_interval(1 / 15, self._on_skeleton_tick)
+
+    def _on_skeleton_tick(self):
+        self._skeleton_phase = (self._skeleton_phase + 5) % 100
+        img_widget = self.query_one("#gallery-image", TIImage)
+        img_widget.image = _make_skeleton_frame(200, 200, self._skeleton_phase)
+
+    def _stop_skeleton(self):
+        if self._skeleton_timer:
+            self._skeleton_timer.stop()
+            self._skeleton_timer = None
 
     def on_button_pressed(self, event: Button.Pressed):
         if event.button.id == "gallery-prev":
@@ -629,176 +266,154 @@ class JLCImportTUI(App):
     """TUI application for JLCImport - search and import JLCPCB components."""
 
     TITLE = "JLCImport"
-    SUB_TITLE = "JLCPCB Component Importer"
+    SUB_TITLE = ""
 
     CSS = """
     Screen {
-        background: $surface;
+        background: #0a0a0a;
     }
+
+    /* Compact all widgets globally */
+    Button {
+        height: 1;
+        min-height: 1;
+        border: none;
+        padding: 0 1;
+        background: #1a1a1a;
+        color: #33ff33;
+    }
+    Button:hover { background: #2a2a2a; }
+    Button:focus { background: #2a2a2a; text-style: bold; }
+    Button.-primary { color: #33ff33; }
+    Button.-success { color: #33ff33; text-style: bold; }
+    Input {
+        height: 1;
+        border: none;
+        padding: 0;
+        background: #1a1a1a;
+        color: #cccccc;
+    }
+    Input:focus { border: none; background: #222222; }
+    Select {
+        height: 1;
+        border: none;
+        padding: 0;
+        background: #1a1a1a;
+    }
+    SelectCurrent {
+        height: 1;
+        border: none;
+        padding: 0;
+    }
+    RadioButton {
+        height: 1;
+        padding: 0;
+        background: transparent;
+    }
+    RadioSet {
+        height: 1;
+        layout: horizontal;
+        background: transparent;
+        border: none;
+    }
+    Checkbox {
+        height: 1;
+        border: none;
+        padding: 0;
+        background: transparent;
+    }
+    DataTable {
+        background: #0a0a0a;
+    }
+    DataTable > .datatable--header { color: #33ff33; text-style: bold; background: #1a1a1a; }
+    DataTable > .datatable--cursor { background: #1a3a1a; }
+    Header { background: #1a1a1a; color: #33ff33; }
+    Footer { background: #1a1a1a; }
+    RichLog { background: #0a0a0a; }
+    Label { color: #aaaaaa; }
 
     #main-container {
         width: 100%;
         height: 100%;
     }
 
-    /* Search section */
+    /* Search: single compact row */
     #search-section {
         height: auto;
-        border: solid $primary;
-        margin: 0 1;
-        padding: 0 1;
-    }
-    #search-section Label.section-title {
-        text-style: bold;
-        color: $primary;
-        margin-bottom: 1;
+        padding: 1 0 0 1;
     }
     #search-row {
-        height: 3;
+        height: 1;
         width: 100%;
     }
-    #search-input {
-        width: 1fr;
-        margin-right: 1;
-    }
-    #search-btn {
-        width: 12;
-    }
+    #search-input { width: 1fr; }
+    #search-btn { margin-left: 1; }
     #filter-row {
-        height: 3;
+        height: 1;
         width: 100%;
-        margin-top: 0;
+        margin-top: 1;
     }
-    #type-filter {
-        layout: horizontal;
-        height: 3;
-        width: auto;
-    }
-    #type-filter RadioButton {
-        width: auto;
-        margin-right: 1;
-        height: 3;
-    }
-    #min-stock-select {
-        width: 16;
-        margin: 0 1;
-    }
-    #package-select {
-        width: 20;
-        margin: 0 1;
-    }
+    #type-filter RadioButton { width: auto; margin-right: 1; }
+    #min-stock-select { width: 14; margin: 0 1; }
+    #package-select { width: 18; margin: 0 1; }
     #results-count {
         height: 1;
-        margin: 0 2;
-        color: $text-muted;
+        color: #666666;
+        padding-left: 1;
     }
 
-    /* Results section */
+    /* Results */
     #results-section {
         height: 1fr;
-        min-height: 8;
-        margin: 0 1;
+        min-height: 6;
     }
-    #results-table {
-        height: 100%;
-    }
+    #results-table { height: 100%; }
 
-    /* Content area (details + import) */
-    #content-area {
-        height: auto;
-        max-height: 20;
-    }
-
-    /* Detail section */
+    /* Detail: compact horizontal layout */
     #detail-section {
         height: auto;
-        border: solid $secondary;
-        margin: 0 1;
-        padding: 0 1;
+        border-top: solid #333333;
+        padding: 0;
     }
-    #detail-section Label.section-title {
-        text-style: bold;
-        color: $secondary;
-        margin-bottom: 1;
-    }
-    #detail-content {
-        height: auto;
-    }
+    #detail-content { height: auto; }
     #detail-image {
         width: 22;
         height: 10;
         margin-right: 1;
     }
-    #detail-info {
-        width: 1fr;
-        height: auto;
-    }
-    .detail-field {
-        height: 1;
-    }
-    #detail-desc {
-        height: 2;
-        color: $text-muted;
-    }
+    #detail-info { width: 1fr; height: 10; }
+    .detail-field { height: 1; }
+    #detail-desc { height: auto; max-height: 3; width: 100%; color: #666666; }
     #detail-buttons {
-        height: 3;
-        margin-top: 1;
-    }
-    #detail-buttons Button {
-        margin-right: 1;
-    }
-
-    /* Import section */
-    #import-section {
-        height: auto;
-        border: solid $success;
-        margin: 0 1;
-        padding: 0 1;
-    }
-    #import-section Label.section-title {
-        text-style: bold;
-        color: $success;
+        dock: bottom;
+        height: 1;
+        margin-left: 1;
         margin-bottom: 1;
     }
-    #import-content {
+    #detail-buttons Button { margin-right: 1; }
+
+    /* Import: single compact row */
+    #import-section {
         height: auto;
+        border-top: solid #333333;
+        padding: 0;
     }
-    #dest-selector {
-        width: 1fr;
-        height: auto;
-        layout: horizontal;
-    }
-    #dest-selector RadioButton {
-        width: auto;
-        margin-right: 2;
-        height: 3;
-    }
+    #dest-selector RadioButton { width: auto; margin-right: 2; }
     #import-options {
-        height: 3;
+        height: auto;
         width: 100%;
     }
-    #part-input {
-        width: 20;
-        margin-right: 1;
-    }
-    #overwrite-cb {
-        margin-right: 1;
-        height: 3;
-    }
-    #import-btn {
-        width: 12;
-    }
+    #part-input { width: 16; }
+    #overwrite-cb { margin: 0 1; width: auto; }
+    #import-btn { margin-left: 1; }
 
-    /* Status section */
+    /* Status */
     #status-section {
-        height: 8;
-        min-height: 5;
-        margin: 0 1;
-        border: solid $accent;
+        height: 6;
+        min-height: 4;
+        border-top: solid #333333;
     }
-    #status-log {
-        height: 100%;
-    }
+    #status-log { height: 100%; }
     """
 
     BINDINGS = [
@@ -835,13 +450,16 @@ class JLCImportTUI(App):
         self._image_request_id: int = 0
         self._datasheet_url: str = ""
         self._lcsc_page_url: str = ""
+        self._pulse_timer = None
+        self._pulse_phase: int = 0
+        self._skeleton_timer = None
+        self._skeleton_phase: int = 0
+        self._col_names = ["LCSC", "Type", "Price", "Stock", "Part", "Package", "Description"]
 
     def compose(self) -> ComposeResult:
         yield Header()
         with VerticalScroll(id="main-container"):
-            # Search section
             with Vertical(id="search-section"):
-                yield Label("Search", classes="section-title")
                 with Horizontal(id="search-row"):
                     yield Input(
                         placeholder="Search JLCPCB parts...",
@@ -866,18 +484,14 @@ class JLCImportTUI(App):
                         allow_blank=False,
                     )
 
-            # Results count
             yield Label("", id="results-count")
 
-            # Results table
             with Container(id="results-section"):
                 yield DataTable(id="results-table", cursor_type="row")
 
-            # Detail section
             with Vertical(id="detail-section"):
-                yield Label("Details", classes="section-title")
                 with Horizontal(id="detail-content"):
-                    yield ImageWidget(width=20, height=10, id="detail-image")
+                    yield TIImage(id="detail-image")
                     with Vertical(id="detail-info"):
                         yield Label("", id="detail-part", classes="detail-field")
                         yield Label("", id="detail-lcsc", classes="detail-field")
@@ -887,29 +501,25 @@ class JLCImportTUI(App):
                         with Horizontal(id="detail-buttons"):
                             yield Button("Import", id="detail-import-btn", variant="success", disabled=True)
                             yield Button("Datasheet", id="detail-datasheet-btn", disabled=True)
-                            yield Button("LCSC Page", id="detail-lcsc-btn", disabled=True)
+                            yield Button("LCSC", id="detail-lcsc-btn", disabled=True)
 
-            # Import section
             with Vertical(id="import-section"):
-                yield Label("Import", classes="section-title")
-                with Vertical(id="import-content"):
+                with Horizontal(id="import-options"):
                     with RadioSet(id="dest-selector"):
                         yield RadioButton(
-                            f"Project: {self._project_dir or '(no project)'}",
+                            f"Proj:{self._project_dir or 'n/a'}",
                             value=bool(self._project_dir),
                             id="dest-project",
                         )
                         yield RadioButton(
-                            f"Global: {self._global_lib_dir}",
+                            "Global",
                             value=not bool(self._project_dir),
                             id="dest-global",
                         )
-                    with Horizontal(id="import-options"):
-                        yield Input(placeholder="C427602", id="part-input")
-                        yield Checkbox("Overwrite", id="overwrite-cb")
-                        yield Button("Import", id="import-btn", variant="success")
+                    yield Input(placeholder="C427602", id="part-input")
+                    yield Checkbox("Overwrite", id="overwrite-cb")
+                    yield Button("Import", id="import-btn", variant="success")
 
-            # Status log
             with Container(id="status-section"):
                 yield RichLog(id="status-log", highlight=True, markup=True)
 
@@ -918,10 +528,10 @@ class JLCImportTUI(App):
     def on_mount(self):
         """Set up the results table columns."""
         table = self.query_one("#results-table", DataTable)
-        table.add_columns("LCSC", "Type", "Price", "Stock", "Part", "Package")
-        # Disable project radio if no project dir
+        table.add_columns("LCSC", "Type", "Price", "Stock", "Part", "Package", "Description")
         if not self._project_dir:
             self.query_one("#dest-project", RadioButton).disabled = True
+        self.query_one("#search-input", Input).focus()
 
     def _log(self, msg: str):
         """Write a message to the status log."""
@@ -962,6 +572,48 @@ class JLCImportTUI(App):
             idx = max(0, self._selected_index)
             self.push_screen(GalleryScreen(self._search_results, idx))
 
+    def _start_search_pulse(self):
+        """Animate dots on the search button."""
+        self._pulse_phase = 0
+        btn = self.query_one("#search-btn", Button)
+        btn.label = "\u00b7"
+        btn.disabled = True
+        self._pulse_timer = self.set_interval(0.3, self._on_pulse_tick)
+
+    def _on_pulse_tick(self):
+        """Cycle through dot animation."""
+        self._pulse_phase = (self._pulse_phase + 1) % 3
+        self.query_one("#search-btn", Button).label = "\u00b7" * (self._pulse_phase + 1)
+
+    def _stop_search_pulse(self):
+        """Stop animation and restore button."""
+        if self._pulse_timer:
+            self._pulse_timer.stop()
+            self._pulse_timer = None
+        btn = self.query_one("#search-btn", Button)
+        btn.label = "Search"
+        btn.disabled = False
+
+    def _start_skeleton(self):
+        """Start skeleton shimmer on detail image."""
+        self._stop_skeleton()
+        self._skeleton_phase = 0
+        img_widget = self.query_one("#detail-image", TIImage)
+        img_widget.image = _make_skeleton_frame(100, 100, 0)
+        self._skeleton_timer = self.set_interval(1 / 15, self._on_skeleton_tick)
+
+    def _on_skeleton_tick(self):
+        """Advance skeleton shimmer."""
+        self._skeleton_phase = (self._skeleton_phase + 5) % 100
+        img_widget = self.query_one("#detail-image", TIImage)
+        img_widget.image = _make_skeleton_frame(100, 100, self._skeleton_phase)
+
+    def _stop_skeleton(self):
+        """Stop skeleton animation."""
+        if self._skeleton_timer:
+            self._skeleton_timer.stop()
+            self._skeleton_timer = None
+
     @work(thread=True)
     def _do_search(self):
         """Perform the search in a background thread.
@@ -974,9 +626,7 @@ class JLCImportTUI(App):
             return
 
         self.app.call_from_thread(self._log, f"Searching for \"{keyword}\"...")
-        self.app.call_from_thread(
-            self.query_one("#search-btn", Button).__setattr__, "disabled", True
-        )
+        self.app.call_from_thread(self._start_search_pulse)
 
         try:
             result = search_components(keyword, page_size=500)
@@ -996,6 +646,7 @@ class JLCImportTUI(App):
                 f"  {result['total']} total results, showing {len(self._search_results)}",
             )
             self.app.call_from_thread(self._refresh_imported_ids)
+            self.app.call_from_thread(self._update_sort_indicators)
             self.app.call_from_thread(self._repopulate_results)
 
         except APIError as e:
@@ -1005,9 +656,7 @@ class JLCImportTUI(App):
                 self._log, f"[red]Error: {type(e).__name__}: {e}[/red]"
             )
         finally:
-            self.app.call_from_thread(
-                self.query_one("#search-btn", Button).__setattr__, "disabled", False
-            )
+            self.app.call_from_thread(self._stop_search_pulse)
 
     # --- Filtering ---
 
@@ -1073,18 +722,21 @@ class JLCImportTUI(App):
         paths = []
         if self._project_dir:
             paths.append(os.path.join(self._project_dir, "JLCImport.kicad_sym"))
-        global_dir = get_global_lib_dir()
-        paths.append(os.path.join(global_dir, "JLCImport.kicad_sym"))
+        try:
+            global_dir = get_global_lib_dir()
+            paths.append(os.path.join(global_dir, "JLCImport.kicad_sym"))
+        except Exception:
+            pass
         for p in paths:
-            if os.path.exists(p):
-                try:
+            try:
+                if os.path.exists(p):
                     with open(p, "r", encoding="utf-8") as f:
                         for match in _re.finditer(
                             r'\(property "LCSC" "(C\d+)"', f.read()
                         ):
                             self._imported_ids.add(match.group(1))
-                except Exception:
-                    pass
+            except (PermissionError, OSError):
+                pass
 
     def _repopulate_results(self):
         """Repopulate the DataTable from search results."""
@@ -1102,6 +754,7 @@ class JLCImportTUI(App):
                 stock_str,
                 r["model"],
                 r.get("package", ""),
+                r.get("description", ""),
             )
         self._update_results_count()
 
@@ -1135,18 +788,41 @@ class JLCImportTUI(App):
             3: lambda r: r.get("stock") or 0,
             4: lambda r: r.get("model", "").lower(),
             5: lambda r: r.get("package", "").lower(),
+            6: lambda r: r.get("description", "").lower(),
         }
         key_fn = key_map.get(col_idx)
         if key_fn:
             self._search_results.sort(key=key_fn, reverse=not self._sort_ascending)
+            self._update_sort_indicators()
             self._repopulate_results()
+
+    def _update_sort_indicators(self):
+        """Update column headers with sort direction arrows."""
+        table = self.query_one("#results-table", DataTable)
+        col_keys = list(table.columns.keys())
+        for i, key in enumerate(col_keys):
+            name = self._col_names[i]
+            if i == self._sort_col:
+                arrow = "\u25b2" if self._sort_ascending else "\u25bc"
+                table.columns[key].label = f"{name} {arrow}"
+            else:
+                table.columns[key].label = name
 
     # --- Selection ---
 
+    def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted):
+        """Update detail when cursor moves."""
+        self._show_detail(event.cursor_row)
+
     def on_data_table_row_selected(self, event: DataTable.RowSelected):
         """Handle row selection in results table."""
-        row_idx = event.cursor_row
+        self._show_detail(event.cursor_row)
+
+    def _show_detail(self, row_idx: int):
+        """Update the detail panel for the given row."""
         if row_idx < 0 or row_idx >= len(self._search_results):
+            return
+        if row_idx == self._selected_index:
             return
         self._selected_index = row_idx
         r = self._search_results[row_idx]
@@ -1179,13 +855,13 @@ class JLCImportTUI(App):
         # Fetch image
         self._image_request_id += 1
         request_id = self._image_request_id
-        img_widget = self.query_one("#detail-image", ImageWidget)
         lcsc_url = r.get("url", "")
         if lcsc_url:
-            img_widget.set_loading()
+            self._start_skeleton()
             self._fetch_detail_image(lcsc_url, request_id)
         else:
-            img_widget.set_image(None)
+            self._stop_skeleton()
+            self.query_one("#detail-image", TIImage).image = None
 
     @work(thread=True)
     def _fetch_detail_image(self, lcsc_url: str, request_id: int):
@@ -1203,7 +879,8 @@ class JLCImportTUI(App):
         """Set the detail image (called on main thread)."""
         if self._image_request_id != request_id:
             return
-        self.query_one("#detail-image", ImageWidget).set_image(img_data)
+        self._stop_skeleton()
+        self.query_one("#detail-image", TIImage).image = _pil_from_bytes(img_data)
 
     # --- Import ---
 
