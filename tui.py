@@ -360,13 +360,15 @@ def render_image(img_data: bytes, width: int = 40, height: int = 20,
 
 
 class ImageWidget(Static):
-    """Widget that displays images using the best available terminal protocol.
+    """Widget that displays images using half-block characters.
 
-    Supports:
-    - Kitty Graphics Protocol (Kitty, WezTerm, Ghostty)
-    - iTerm2 Inline Images (iTerm2, WezTerm)
-    - Sixel Graphics (foot, Konsole, xterm)
-    - Half-block characters (universal fallback)
+    Native terminal image protocols (Kitty, iTerm2, Sixel) cannot be used
+    within Textual because Rich's rendering pipeline strips non-SGR escape
+    sequences. The half-block approach works because it uses Rich's own
+    color markup, producing 2 vertical pixels per character cell.
+
+    For native protocol rendering outside of Textual, use render_image()
+    directly with print().
     """
 
     def __init__(self, width: int = 40, height: int = 20, **kwargs):
@@ -377,7 +379,7 @@ class ImageWidget(Static):
     def set_image(self, img_data: bytes | None):
         """Update the displayed image."""
         if img_data:
-            markup = render_image(img_data, self._img_width, self._img_height)
+            markup = image_to_halfblock(img_data, self._img_width, self._img_height)
         else:
             markup = "[dim italic]No image[/dim italic]"
         self.update(markup)
@@ -713,6 +715,10 @@ class JLCImportTUI(App):
     def __init__(self, project_dir: str = ""):
         super().__init__()
         self._project_dir = project_dir
+        try:
+            self._global_lib_dir = get_global_lib_dir()
+        except Exception:
+            self._global_lib_dir = "(unavailable)"
         self._search_results: list = []
         self._raw_search_results: list = []
         self._sort_col: int = -1
@@ -788,7 +794,7 @@ class JLCImportTUI(App):
                             id="dest-project",
                         )
                         yield RadioButton(
-                            f"Global: {get_global_lib_dir()}",
+                            f"Global: {self._global_lib_dir}",
                             value=not bool(self._project_dir),
                             id="dest-global",
                         )
