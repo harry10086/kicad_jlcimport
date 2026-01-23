@@ -1,8 +1,8 @@
 """Tests for symbol_writer.py - KiCad symbol generation."""
 import pytest
 
-from JLCImport.ee_types import EESymbol, EEPin, EERectangle, EECircle, EEPolyline
-from JLCImport.symbol_writer import write_symbol, _estimate_top, _estimate_bottom
+from kicad_jlcimport.ee_types import EESymbol, EEPin, EERectangle, EECircle, EEPolyline
+from kicad_jlcimport.symbol_writer import write_symbol, _estimate_top, _estimate_bottom
 
 
 def _make_symbol(**kwargs):

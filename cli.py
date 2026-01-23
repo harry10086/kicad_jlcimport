@@ -6,12 +6,12 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from JLCImport.api import search_components, fetch_full_component, APIError, validate_lcsc_id
-from JLCImport.parser import parse_footprint_shapes, parse_symbol_shapes
-from JLCImport.footprint_writer import write_footprint
-from JLCImport.symbol_writer import write_symbol
-from JLCImport.library import sanitize_name
-from JLCImport.model3d import compute_model_transform
+from kicad_jlcimport.api import search_components, fetch_full_component, APIError, validate_lcsc_id
+from kicad_jlcimport.parser import parse_footprint_shapes, parse_symbol_shapes
+from kicad_jlcimport.footprint_writer import write_footprint
+from kicad_jlcimport.symbol_writer import write_symbol
+from kicad_jlcimport.library import sanitize_name
+from kicad_jlcimport.model3d import compute_model_transform
 
 
 def cmd_search(args):

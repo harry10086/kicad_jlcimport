@@ -2,12 +2,12 @@
 import math
 import pytest
 
-from JLCImport.parser import (
+from kicad_jlcimport.parser import (
     mil_to_mm, parse_footprint_shapes, parse_symbol_shapes,
     compute_arc_midpoint, _parse_svg_arc_path, _find_svg_path,
     MILS_TO_MM_DIVISOR,
 )
-from JLCImport.ee_types import EEFootprint, EESymbol
+from kicad_jlcimport.ee_types import EEFootprint, EESymbol
 
 
 class TestMilToMm:

@@ -1,8 +1,8 @@
 """Tests for model3d.py - VRML conversion and model transforms."""
 import pytest
 
-from JLCImport.model3d import convert_to_vrml, compute_model_transform
-from JLCImport.ee_types import EE3DModel
+from kicad_jlcimport.model3d import convert_to_vrml, compute_model_transform
+from kicad_jlcimport.ee_types import EE3DModel
 
 
 class TestComputeModelTransform:

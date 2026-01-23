@@ -289,6 +289,8 @@ class JLCImportDialog(wx.Dialog):
 
         except APIError as e:
             self._log(f"Search error: {e}")
+        except Exception as e:
+            self._log(f"Unexpected error: {type(e).__name__}: {e}")
         finally:
             self.search_btn.Enable()
 

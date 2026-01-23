@@ -58,7 +58,7 @@ class APIError(Exception):
 def _urlopen(req, timeout=30):
     """Open a URL with SSL fallback.
 
-    Tries verified SSL first. If that fails with a certificate error,
+    Tries verified SSL first. If that fails with an SSL-related error,
     falls back to unverified SSL for the remainder of the session
     (common with KiCad's bundled Python on macOS/Windows).
     """
@@ -66,14 +66,10 @@ def _urlopen(req, timeout=30):
     if not _ssl_use_unverified and _SSL_VERIFIED is not None:
         try:
             return urllib.request.urlopen(req, timeout=timeout, context=_SSL_VERIFIED)
-        except urllib.error.URLError as e:
-            if isinstance(e.reason, ssl.SSLCertVerificationError):
-                warnings.warn(
-                    "SSL certificate verification failed, falling back to unverified. "
-                    "This is common with KiCad's bundled Python.",
-                    SecurityWarning,
-                    stacklevel=3,
-                )
+        except (urllib.error.URLError, ssl.SSLError, OSError) as e:
+            # Check if this is SSL-related
+            reason = getattr(e, 'reason', e)
+            if isinstance(reason, (ssl.SSLError, OSError)) or 'ssl' in str(e).lower():
                 _ssl_use_unverified = True
             else:
                 raise

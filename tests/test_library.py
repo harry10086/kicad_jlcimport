@@ -3,7 +3,7 @@ import os
 import tempfile
 import pytest
 
-from JLCImport.library import (
+from kicad_jlcimport.library import (
     sanitize_name, ensure_lib_structure, add_symbol_to_lib,
     save_footprint, _update_lib_table, _remove_symbol,
 )

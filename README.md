@@ -32,13 +32,13 @@ A KiCad 9 Action Plugin that imports symbols, footprints, and 3D models directly
 ### Option 1: Symlink (recommended for development)
 
 ```bash
-ln -s /path/to/JLCImport ~/Documents/KiCad/9.0/scripting/plugins/JLCImport
+ln -s /path/to/kicad_jlcimport ~/Documents/KiCad/9.0/scripting/plugins/kicad_jlcimport
 ```
 
 ### Option 2: Copy
 
 ```bash
-cp -r /path/to/JLCImport ~/Documents/KiCad/9.0/scripting/plugins/JLCImport
+cp -r /path/to/kicad_jlcimport ~/Documents/KiCad/9.0/scripting/plugins/kicad_jlcimport
 ```
 
 ### Activate
@@ -70,14 +70,14 @@ The CLI tool can be used outside KiCad for testing or scripted imports:
 
 ```bash
 # Search
-python3 -m JLCImport.cli search "100nF 0402" -t basic --in-stock
-python3 -m JLCImport.cli search "ESP32" -n 20
+python3 -m kicad_jlcimport.cli search "100nF 0402" -t basic --in-stock
+python3 -m kicad_jlcimport.cli search "ESP32" -n 20
 
 # Import (prints generated output)
-python3 -m JLCImport.cli import C427602 --show both
+python3 -m kicad_jlcimport.cli import C427602 --show both
 
 # Import to directory
-python3 -m JLCImport.cli import C427602 -o ./output
+python3 -m kicad_jlcimport.cli import C427602 -o ./output
 ```
 
 ## How It Works

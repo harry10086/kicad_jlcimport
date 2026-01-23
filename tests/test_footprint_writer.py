@@ -1,8 +1,8 @@
 """Tests for footprint_writer.py - KiCad footprint generation."""
 import pytest
 
-from JLCImport.ee_types import EEFootprint, EEPad, EETrack, EECircle, EEHole, EEArc
-from JLCImport.footprint_writer import write_footprint
+from kicad_jlcimport.ee_types import EEFootprint, EEPad, EETrack, EECircle, EEHole, EEArc
+from kicad_jlcimport.footprint_writer import write_footprint
 
 
 def _make_footprint(**kwargs):
