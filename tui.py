@@ -88,6 +88,10 @@ def detect_terminal_graphics() -> str:
     if term_program == "iTerm.app" or lc_terminal == "iTerm2":
         return PROTO_ITERM2
 
+    # Warp terminal supports iTerm2 inline images protocol
+    if term_program == "WarpTerminal":
+        return PROTO_ITERM2
+
     # Ghostty supports Kitty graphics protocol
     if term_program == "ghostty":
         return PROTO_KITTY
