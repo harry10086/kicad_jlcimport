@@ -1,0 +1,9 @@
+[project]
+name = "kicad-jlcimport"
+version = "1.0.0"
+description = "KiCad 9 plugin to import components from JLCPCB/LCSC"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

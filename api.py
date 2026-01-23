@@ -1,20 +1,43 @@
 """EasyEDA/LCSC HTTP client using only urllib."""
 import json
+import re
 import ssl
 import urllib.request
+import warnings
 from typing import Any, Dict, List, Optional
 
 
-# macOS/KiCad Python often lacks certificate store - use unverified as fallback
-try:
-    _SSL_CTX = ssl.create_default_context()
-    # Test if certs work by just creating the context
-    _SSL_CTX.check_hostname = True
-except Exception:
-    _SSL_CTX = ssl.create_default_context()
+def _make_ssl_contexts():
+    """Create verified and unverified SSL contexts.
 
-# Always allow unverified for compatibility with KiCad's bundled Python
-_SSL_CTX = ssl._create_unverified_context()
+    Returns (verified_ctx, unverified_ctx). The verified context is preferred;
+    the unverified context is the fallback for KiCad's bundled Python where
+    certificate stores may be missing or incomplete.
+    """
+    try:
+        verified = ssl.create_default_context()
+    except Exception:
+        verified = None
+    unverified = ssl._create_unverified_context()
+    return verified, unverified
+
+
+_SSL_VERIFIED, _SSL_UNVERIFIED = _make_ssl_contexts()
+# Tracks whether we've already fallen back to unverified for this session
+_ssl_use_unverified = False
+
+
+def validate_lcsc_id(lcsc_id: str) -> str:
+    """Validate and normalize an LCSC part number.
+
+    Raises ValueError if the ID doesn't match the expected C<digits> format.
+    """
+    lcsc_id = lcsc_id.strip().upper()
+    if not lcsc_id.startswith("C"):
+        lcsc_id = "C" + lcsc_id
+    if not re.match(r'^C\d{1,12}$', lcsc_id):
+        raise ValueError(f"Invalid LCSC part number: {lcsc_id}")
+    return lcsc_id
 
 
 EASYEDA_API = "https://easyeda.com/api"
@@ -32,11 +55,32 @@ class APIError(Exception):
     pass
 
 
+def _urlopen(req, timeout=30):
+    """Open a URL with SSL fallback.
+
+    Tries verified SSL first. If that fails with an SSL-related error,
+    falls back to unverified SSL for the remainder of the session
+    (common with KiCad's bundled Python on macOS/Windows).
+    """
+    global _ssl_use_unverified
+    if not _ssl_use_unverified and _SSL_VERIFIED is not None:
+        try:
+            return urllib.request.urlopen(req, timeout=timeout, context=_SSL_VERIFIED)
+        except (urllib.error.URLError, ssl.SSLError, OSError) as e:
+            # Check if this is SSL-related
+            reason = getattr(e, 'reason', e)
+            if isinstance(reason, (ssl.SSLError, OSError)) or 'ssl' in str(e).lower():
+                _ssl_use_unverified = True
+            else:
+                raise
+    return urllib.request.urlopen(req, timeout=timeout, context=_SSL_UNVERIFIED)
+
+
 def _get_json(url: str) -> Any:
     """Fetch JSON from a URL."""
     req = urllib.request.Request(url, headers=_HEADERS)
     try:
-        with urllib.request.urlopen(req, timeout=30, context=_SSL_CTX) as resp:
+        with _urlopen(req, timeout=30) as resp:
             data = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         raise APIError(f"HTTP {e.code} fetching {url}") from e
@@ -97,7 +141,7 @@ def search_components(keyword: str, page: int = 1, page_size: int = 10,
         "User-Agent": _HEADERS["User-Agent"],
     })
     try:
-        with urllib.request.urlopen(req, timeout=15, context=_SSL_CTX) as resp:
+        with _urlopen(req, timeout=15) as resp:
             raw = json.loads(resp.read().decode("utf-8"))
     except (urllib.error.HTTPError, urllib.error.URLError) as e:
         raise APIError(f"Search failed: {e}") from e
@@ -128,16 +172,29 @@ def search_components(keyword: str, page: int = 1, page_size: int = 10,
     return {"total": total, "results": results}
 
 
+_ALLOWED_IMAGE_HOSTS = ("jlcpcb.com", "www.jlcpcb.com", "lcsc.com", "www.lcsc.com")
+
+
 def fetch_product_image(lcsc_url: str) -> Optional[bytes]:
-    """Fetch product image from LCSC product page. Returns JPEG bytes or None."""
-    import re
+    """Fetch product image from LCSC/JLCPCB product page. Returns JPEG bytes or None."""
     if not lcsc_url:
         return None
+    # SSRF protection: only allow fetching from known LCSC/JLCPCB domains
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(lcsc_url)
+        if parsed.hostname not in _ALLOWED_IMAGE_HOSTS:
+            return None
+        if parsed.scheme not in ("http", "https"):
+            return None
+    except Exception:
+        return None
+
     req = urllib.request.Request(lcsc_url, headers={
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
     })
     try:
-        with urllib.request.urlopen(req, timeout=10, context=_SSL_CTX) as resp:
+        with _urlopen(req, timeout=10) as resp:
             html = resp.read().decode("utf-8")
     except (urllib.error.HTTPError, urllib.error.URLError):
         return None
@@ -148,9 +205,11 @@ def fetch_product_image(lcsc_url: str) -> Optional[bytes]:
         return None
 
     img_url = match.group(0)
+    if not img_url.startswith("https://assets.lcsc.com/"):
+        return None
     req2 = urllib.request.Request(img_url, headers=_HEADERS)
     try:
-        with urllib.request.urlopen(req2, timeout=10, context=_SSL_CTX) as resp:
+        with _urlopen(req2, timeout=10) as resp:
             return resp.read()
     except (urllib.error.HTTPError, urllib.error.URLError):
         return None
@@ -161,7 +220,7 @@ def download_step(uuid_3d: str) -> Optional[bytes]:
     url = f"{EASYEDA_3D_BUCKET}/{uuid_3d}"
     req = urllib.request.Request(url, headers=_HEADERS)
     try:
-        with urllib.request.urlopen(req, timeout=60, context=_SSL_CTX) as resp:
+        with _urlopen(req, timeout=60) as resp:
             return resp.read()
     except (urllib.error.HTTPError, urllib.error.URLError):
         return None
@@ -172,7 +231,7 @@ def download_wrl_source(uuid_3d: str) -> Optional[str]:
     url = f"{EASYEDA_3D_API}/{uuid_3d}"
     req = urllib.request.Request(url, headers=_HEADERS)
     try:
-        with urllib.request.urlopen(req, timeout=60, context=_SSL_CTX) as resp:
+        with _urlopen(req, timeout=60) as resp:
             return resp.read().decode("utf-8")
     except (urllib.error.HTTPError, urllib.error.URLError):
         return None
@@ -188,6 +247,7 @@ def fetch_full_component(lcsc_id: str) -> Dict[str, Any]:
         footprint_data (shape data dict),
         description, manufacturer, manufacturer_part
     """
+    lcsc_id = validate_lcsc_id(lcsc_id)
     uuids = fetch_component_uuids(lcsc_id)
 
     # Last UUID is footprint, others are symbol parts

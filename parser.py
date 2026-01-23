@@ -36,9 +36,46 @@ PIN_TYPES = {
 }
 
 
+MILS_TO_MM_DIVISOR = 3.937
+
+
 def mil_to_mm(mil: float) -> float:
     """Convert mils to millimeters."""
-    return mil / 3.937
+    return mil / MILS_TO_MM_DIVISOR
+
+
+_SVG_ARC_RE = re.compile(
+    r"M\s*([\d.e+-]+)[,\s]+([\d.e+-]+)\s*A\s*([\d.e+-]+)[,\s]+([\d.e+-]+)"
+    r"[,\s]+([\d.e+-]+)[,\s]+([01])[,\s]+([01])[,\s]+([\d.e+-]+)[,\s]+([\d.e+-]+)"
+)
+
+
+def _parse_svg_arc_path(svg_path: str):
+    """Parse an SVG arc path string (M sx sy A rx ry rot large sweep ex ey).
+
+    Returns (sx, sy, rx, ry, large_arc, sweep, ex, ey) or None if parsing fails.
+    """
+    match = _SVG_ARC_RE.match(svg_path)
+    if not match:
+        return None
+    sx = float(match.group(1))
+    sy = float(match.group(2))
+    rx = float(match.group(3))
+    ry = float(match.group(4))
+    large_arc = int(match.group(6))
+    sweep = int(match.group(7))
+    ex = float(match.group(8))
+    ey = float(match.group(9))
+    return (sx, sy, rx, ry, large_arc, sweep, ex, ey)
+
+
+def _find_svg_path(parts: List[str], start: int = 1) -> str:
+    """Find the SVG path field (starting with 'M') in a parts list."""
+    for i in range(start, len(parts)):
+        p = parts[i].strip()
+        if p.startswith("M"):
+            return p
+    return ""
 
 
 def parse_footprint_shapes(shapes: List[str], origin_x: float, origin_y: float) -> EEFootprint:
@@ -217,29 +254,14 @@ def _parse_fp_arc(parts: List[str]) -> EEArc:
     layer = parts[2]
 
     # Find SVG path - look for field starting with "M"
-    svg_path = ""
-    for i in range(3, len(parts)):
-        if parts[i].strip().startswith("M"):
-            svg_path = parts[i].strip()
-            break
-
+    svg_path = _find_svg_path(parts, start=3)
     if not svg_path:
         return None
 
-    # Parse: M sx sy A rx ry rot large_flag sweep_flag ex ey
-    match = re.match(
-        r"M\s*([\d.e+-]+)[,\s]+([\d.e+-]+)\s*A\s*([\d.e+-]+)[,\s]+([\d.e+-]+)"
-        r"[,\s]+([\d.e+-]+)[,\s]+([01])[,\s]+([01])[,\s]+([\d.e+-]+)[,\s]+([\d.e+-]+)",
-        svg_path
-    )
-    if not match:
+    parsed = _parse_svg_arc_path(svg_path)
+    if not parsed:
         return None
-
-    sx, sy = float(match.group(1)), float(match.group(2))
-    rx, ry = float(match.group(3)), float(match.group(4))
-    large_arc = int(match.group(6))
-    sweep = int(match.group(7))
-    ex, ey = float(match.group(8)), float(match.group(9))
+    sx, sy, rx, ry, large_arc, sweep, ex, ey = parsed
 
     kicad_layer = LAYER_MAP.get(layer, "F.SilkS")
     return EEArc(
@@ -539,29 +561,14 @@ def _parse_sym_polyline(shape_str: str, origin_x: float, origin_y: float) -> EEP
 def _parse_sym_arc(shape_str: str, origin_x: float, origin_y: float) -> EEArc:
     """Parse symbol arc."""
     parts = shape_str.split("~")
-    # Find the SVG path
-    svg_path = ""
-    for p in parts[1:]:
-        if p.strip().startswith("M"):
-            svg_path = p.strip()
-            break
-
+    svg_path = _find_svg_path(parts, start=1)
     if not svg_path:
         return None
 
-    match = re.match(
-        r"M\s*([\d.e+-]+)[,\s]+([\d.e+-]+)\s*A\s*([\d.e+-]+)[,\s]+([\d.e+-]+)"
-        r"[,\s]+([\d.e+-]+)[,\s]+([01])[,\s]+([01])[,\s]+([\d.e+-]+)[,\s]+([\d.e+-]+)",
-        svg_path
-    )
-    if not match:
+    parsed = _parse_svg_arc_path(svg_path)
+    if not parsed:
         return None
-
-    sx, sy = float(match.group(1)), float(match.group(2))
-    rx, ry = float(match.group(3)), float(match.group(4))
-    large_arc = int(match.group(6))
-    sweep = int(match.group(7))
-    ex, ey = float(match.group(8)), float(match.group(9))
+    sx, sy, rx, ry, large_arc, sweep, ex, ey = parsed
 
     return EEArc(
         width=0.254,

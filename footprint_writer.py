@@ -1,20 +1,9 @@
 """Generate KiCad 9 .kicad_mod footprint files."""
-import uuid as uuid_mod
-from typing import Optional, Tuple
+from typing import Tuple
 
+from ._kicad_format import gen_uuid as _uuid, fmt_float as _fmt, escape_sexpr as _escape
 from .ee_types import EEFootprint
 from .parser import compute_arc_midpoint
-
-
-def _uuid() -> str:
-    return str(uuid_mod.uuid4())
-
-
-def _fmt(v: float) -> str:
-    """Format float for KiCad output."""
-    if v == int(v) and abs(v) < 1e10:
-        return str(int(v))
-    return f"{v:.6f}".rstrip("0").rstrip(".")
 
 
 def write_footprint(footprint: EEFootprint, name: str, lcsc_id: str = "",
@@ -176,8 +165,3 @@ def _pad_type_info(pad):
         layers = ["F.Cu", "F.Mask", "F.Paste"]
 
     return pad_type, pad_shape, layers
-
-
-def _escape(s: str) -> str:
-    """Escape special characters for S-expression strings."""
-    return s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ")

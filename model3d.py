@@ -3,6 +3,26 @@ import os
 from typing import Optional, Tuple
 
 from .api import download_step, download_wrl_source
+from .ee_types import EE3DModel
+
+
+# EasyEDA 3D coordinates use 100 units per mm
+_EE_3D_UNITS_PER_MM = 100.0
+
+
+def compute_model_transform(model: EE3DModel, fp_origin_x: float, fp_origin_y: float
+                            ) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
+    """Compute 3D model offset and rotation from footprint model data.
+
+    Converts from EasyEDA coordinate units (100 units/mm) to KiCad mm.
+    Returns (offset, rotation) tuples.
+    """
+    offset = (
+        (model.origin_x - fp_origin_x) / _EE_3D_UNITS_PER_MM,
+        -(model.origin_y - fp_origin_y) / _EE_3D_UNITS_PER_MM,
+        model.z / _EE_3D_UNITS_PER_MM,
+    )
+    return offset, model.rotation
 
 
 def download_and_save_models(uuid_3d: str, output_dir: str, name: str) -> Tuple[Optional[str], Optional[str]]:

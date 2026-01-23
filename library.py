@@ -1,5 +1,6 @@
 """Library file management - create/append symbols, save footprints, update lib-tables."""
 import os
+import re
 import sys
 from typing import Optional
 
@@ -115,59 +116,17 @@ def update_project_lib_tables(project_dir: str, lib_name: str = "JLCImport") -> 
 
     Returns True if a table was newly created (requires project reopen).
     """
-    new_sym = _update_sym_lib_table(project_dir, lib_name)
-    new_fp = _update_fp_lib_table(project_dir, lib_name)
+    sym_uri = f"${{KIPRJMOD}}/{lib_name}.kicad_sym"
+    fp_uri = f"${{KIPRJMOD}}/{lib_name}.pretty"
+    new_sym = _update_lib_table(
+        os.path.join(project_dir, "sym-lib-table"),
+        "sym_lib_table", lib_name, "KiCad", sym_uri
+    )
+    new_fp = _update_lib_table(
+        os.path.join(project_dir, "fp-lib-table"),
+        "fp_lib_table", lib_name, "KiCad", fp_uri
+    )
     return new_sym or new_fp
-
-
-def _update_sym_lib_table(project_dir: str, lib_name: str) -> bool:
-    """Add entry to sym-lib-table. Returns True if file was newly created."""
-    table_path = os.path.join(project_dir, "sym-lib-table")
-    entry = f'  (lib (name "{lib_name}")(type "KiCad")(uri "${{KIPRJMOD}}/{lib_name}.kicad_sym")(options "")(descr ""))'
-
-    if os.path.exists(table_path):
-        with open(table_path, "r", encoding="utf-8") as f:
-            content = f.read()
-        if f'(name "{lib_name}")' in content:
-            return False
-        last_paren = content.rfind(")")
-        if last_paren >= 0:
-            new_content = content[:last_paren] + entry + "\n)\n"
-            with open(table_path, "w", encoding="utf-8") as f:
-                f.write(new_content)
-        return False
-    else:
-        with open(table_path, "w", encoding="utf-8") as f:
-            f.write("(sym_lib_table\n")
-            f.write("  (version 7)\n")
-            f.write(entry + "\n")
-            f.write(")\n")
-        return True
-
-
-def _update_fp_lib_table(project_dir: str, lib_name: str) -> bool:
-    """Add entry to fp-lib-table. Returns True if file was newly created."""
-    table_path = os.path.join(project_dir, "fp-lib-table")
-    entry = f'  (lib (name "{lib_name}")(type "KiCad")(uri "${{KIPRJMOD}}/{lib_name}.pretty")(options "")(descr ""))'
-
-    if os.path.exists(table_path):
-        with open(table_path, "r", encoding="utf-8") as f:
-            content = f.read()
-        if f'(name "{lib_name}")' in content:
-            return False
-        last_paren = content.rfind(")")
-        if last_paren >= 0:
-            new_content = content[:last_paren] + entry + "\n)\n"
-            with open(table_path, "w", encoding="utf-8") as f:
-                f.write(new_content)
-        return False
-    else:
-        with open(table_path, "w", encoding="utf-8") as f:
-            f.write("(fp_lib_table\n")
-            f.write("  (version 7)\n")
-            f.write(entry + "\n")
-            f.write(")\n")
-        return True
 
 
 def _detect_kicad_version() -> str:
@@ -252,40 +211,52 @@ def update_global_lib_tables(lib_dir: str, lib_name: str = "JLCImport") -> None:
 
 
 def _update_lib_table(table_path: str, table_type: str, lib_name: str,
-                      lib_type: str, uri: str) -> None:
-    """Add an entry to a lib-table file (global or project)."""
+                      lib_type: str, uri: str) -> bool:
+    """Add an entry to a lib-table file (global or project).
+
+    Returns True if the file was newly created.
+    """
     entry = f'  (lib (name "{lib_name}")(type "{lib_type}")(uri "{uri}")(options "")(descr ""))'
 
     if os.path.exists(table_path):
         with open(table_path, "r", encoding="utf-8") as f:
             content = f.read()
         if f'(name "{lib_name}")' in content:
-            return
+            return False
         last_paren = content.rfind(")")
         if last_paren >= 0:
             new_content = content[:last_paren] + entry + "\n)\n"
             with open(table_path, "w", encoding="utf-8") as f:
                 f.write(new_content)
+        return False
     else:
         with open(table_path, "w", encoding="utf-8") as f:
             f.write(f"({table_type}\n")
             f.write("  (version 7)\n")
             f.write(entry + "\n")
             f.write(")\n")
+        return True
+
+
+_WINDOWS_RESERVED = re.compile(
+    r'^(CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9])$', re.IGNORECASE
+)
 
 
 def sanitize_name(title: str) -> str:
-    """Sanitize component name for KiCad file/symbol naming."""
-    name = (title
-            .replace(" ", "_")
-            .replace(".", "_")
-            .replace("/", "_")
-            .replace("\\", "_")
-            .replace("<", "_")
-            .replace(">", "_")
-            .replace(":", "_")
-            .replace('"', "_"))
+    """Sanitize component name for KiCad file/symbol naming.
+
+    Strips all path separators and special characters to produce a safe
+    base filename. Rejects Windows reserved device names.
+    """
+    # Replace any character that isn't alphanumeric, hyphen, or underscore
+    name = re.sub(r'[^A-Za-z0-9_\-]', '_', title)
     # Collapse multiple underscores
-    while "__" in name:
-        name = name.replace("__", "_")
-    return name.strip("_")
+    name = re.sub(r'_+', '_', name)
+    name = name.strip('_')
+    # Reject Windows reserved device names
+    if _WINDOWS_RESERVED.match(name):
+        name = '_' + name
+    if not name:
+        name = 'unnamed'
+    return name
