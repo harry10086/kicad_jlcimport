@@ -6,37 +6,51 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from kicad_jlcimport.api import search_components, fetch_full_component, APIError, validate_lcsc_id
+from kicad_jlcimport.api import search_components, fetch_full_component, filter_by_min_stock, filter_by_type, APIError, validate_lcsc_id
 from kicad_jlcimport.parser import parse_footprint_shapes, parse_symbol_shapes
 from kicad_jlcimport.footprint_writer import write_footprint
 from kicad_jlcimport.symbol_writer import write_symbol
 from kicad_jlcimport.library import sanitize_name
-from kicad_jlcimport.model3d import compute_model_transform
+from kicad_jlcimport.model3d import compute_model_transform, download_and_save_models
 
 
 def cmd_search(args):
     """Search for components."""
-    part_type = None
+    type_filter = ""
     if args.type == "basic":
-        part_type = "base"
+        type_filter = "Basic"
     elif args.type == "extended":
-        part_type = "expand"
+        type_filter = "Extended"
 
-    result = search_components(args.keyword, page_size=args.count, part_type=part_type)
+    result = search_components(args.keyword, page_size=args.count)
     total = result["total"]
     results = result["results"]
 
-    if args.in_stock:
-        results = [r for r in results if r['stock'] and r['stock'] > 0]
+    results = filter_by_type(results, type_filter)
+    min_stock = args.min_stock
+    results = filter_by_min_stock(results, min_stock)
 
     results.sort(key=lambda r: r['stock'] or 0, reverse=True)
 
-    print(f"\n  {total} results for \"{args.keyword}\"", end="")
-    if part_type:
-        print(f" ({'Basic' if part_type == 'base' else 'Extended'} only)", end="")
-    if args.in_stock:
-        print(f" (in stock)", end="")
-    print(f"\n")
+    if not args.csv:
+        print(f"\n  {total} results for \"{args.keyword}\"", end="")
+        if type_filter:
+            print(f" ({type_filter} only)", end="")
+        if min_stock > 0:
+            print(f" (stock >= {min_stock})", end="")
+        print(f"\n")
+
+    if args.csv:
+        import csv
+        import sys
+        writer = csv.writer(sys.stdout)
+        writer.writerow(["LCSC", "Type", "Price", "Stock", "Part", "Package", "Brand", "Description"])
+        for r in results:
+            writer.writerow([
+                r['lcsc'], r['type'], r['price'] or "", r['stock'] or "",
+                r['model'], r['package'], r['brand'], r['description'],
+            ])
+        return
 
     if not results:
         print("  No results found.")
@@ -136,10 +150,28 @@ def cmd_import(args):
         print(f"  Saved: {fp_path}")
 
         if sym_content:
-            sym_path = os.path.join(out_dir, f"{name}.kicad_sym_fragment")
+            sym_path = os.path.join(out_dir, f"{name}.kicad_sym")
+            sym_lib = (
+                '(kicad_symbol_lib\n'
+                '  (version 20241209)\n'
+                '  (generator "JLCImport")\n'
+                '  (generator_version "1.0")\n'
+                + sym_content +
+                ')\n'
+            )
             with open(sym_path, "w") as f:
-                f.write(sym_content)
+                f.write(sym_lib)
             print(f"  Saved: {sym_path}")
+
+        if footprint.model:
+            models_dir = os.path.join(out_dir, "3dmodels")
+            step_path, wrl_path = download_and_save_models(
+                footprint.model.uuid, models_dir, name
+            )
+            if step_path:
+                print(f"  Saved: {step_path}")
+            if wrl_path:
+                print(f"  Saved: {wrl_path}")
     else:
         if args.show == "footprint" or args.show == "both":
             print("  ── Footprint (.kicad_mod) ──")
@@ -166,7 +198,8 @@ def main():
 examples:
   %(prog)s search "RP2350"
   %(prog)s search "100nF 0402" -t basic
-  %(prog)s search "ESP32" -t extended -n 20 --in-stock
+  %(prog)s search "ESP32" -t extended -n 20 --min-stock 100
+  %(prog)s search "RP2350" --csv > parts.csv
   %(prog)s import C42415655
   %(prog)s import C42415655 --show footprint
   %(prog)s import C427602 --show both
@@ -181,7 +214,9 @@ examples:
     sp.add_argument("-n", "--count", type=int, default=10, help="Number of results (default: 10)")
     sp.add_argument("-t", "--type", choices=["basic", "extended", "both"], default="both",
                     help="Part type filter (default: both)")
-    sp.add_argument("--in-stock", action="store_true", help="Only show parts in stock")
+    sp.add_argument("--min-stock", type=int, default=1, metavar="N",
+                    help="Minimum stock count filter (default: 1, use 0 for any)")
+    sp.add_argument("--csv", action="store_true", help="Output results as CSV")
     sp.set_defaults(func=cmd_search)
 
     # Import subcommand

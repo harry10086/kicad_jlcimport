@@ -8,7 +8,7 @@ import webbrowser
 
 import wx
 
-from .api import fetch_full_component, search_components, fetch_product_image, APIError, validate_lcsc_id
+from .api import fetch_full_component, search_components, fetch_product_image, filter_by_min_stock, filter_by_type, APIError, validate_lcsc_id
 from .parser import parse_footprint_shapes, parse_symbol_shapes
 from .footprint_writer import write_footprint
 from .symbol_writer import write_symbol
@@ -26,6 +26,8 @@ class JLCImportDialog(wx.Dialog):
                          style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER)
         self.board = board
         self._search_results = []
+        self._raw_search_results = []
+        self._search_request_id = 0
         self._image_request_id = 0
         self._gallery_request_id = 0
         self._init_ui()
@@ -40,7 +42,7 @@ class JLCImportDialog(wx.Dialog):
         vbox = wx.BoxSizer(wx.VERTICAL)
 
         # --- Search section ---
-        search_box = wx.StaticBoxSizer(wx.VERTICAL, panel, "Search")
+        search_box = wx.BoxSizer(wx.VERTICAL)
 
         # Search input row
         hbox_search = wx.BoxSizer(wx.HORIZONTAL)
@@ -61,15 +63,32 @@ class JLCImportDialog(wx.Dialog):
         self.type_basic = wx.RadioButton(panel, label="Basic")
         self.type_extended = wx.RadioButton(panel, label="Extended")
         self.type_both.SetValue(True)
+        self.type_both.Bind(wx.EVT_RADIOBUTTON, self._on_type_change)
+        self.type_basic.Bind(wx.EVT_RADIOBUTTON, self._on_type_change)
+        self.type_extended.Bind(wx.EVT_RADIOBUTTON, self._on_type_change)
         hbox_filter.Add(self.type_both, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 8)
         hbox_filter.Add(self.type_basic, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 8)
         hbox_filter.Add(self.type_extended, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 20)
-        self.in_stock_cb = wx.CheckBox(panel, label="In stock only")
-        self.in_stock_cb.SetValue(True)
-        hbox_filter.Add(self.in_stock_cb, 0, wx.ALIGN_CENTER_VERTICAL)
-        search_box.Add(hbox_filter, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 5)
+        hbox_filter.Add(wx.StaticText(panel, label="Min stock:"), 0,
+                        wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
+        self._min_stock_choices = [0, 1, 10, 100, 1000, 10000, 100000]
+        self._min_stock_labels = ["Any", "1+", "10+", "100+", "1000+", "10000+", "100000+"]
+        self.min_stock_choice = wx.Choice(panel, choices=self._min_stock_labels)
+        self.min_stock_choice.SetSelection(1)  # Default to "1+" (in stock)
+        self.min_stock_choice.Bind(wx.EVT_CHOICE, self._on_min_stock_change)
+        hbox_filter.Add(self.min_stock_choice, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 20)
+        hbox_filter.Add(wx.StaticText(panel, label="Package:"), 0,
+                        wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
+        self.package_choice = wx.Choice(panel, choices=["All"])
+        self.package_choice.SetSelection(0)
+        self.package_choice.Bind(wx.EVT_CHOICE, self._on_filter_change)
+        hbox_filter.Add(self.package_choice, 0, wx.ALIGN_CENTER_VERTICAL)
+        search_box.Add(hbox_filter, 0, wx.LEFT | wx.RIGHT, 5)
 
         vbox.Add(search_box, 0, wx.EXPAND | wx.ALL, 5)
+
+        self.results_count_label = wx.StaticText(panel, label="")
+        vbox.Add(self.results_count_label, 0, wx.LEFT | wx.RIGHT, 10)
 
         # --- Results list ---
         self.results_list = wx.ListCtrl(panel, style=wx.LC_REPORT | wx.LC_SINGLE_SEL)
@@ -87,7 +106,7 @@ class JLCImportDialog(wx.Dialog):
         vbox.Add(self.results_list, 2, wx.EXPAND | wx.LEFT | wx.RIGHT, 5)
 
         # --- Detail panel (shown on selection) ---
-        self._detail_box = wx.StaticBoxSizer(wx.HORIZONTAL, panel, "Details")
+        self._detail_box = wx.BoxSizer(wx.HORIZONTAL)
 
         # Image on left (click to zoom)
         self.detail_image = wx.StaticBitmap(panel, size=(100, 100))
@@ -258,41 +277,81 @@ class JLCImportDialog(wx.Dialog):
         if not keyword:
             return
 
-        part_type = None
-        if self.type_basic.GetValue():
-            part_type = "base"
-        elif self.type_extended.GetValue():
-            part_type = "expand"
-
         self.search_btn.Disable()
         self.results_list.DeleteAllItems()
         self._search_results = []
+        self._raw_search_results = []
+        self.package_choice.Set(["All"])
+        self.package_choice.SetSelection(0)
+        self.results_count_label.SetLabel("")
         self.status_text.Clear()
         self._log(f"Searching for \"{keyword}\"...")
 
+        self._search_request_id += 1
+        request_id = self._search_request_id
+        self._start_search_pulse()
+        threading.Thread(
+            target=self._fetch_search_results,
+            args=(keyword, request_id),
+            daemon=True,
+        ).start()
+
+    def _start_search_pulse(self):
+        """Start animating dots on the search button."""
+        self._pulse_phase = 0
+        if not hasattr(self, '_pulse_timer'):
+            self._pulse_timer = wx.Timer(self)
+            self.Bind(wx.EVT_TIMER, self._on_pulse_tick, self._pulse_timer)
+        self._pulse_timer.Start(300)
+        self.search_btn.SetLabel("\u00b7")
+
+    def _on_pulse_tick(self, event):
+        """Cycle the search button through animated dots."""
+        self._pulse_phase = (self._pulse_phase + 1) % 3
+        self.search_btn.SetLabel("\u00b7" * (self._pulse_phase + 1))
+
+    def _stop_search_pulse(self):
+        """Stop pulsing and restore the search button."""
+        if hasattr(self, '_pulse_timer'):
+            self._pulse_timer.Stop()
+        self.search_btn.SetLabel("Search")
+        self.search_btn.Enable()
+
+    def _fetch_search_results(self, keyword, request_id):
+        """Background thread: fetch search results from API."""
         try:
-            result = search_components(keyword, page_size=25, part_type=part_type)
-            results = result["results"]
-
-            if self.in_stock_cb.GetValue():
-                results = [r for r in results if r['stock'] and r['stock'] > 0]
-
-            results.sort(key=lambda r: r['stock'] or 0, reverse=True)
-
-            self._search_results = results
-            self._sort_col = 3  # sorted by stock
-            self._sort_ascending = False
-            self._log(f"  {result['total']} total results, showing {len(results)}")
-            self._refresh_imported_ids()
-            self._update_col_headers()
-            self._repopulate_results()
-
+            result = search_components(keyword, page_size=500)
+            wx.CallAfter(self._on_search_complete, result, request_id)
         except APIError as e:
-            self._log(f"Search error: {e}")
+            wx.CallAfter(self._on_search_error, f"Search error: {e}", request_id)
         except Exception as e:
-            self._log(f"Unexpected error: {type(e).__name__}: {e}")
-        finally:
-            self.search_btn.Enable()
+            wx.CallAfter(self._on_search_error, f"Unexpected error: {type(e).__name__}: {e}", request_id)
+
+    def _on_search_complete(self, result, request_id):
+        """Handle search results on the main thread."""
+        if request_id != self._search_request_id:
+            return
+        self._stop_search_pulse()
+
+        results = result["results"]
+        results.sort(key=lambda r: r['stock'] or 0, reverse=True)
+
+        self._raw_search_results = results
+        self._populate_package_choices()
+        self._sort_col = 3  # sorted by stock
+        self._sort_ascending = False
+        self._apply_filters()
+        self._log(f"  {result['total']} total results, showing {len(self._search_results)}")
+        self._refresh_imported_ids()
+        self._update_col_headers()
+        self._repopulate_results()
+
+    def _on_search_error(self, msg, request_id):
+        """Handle search error on the main thread."""
+        if request_id != self._search_request_id:
+            return
+        self._stop_search_pulse()
+        self._log(msg)
 
     def _on_col_click(self, event):
         """Sort results by clicked column."""
@@ -353,21 +412,82 @@ class JLCImportDialog(wx.Dialog):
                 except Exception:
                     pass
 
+    def _get_min_stock(self) -> int:
+        """Return the minimum stock threshold from the dropdown."""
+        idx = self.min_stock_choice.GetSelection()
+        if idx == wx.NOT_FOUND:
+            return 0
+        return self._min_stock_choices[idx]
+
+    def _get_type_filter(self) -> str:
+        """Return the selected type filter value."""
+        if self.type_basic.GetValue():
+            return "Basic"
+        elif self.type_extended.GetValue():
+            return "Extended"
+        return ""
+
+    def _populate_package_choices(self):
+        """Populate the package dropdown from current raw results."""
+        packages = sorted(set(
+            r.get('package', '') for r in self._raw_search_results
+            if r.get('package')
+        ))
+        self.package_choice.Set(["All"] + packages)
+        self.package_choice.SetSelection(0)
+
+    def _get_package_filter(self) -> str:
+        """Return the selected package filter value."""
+        idx = self.package_choice.GetSelection()
+        if idx <= 0:  # "All" or nothing selected
+            return ""
+        return self.package_choice.GetString(idx)
+
+    def _apply_filters(self):
+        """Apply type, stock, and package filters to _raw_search_results."""
+        filtered = filter_by_type(self._raw_search_results, self._get_type_filter())
+        filtered = filter_by_min_stock(filtered, self._get_min_stock())
+        pkg = self._get_package_filter()
+        if pkg:
+            filtered = [r for r in filtered if r.get('package') == pkg]
+        self._search_results = filtered
+
+    def _on_filter_change(self, event):
+        """Re-filter and repopulate results when any filter changes."""
+        if not self._raw_search_results:
+            return
+        self._apply_filters()
+        self._repopulate_results()
+
+    _on_min_stock_change = _on_filter_change
+    _on_type_change = _on_filter_change
+
     def _repopulate_results(self):
         """Repopulate the list control from _search_results."""
         self.results_list.DeleteAllItems()
-        for r in self._search_results:
-            idx = self.results_list.GetItemCount()
+        for i, r in enumerate(self._search_results):
             lcsc = r['lcsc']
             prefix = "\u2713 " if lcsc in self._imported_ids else ""
-            self.results_list.InsertItem(idx, prefix + lcsc)
-            self.results_list.SetItem(idx, 1, r['type'])
+            self.results_list.InsertItem(i, prefix + lcsc)
+            self.results_list.SetItem(i, 1, r['type'])
             price_str = f"${r['price']:.4f}" if r['price'] else "N/A"
-            self.results_list.SetItem(idx, 2, price_str)
+            self.results_list.SetItem(i, 2, price_str)
             stock_str = f"{r['stock']:,}" if r['stock'] else "N/A"
-            self.results_list.SetItem(idx, 3, stock_str)
-            self.results_list.SetItem(idx, 4, r['model'])
-            self.results_list.SetItem(idx, 5, r.get('package', ''))
+            self.results_list.SetItem(i, 3, stock_str)
+            self.results_list.SetItem(i, 4, r['model'])
+            self.results_list.SetItem(i, 5, r.get('package', ''))
+        self._update_results_count()
+
+    def _update_results_count(self):
+        """Update the results count label."""
+        shown = len(self._search_results)
+        total = len(self._raw_search_results)
+        if total == 0:
+            self.results_count_label.SetLabel("")
+        elif shown == total:
+            self.results_count_label.SetLabel(f"{total} results")
+        else:
+            self.results_count_label.SetLabel(f"{shown} of {total}")
 
     def _on_result_select(self, event):
         """Select a search result to populate the part number and show details."""

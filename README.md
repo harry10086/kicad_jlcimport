@@ -8,7 +8,7 @@ A KiCad 9 Action Plugin that imports symbols, footprints, and 3D models directly
 
 ## Features
 
-- Search the JLCPCB parts catalog with filtering (Basic/Extended, in-stock)
+- Search the JLCPCB parts catalog with filtering (Basic/Extended, minimum stock)
 - Preview product images with full-screen gallery view
 - Import symbols, footprints, and STEP/WRL 3D models
 - Sortable results by price, stock, part number, etc.
@@ -53,7 +53,7 @@ cp -r /path/to/kicad_jlcimport ~/Documents/KiCad/9.0/scripting/plugins/kicad_jlc
 
 1. Open the PCB Editor and launch **JLCImport** from the External Plugins menu
 2. Type a search query (e.g. "100nF 0402", "ESP32", "RP2350")
-3. Filter by type (Basic/Extended/Both) and stock availability
+3. Filter by type (Basic/Extended/Both) and minimum stock level
 4. Parts already in your library are marked with ✓ in the results list
 5. Click a result to see details, product image, and description
 6. Click the thumbnail to open the full-screen gallery with arrow navigation
@@ -69,14 +69,17 @@ cp -r /path/to/kicad_jlcimport ~/Documents/KiCad/9.0/scripting/plugins/kicad_jlc
 The CLI tool can be used outside KiCad for testing or scripted imports:
 
 ```bash
-# Search
-python3 -m kicad_jlcimport.cli search "100nF 0402" -t basic --in-stock
-python3 -m kicad_jlcimport.cli search "ESP32" -n 20
+# Search (default: --min-stock 1, only shows parts in stock)
+python3 -m kicad_jlcimport.cli search "100nF 0402" -t basic
+python3 -m kicad_jlcimport.cli search "ESP32" -n 20 --min-stock 100
+
+# Search with CSV output
+python3 -m kicad_jlcimport.cli search "RP2350" --csv > parts.csv
 
 # Import (prints generated output)
 python3 -m kicad_jlcimport.cli import C427602 --show both
 
-# Import to directory
+# Import to directory (saves .kicad_sym, .kicad_mod, and 3D models)
 python3 -m kicad_jlcimport.cli import C427602 -o ./output
 ```
 
