@@ -6,7 +6,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from kicad_jlcimport.api import search_components, fetch_full_component, filter_by_min_stock, APIError, validate_lcsc_id
+from kicad_jlcimport.api import search_components, fetch_full_component, filter_by_min_stock, filter_by_type, APIError, validate_lcsc_id
 from kicad_jlcimport.parser import parse_footprint_shapes, parse_symbol_shapes
 from kicad_jlcimport.footprint_writer import write_footprint
 from kicad_jlcimport.symbol_writer import write_symbol
@@ -16,24 +16,25 @@ from kicad_jlcimport.model3d import compute_model_transform
 
 def cmd_search(args):
     """Search for components."""
-    part_type = None
+    type_filter = ""
     if args.type == "basic":
-        part_type = "base"
+        type_filter = "Basic"
     elif args.type == "extended":
-        part_type = "expand"
+        type_filter = "Extended"
 
-    result = search_components(args.keyword, page_size=args.count, part_type=part_type)
+    result = search_components(args.keyword, page_size=args.count)
     total = result["total"]
     results = result["results"]
 
+    results = filter_by_type(results, type_filter)
     min_stock = args.min_stock
     results = filter_by_min_stock(results, min_stock)
 
     results.sort(key=lambda r: r['stock'] or 0, reverse=True)
 
     print(f"\n  {total} results for \"{args.keyword}\"", end="")
-    if part_type:
-        print(f" ({'Basic' if part_type == 'base' else 'Extended'} only)", end="")
+    if type_filter:
+        print(f" ({type_filter} only)", end="")
     if min_stock > 0:
         print(f" (stock >= {min_stock})", end="")
     print(f"\n")

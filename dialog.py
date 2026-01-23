@@ -8,7 +8,7 @@ import webbrowser
 
 import wx
 
-from .api import fetch_full_component, search_components, fetch_product_image, filter_by_min_stock, APIError, validate_lcsc_id
+from .api import fetch_full_component, search_components, fetch_product_image, filter_by_min_stock, filter_by_type, APIError, validate_lcsc_id
 from .parser import parse_footprint_shapes, parse_symbol_shapes
 from .footprint_writer import write_footprint
 from .symbol_writer import write_symbol
@@ -62,6 +62,9 @@ class JLCImportDialog(wx.Dialog):
         self.type_basic = wx.RadioButton(panel, label="Basic")
         self.type_extended = wx.RadioButton(panel, label="Extended")
         self.type_both.SetValue(True)
+        self.type_both.Bind(wx.EVT_RADIOBUTTON, self._on_type_change)
+        self.type_basic.Bind(wx.EVT_RADIOBUTTON, self._on_type_change)
+        self.type_extended.Bind(wx.EVT_RADIOBUTTON, self._on_type_change)
         hbox_filter.Add(self.type_both, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 8)
         hbox_filter.Add(self.type_basic, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 8)
         hbox_filter.Add(self.type_extended, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 20)
@@ -264,12 +267,6 @@ class JLCImportDialog(wx.Dialog):
         if not keyword:
             return
 
-        part_type = None
-        if self.type_basic.GetValue():
-            part_type = "base"
-        elif self.type_extended.GetValue():
-            part_type = "expand"
-
         self.search_btn.Disable()
         self.results_list.DeleteAllItems()
         self._search_results = []
@@ -278,7 +275,7 @@ class JLCImportDialog(wx.Dialog):
         self._log(f"Searching for \"{keyword}\"...")
 
         try:
-            result = search_components(keyword, page_size=25, part_type=part_type)
+            result = search_components(keyword, page_size=200)
             results = result["results"]
 
             results.sort(key=lambda r: r['stock'] or 0, reverse=True)
@@ -286,7 +283,7 @@ class JLCImportDialog(wx.Dialog):
             self._raw_search_results = results
             self._sort_col = 3  # sorted by stock
             self._sort_ascending = False
-            self._apply_stock_filter()
+            self._apply_filters()
             self._log(f"  {result['total']} total results, showing {len(self._search_results)}")
             self._refresh_imported_ids()
             self._update_col_headers()
@@ -365,18 +362,28 @@ class JLCImportDialog(wx.Dialog):
             return 0
         return self._min_stock_choices[idx]
 
-    def _apply_stock_filter(self):
-        """Filter _raw_search_results by minimum stock into _search_results."""
-        self._search_results = filter_by_min_stock(
-            self._raw_search_results, self._get_min_stock()
-        )
+    def _get_type_filter(self) -> str:
+        """Return the selected type filter value."""
+        if self.type_basic.GetValue():
+            return "Basic"
+        elif self.type_extended.GetValue():
+            return "Extended"
+        return ""
 
-    def _on_min_stock_change(self, event):
-        """Re-filter and repopulate results when min stock selection changes."""
+    def _apply_filters(self):
+        """Apply type and stock filters to _raw_search_results."""
+        filtered = filter_by_type(self._raw_search_results, self._get_type_filter())
+        self._search_results = filter_by_min_stock(filtered, self._get_min_stock())
+
+    def _on_filter_change(self, event):
+        """Re-filter and repopulate results when any filter changes."""
         if not self._raw_search_results:
             return
-        self._apply_stock_filter()
+        self._apply_filters()
         self._repopulate_results()
+
+    _on_min_stock_change = _on_filter_change
+    _on_type_change = _on_filter_change
 
     def _repopulate_results(self):
         """Repopulate the list control from _search_results."""

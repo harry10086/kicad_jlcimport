@@ -1,7 +1,7 @@
 """Tests for api.py - validation and response parsing."""
 import pytest
 
-from kicad_jlcimport.api import validate_lcsc_id, fetch_product_image, filter_by_min_stock
+from kicad_jlcimport.api import validate_lcsc_id, fetch_product_image, filter_by_min_stock, filter_by_type
 
 
 class TestValidateLcscId:
@@ -159,3 +159,50 @@ class TestFilterByMinStock:
     def test_exact_threshold_included(self):
         results = [{"lcsc": "C1", "stock": 100}]
         assert len(filter_by_min_stock(results, 100)) == 1
+
+
+class TestFilterByType:
+    """Test part type filtering."""
+
+    _SAMPLE_RESULTS = [
+        {"lcsc": "C1", "type": "Basic", "stock": 100},
+        {"lcsc": "C2", "type": "Extended", "stock": 200},
+        {"lcsc": "C3", "type": "Basic", "stock": 50},
+        {"lcsc": "C4", "type": "Extended", "stock": 300},
+        {"lcsc": "C5", "type": "Extended", "stock": 10},
+    ]
+
+    def test_empty_type_returns_all(self):
+        result = filter_by_type(self._SAMPLE_RESULTS, "")
+        assert len(result) == 5
+
+    def test_none_type_returns_all(self):
+        result = filter_by_type(self._SAMPLE_RESULTS, None)
+        assert len(result) == 5
+
+    def test_filter_basic(self):
+        result = filter_by_type(self._SAMPLE_RESULTS, "Basic")
+        assert len(result) == 2
+        assert all(r["type"] == "Basic" for r in result)
+
+    def test_filter_extended(self):
+        result = filter_by_type(self._SAMPLE_RESULTS, "Extended")
+        assert len(result) == 3
+        assert all(r["type"] == "Extended" for r in result)
+
+    def test_unmatched_type_returns_empty(self):
+        result = filter_by_type(self._SAMPLE_RESULTS, "Unknown")
+        assert result == []
+
+    def test_empty_input(self):
+        result = filter_by_type([], "Basic")
+        assert result == []
+
+    def test_does_not_mutate_input(self):
+        original = [{"lcsc": "C1", "type": "Basic"}]
+        filter_by_type(original, "Extended")
+        assert len(original) == 1
+
+    def test_missing_type_key_excluded(self):
+        results = [{"lcsc": "C1", "stock": 10}]
+        assert filter_by_type(results, "Basic") == []

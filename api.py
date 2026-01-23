@@ -186,6 +186,20 @@ def filter_by_min_stock(results: list, min_stock: int) -> list:
     return [r for r in results if r.get('stock') and r['stock'] >= min_stock]
 
 
+def filter_by_type(results: list, part_type: str) -> list:
+    """Filter search results by part type.
+
+    Args:
+        results: List of result dicts from search_components()
+        part_type: "Basic", "Extended", or None/empty for all
+
+    Returns filtered list (original list unchanged).
+    """
+    if not part_type:
+        return list(results)
+    return [r for r in results if r.get('type') == part_type]
+
+
 _ALLOWED_IMAGE_HOSTS = ("jlcpcb.com", "www.jlcpcb.com", "lcsc.com", "www.lcsc.com")
 
 
