@@ -26,6 +26,7 @@ from textual.widgets import (
     RadioButton,
     RadioSet,
     RichLog,
+    Select,
     Static,
 )
 from textual.message import Message
@@ -39,6 +40,8 @@ from kicad_jlcimport.api import (
     fetch_full_component,
     search_components,
     fetch_product_image,
+    filter_by_min_stock,
+    filter_by_type,
     APIError,
     validate_lcsc_id,
 )
@@ -568,9 +571,18 @@ class JLCImportTUI(App):
         margin-right: 1;
         height: 3;
     }
-    #in-stock-cb {
-        margin-left: 2;
-        height: 3;
+    #min-stock-select {
+        width: 16;
+        margin: 0 1;
+    }
+    #package-select {
+        width: 20;
+        margin: 0 1;
+    }
+    #results-count {
+        height: 1;
+        margin: 0 2;
+        color: $text-muted;
     }
 
     /* Results section */
@@ -688,10 +700,21 @@ class JLCImportTUI(App):
         Binding("f5", "do_search", "Search", show=False),
     ]
 
+    _MIN_STOCK_OPTIONS = [
+        ("Any", 0),
+        ("1+", 1),
+        ("10+", 10),
+        ("100+", 100),
+        ("1K+", 1000),
+        ("10K+", 10000),
+        ("100K+", 100000),
+    ]
+
     def __init__(self, project_dir: str = ""):
         super().__init__()
         self._project_dir = project_dir
         self._search_results: list = []
+        self._raw_search_results: list = []
         self._sort_col: int = -1
         self._sort_ascending: bool = True
         self._imported_ids: set = set()
@@ -718,7 +741,21 @@ class JLCImportTUI(App):
                         yield RadioButton("Both", value=True, id="type-both")
                         yield RadioButton("Basic", id="type-basic")
                         yield RadioButton("Extended", id="type-extended")
-                    yield Checkbox("In stock only", value=True, id="in-stock-cb")
+                    yield Select(
+                        [(label, val) for label, val in self._MIN_STOCK_OPTIONS],
+                        value=1,
+                        id="min-stock-select",
+                        allow_blank=False,
+                    )
+                    yield Select(
+                        [("All", "")],
+                        value="",
+                        id="package-select",
+                        allow_blank=False,
+                    )
+
+            # Results count
+            yield Label("", id="results-count")
 
             # Results table
             with Container(id="results-section"):
@@ -815,21 +852,14 @@ class JLCImportTUI(App):
 
     @work(thread=True)
     def _do_search(self):
-        """Perform the search in a background thread."""
+        """Perform the search in a background thread.
+
+        Fetches up to 500 results and applies client-side filters.
+        """
         search_input = self.query_one("#search-input", Input)
         keyword = search_input.value.strip()
         if not keyword:
             return
-
-        # Determine part type filter
-        type_filter = self.query_one("#type-filter", RadioSet)
-        part_type = None
-        if type_filter.pressed_index == 1:
-            part_type = "base"
-        elif type_filter.pressed_index == 2:
-            part_type = "expand"
-
-        in_stock = self.query_one("#in-stock-cb", Checkbox).value
 
         self.app.call_from_thread(self._log, f"Searching for \"{keyword}\"...")
         self.app.call_from_thread(
@@ -837,22 +867,21 @@ class JLCImportTUI(App):
         )
 
         try:
-            result = search_components(keyword, page_size=25, part_type=part_type)
+            result = search_components(keyword, page_size=500)
             results = result["results"]
-
-            if in_stock:
-                results = [r for r in results if r["stock"] and r["stock"] > 0]
 
             results.sort(key=lambda r: r["stock"] or 0, reverse=True)
 
-            self._search_results = results
+            self._raw_search_results = results
             self._sort_col = 3  # sorted by stock
             self._sort_ascending = False
             self._selected_index = -1
 
+            self.app.call_from_thread(self._populate_package_choices)
+            self.app.call_from_thread(self._apply_filters)
             self.app.call_from_thread(
                 self._log,
-                f"  {result['total']} total results, showing {len(results)}",
+                f"  {result['total']} total results, showing {len(self._search_results)}",
             )
             self.app.call_from_thread(self._refresh_imported_ids)
             self.app.call_from_thread(self._repopulate_results)
@@ -867,6 +896,62 @@ class JLCImportTUI(App):
             self.app.call_from_thread(
                 self.query_one("#search-btn", Button).__setattr__, "disabled", False
             )
+
+    # --- Filtering ---
+
+    def _get_type_filter(self) -> str:
+        """Return the selected type filter value ('Basic', 'Extended', or '')."""
+        type_filter = self.query_one("#type-filter", RadioSet)
+        if type_filter.pressed_index == 1:
+            return "Basic"
+        elif type_filter.pressed_index == 2:
+            return "Extended"
+        return ""
+
+    def _get_min_stock(self) -> int:
+        """Return the minimum stock threshold from the dropdown."""
+        select = self.query_one("#min-stock-select", Select)
+        val = select.value
+        return val if isinstance(val, int) else 0
+
+    def _get_package_filter(self) -> str:
+        """Return the selected package filter value."""
+        select = self.query_one("#package-select", Select)
+        val = select.value
+        return val if isinstance(val, str) else ""
+
+    def _populate_package_choices(self):
+        """Populate the package dropdown from current raw results."""
+        packages = sorted(set(
+            r.get("package", "") for r in self._raw_search_results
+            if r.get("package")
+        ))
+        options = [("All", "")] + [(p, p) for p in packages]
+        select = self.query_one("#package-select", Select)
+        select.set_options(options)
+
+    def _apply_filters(self):
+        """Apply type, stock, and package filters to _raw_search_results."""
+        filtered = filter_by_type(self._raw_search_results, self._get_type_filter())
+        filtered = filter_by_min_stock(filtered, self._get_min_stock())
+        pkg = self._get_package_filter()
+        if pkg:
+            filtered = [r for r in filtered if r.get("package") == pkg]
+        self._search_results = filtered
+
+    def on_select_changed(self, event: Select.Changed):
+        """Re-filter when min-stock or package selection changes."""
+        if event.select.id in ("min-stock-select", "package-select"):
+            if self._raw_search_results:
+                self._apply_filters()
+                self._repopulate_results()
+
+    def on_radio_set_changed(self, event: RadioSet.Changed):
+        """Re-filter when type filter changes."""
+        if event.radio_set.id == "type-filter":
+            if self._raw_search_results:
+                self._apply_filters()
+                self._repopulate_results()
 
     def _refresh_imported_ids(self):
         """Scan symbol libraries for already-imported LCSC IDs."""
@@ -906,6 +991,19 @@ class JLCImportTUI(App):
                 r["model"],
                 r.get("package", ""),
             )
+        self._update_results_count()
+
+    def _update_results_count(self):
+        """Update the results count label."""
+        shown = len(self._search_results)
+        total = len(self._raw_search_results)
+        label = self.query_one("#results-count", Label)
+        if total == 0:
+            label.update("")
+        elif shown == total:
+            label.update(f"{total} results")
+        else:
+            label.update(f"{shown} of {total} results")
 
     # --- Sorting ---
 
