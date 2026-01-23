@@ -8,17 +8,13 @@ from PIL import Image as PILImage
 from textual_image.widget import (
     Image as _AutoTIImage,
     HalfcellImage as _HalfcellTIImage,
-    SixelImage as _SixelTIImage,
 )
 
-# Warp terminal falsely reports Sixel support via device attributes query,
+# Warp and Rio have issues with native image protocols in Textual widgets,
 # so force half-cell rendering there.
-# Rio supports Sixel but doesn't advertise it in DA1 response.
 _term_program = os.environ.get("TERM_PROGRAM", "")
-if _term_program == "WarpTerminal":
+if _term_program in ("WarpTerminal", "rio"):
     TIImage = _HalfcellTIImage
-elif _term_program == "rio":
-    TIImage = _SixelTIImage
 else:
     TIImage = _AutoTIImage
 
@@ -31,6 +27,19 @@ def pil_from_bytes(data: bytes | None) -> PILImage.Image | None:
         return PILImage.open(io.BytesIO(data))
     except Exception:
         return None
+
+
+def make_no_image(width: int, height: int) -> PILImage.Image:
+    """Generate a 'no image' placeholder as a PIL Image."""
+    from PIL import ImageDraw
+    img = PILImage.new("RGB", (width, height), (20, 20, 20))
+    draw = ImageDraw.Draw(img)
+    # Draw an X to indicate no image
+    margin = min(width, height) // 4
+    color = (60, 60, 60)
+    draw.line([(margin, margin), (width - margin, height - margin)], fill=color, width=2)
+    draw.line([(width - margin, margin), (margin, height - margin)], fill=color, width=2)
+    return img
 
 
 def make_skeleton_frame(width: int, height: int, phase: int) -> PILImage.Image:

@@ -23,10 +23,12 @@ from textual.widgets import (
     Select,
 )
 
-from .helpers import TIImage, pil_from_bytes, make_skeleton_frame
+from textual_image.widget import HalfcellImage
+
+from .helpers import TIImage, pil_from_bytes, make_no_image, make_skeleton_frame
 from .gallery import GalleryScreen
 
-from ..api import (
+from kicad_jlcimport.api import (
     fetch_full_component,
     search_components,
     fetch_product_image,
@@ -35,11 +37,11 @@ from ..api import (
     APIError,
     validate_lcsc_id,
 )
-from ..parser import parse_footprint_shapes, parse_symbol_shapes
-from ..footprint_writer import write_footprint
-from ..symbol_writer import write_symbol
-from ..model3d import download_and_save_models, compute_model_transform
-from ..library import (
+from kicad_jlcimport.parser import parse_footprint_shapes, parse_symbol_shapes
+from kicad_jlcimport.footprint_writer import write_footprint
+from kicad_jlcimport.symbol_writer import write_symbol
+from kicad_jlcimport.model3d import download_and_save_models, compute_model_transform
+from kicad_jlcimport.library import (
     ensure_lib_structure,
     add_symbol_to_lib,
     save_footprint,
@@ -155,7 +157,7 @@ class JLCImportTUI(App):
         height: 1fr;
         min-height: 6;
     }
-    #results-table { height: 100%; }
+    #results-table { height: 100%; overflow-x: hidden; }
 
     /* Detail: compact horizontal layout */
     #detail-section {
@@ -164,10 +166,20 @@ class JLCImportTUI(App):
         padding: 0;
     }
     #detail-content { height: auto; }
-    #detail-image {
+    #detail-image-wrap {
         width: 22;
         height: 10;
         margin-right: 1;
+    }
+    #detail-skeleton {
+        dock: top;
+        width: 22;
+        height: 10;
+        display: none;
+    }
+    #detail-image {
+        width: 22;
+        height: 10;
     }
     #detail-info { width: 1fr; height: 10; }
     .detail-field { height: 1; }
@@ -234,14 +246,13 @@ class JLCImportTUI(App):
         self._sort_ascending: bool = True
         self._imported_ids: set = set()
         self._selected_index: int = -1
-        self._detail_image_data: bytes | None = None
         self._image_request_id: int = 0
+        self._skeleton_timer = None
+        self._skeleton_phase: int = 0
         self._datasheet_url: str = ""
         self._lcsc_page_url: str = ""
         self._pulse_timer = None
         self._pulse_phase: int = 0
-        self._skeleton_timer = None
-        self._skeleton_phase: int = 0
         self._col_names = ["LCSC", "Type", "Price", "Stock", "Part", "Package", "Description"]
 
     def compose(self) -> ComposeResult:
@@ -279,7 +290,9 @@ class JLCImportTUI(App):
 
             with Vertical(id="detail-section"):
                 with Horizontal(id="detail-content"):
-                    yield TIImage(id="detail-image")
+                    with Container(id="detail-image-wrap"):
+                        yield TIImage(id="detail-image")
+                        yield HalfcellImage(id="detail-skeleton")
                     with Vertical(id="detail-info"):
                         yield Label("", id="detail-part", classes="detail-field")
                         yield Label("", id="detail-lcsc", classes="detail-field")
@@ -358,7 +371,22 @@ class JLCImportTUI(App):
         """Open gallery view."""
         if self._search_results:
             idx = max(0, self._selected_index)
-            self.push_screen(GalleryScreen(self._search_results, idx))
+            self.push_screen(GalleryScreen(self._search_results, idx), self._on_gallery_return)
+
+    def on_click(self, event):
+        """Handle clicks - open gallery when thumbnail is clicked."""
+        widget = event.widget
+        wrap = self.query_one("#detail-image-wrap")
+        if widget is wrap or widget in wrap.query("*"):
+            self.action_gallery()
+
+    def _on_gallery_return(self, index: int):
+        """Update table selection to match gallery position."""
+        table = self.query_one("#results-table", DataTable)
+        if 0 <= index < len(self._search_results):
+            self._selected_index = -1  # Force detail refresh
+            table.move_cursor(row=index)
+            self._show_detail(index)
 
     def _start_search_pulse(self):
         """Animate dots on the search button."""
@@ -383,24 +411,28 @@ class JLCImportTUI(App):
         btn.disabled = False
 
     def _start_skeleton(self):
-        """Start skeleton shimmer on detail image."""
+        """Start skeleton overlay animation, clear main image."""
         self._stop_skeleton()
         self._skeleton_phase = 0
-        img_widget = self.query_one("#detail-image", TIImage)
-        img_widget.image = make_skeleton_frame(100, 100, 0)
+        self.query_one("#detail-image", TIImage).image = None
+        skeleton = self.query_one("#detail-skeleton", HalfcellImage)
+        skeleton.image = make_skeleton_frame(100, 100, 0)
+        skeleton.display = True
         self._skeleton_timer = self.set_interval(1 / 15, self._on_skeleton_tick)
 
     def _on_skeleton_tick(self):
         """Advance skeleton shimmer."""
+        if not self._skeleton_timer:
+            return
         self._skeleton_phase = (self._skeleton_phase + 5) % 100
-        img_widget = self.query_one("#detail-image", TIImage)
-        img_widget.image = make_skeleton_frame(100, 100, self._skeleton_phase)
+        self.query_one("#detail-skeleton", HalfcellImage).image = make_skeleton_frame(100, 100, self._skeleton_phase)
 
     def _stop_skeleton(self):
-        """Stop skeleton animation."""
+        """Stop skeleton animation, hide overlay."""
         if self._skeleton_timer:
             self._skeleton_timer.stop()
             self._skeleton_timer = None
+        self.query_one("#detail-skeleton", HalfcellImage).display = False
 
     @work(thread=True)
     def _do_search(self):
@@ -646,7 +678,7 @@ class JLCImportTUI(App):
             self._fetch_detail_image(lcsc_url, request_id)
         else:
             self._stop_skeleton()
-            self.query_one("#detail-image", TIImage).image = None
+            self.query_one("#detail-image", TIImage).image = make_no_image(100, 100)
 
     @work(thread=True)
     def _fetch_detail_image(self, lcsc_url: str, request_id: int):
@@ -656,16 +688,17 @@ class JLCImportTUI(App):
             img_data = fetch_product_image(lcsc_url)
         except Exception:
             pass
-        if self._image_request_id == request_id:
-            self._detail_image_data = img_data
-            self.app.call_from_thread(self._set_detail_image, img_data, request_id)
+        self.call_from_thread(self._set_detail_image, img_data, request_id)
 
     def _set_detail_image(self, img_data: bytes | None, request_id: int):
         """Set the detail image (called on main thread)."""
         if self._image_request_id != request_id:
             return
         self._stop_skeleton()
-        self.query_one("#detail-image", TIImage).image = pil_from_bytes(img_data)
+        img = pil_from_bytes(img_data)
+        if img is None:
+            img = make_no_image(100, 100)
+        self.query_one("#detail-image", TIImage).image = img
 
     # --- Import ---
 

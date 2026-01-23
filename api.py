@@ -225,7 +225,7 @@ def fetch_product_image(lcsc_url: str) -> Optional[bytes]:
     try:
         with _urlopen(req, timeout=10) as resp:
             html = resp.read().decode("utf-8")
-    except (urllib.error.HTTPError, urllib.error.URLError):
+    except (urllib.error.HTTPError, urllib.error.URLError, OSError):
         return None
 
     # Find product image URL
@@ -240,7 +240,7 @@ def fetch_product_image(lcsc_url: str) -> Optional[bytes]:
     try:
         with _urlopen(req2, timeout=10) as resp:
             return resp.read()
-    except (urllib.error.HTTPError, urllib.error.URLError):
+    except (urllib.error.HTTPError, urllib.error.URLError, OSError):
         return None
 
 

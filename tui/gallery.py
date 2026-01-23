@@ -8,8 +8,10 @@ from textual.containers import Container, Horizontal, Vertical
 from textual.screen import Screen
 from textual.widgets import Button, Label
 
-from .helpers import TIImage, pil_from_bytes, make_skeleton_frame
-from ..api import fetch_product_image
+from textual_image.widget import HalfcellImage
+
+from .helpers import TIImage, pil_from_bytes, make_skeleton_frame, make_no_image
+from kicad_jlcimport.api import fetch_product_image
 
 
 class GalleryScreen(Screen):
@@ -35,6 +37,11 @@ class GalleryScreen(Screen):
         height: 1fr;
         align: center middle;
         padding: 1 2;
+    }
+    #gallery-skeleton {
+        width: auto;
+        height: 100%;
+        display: none;
     }
     #gallery-image {
         width: auto;
@@ -84,6 +91,7 @@ class GalleryScreen(Screen):
                 yield Button("Back", id="gallery-back", variant="primary")
                 yield Button("Next \u25B6", id="gallery-next", variant="default")
             with Container(id="gallery-image-wrap"):
+                yield HalfcellImage(id="gallery-skeleton")
                 yield TIImage(id="gallery-image")
             yield Label("", id="gallery-info")
             yield Label("", id="gallery-desc")
@@ -111,7 +119,10 @@ class GalleryScreen(Screen):
         img_widget = self.query_one("#gallery-image", TIImage)
         if self._index in self._image_cache:
             self._stop_skeleton()
-            img_widget.image = pil_from_bytes(self._image_cache[self._index])
+            img = pil_from_bytes(self._image_cache[self._index])
+            if img is None:
+                img = make_no_image(200, 200)
+            img_widget.image = img
         else:
             self._start_skeleton()
             self._fetch_image(self._index)
@@ -133,24 +144,32 @@ class GalleryScreen(Screen):
     def _set_image(self, index: int, img_data: bytes | None):
         if index == self._index:
             self._stop_skeleton()
-            self.query_one("#gallery-image", TIImage).image = pil_from_bytes(img_data)
+            img = pil_from_bytes(img_data)
+            if img is None:
+                img = make_no_image(200, 200)
+            self.query_one("#gallery-image", TIImage).image = img
 
     def _start_skeleton(self):
         self._stop_skeleton()
         self._skeleton_phase = 0
-        img_widget = self.query_one("#gallery-image", TIImage)
-        img_widget.image = make_skeleton_frame(200, 200, 0)
+        skeleton = self.query_one("#gallery-skeleton", HalfcellImage)
+        skeleton.image = make_skeleton_frame(200, 200, 0)
+        skeleton.display = True
+        self.query_one("#gallery-image", TIImage).display = False
         self._skeleton_timer = self.set_interval(1 / 15, self._on_skeleton_tick)
 
     def _on_skeleton_tick(self):
+        if not self._skeleton_timer:
+            return
         self._skeleton_phase = (self._skeleton_phase + 5) % 100
-        img_widget = self.query_one("#gallery-image", TIImage)
-        img_widget.image = make_skeleton_frame(200, 200, self._skeleton_phase)
+        self.query_one("#gallery-skeleton", HalfcellImage).image = make_skeleton_frame(200, 200, self._skeleton_phase)
 
     def _stop_skeleton(self):
         if self._skeleton_timer:
             self._skeleton_timer.stop()
             self._skeleton_timer = None
+        self.query_one("#gallery-skeleton", HalfcellImage).display = False
+        self.query_one("#gallery-image", TIImage).display = True
 
     def on_button_pressed(self, event: Button.Pressed):
         if event.button.id == "gallery-prev":
@@ -161,7 +180,7 @@ class GalleryScreen(Screen):
             self.action_close()
 
     def action_close(self):
-        self.app.pop_screen()
+        self.dismiss(self._index)
 
     def action_prev(self):
         if self._index > 0:
