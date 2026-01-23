@@ -359,34 +359,140 @@ def render_image(img_data: bytes, width: int = 40, height: int = 20,
         return image_to_halfblock(img_data, width, height)
 
 
+def _build_native_escape(img_data: bytes, width: int, height: int) -> str | None:
+    """Build the native image protocol escape sequence for the detected terminal.
+
+    Returns the escape sequence string, or None if native protocol unavailable.
+    """
+    if _GRAPHICS_PROTO == PROTO_KITTY:
+        try:
+            from PIL import Image
+            img = Image.open(io.BytesIO(img_data))
+            img = img.convert("RGBA")
+            px_w, px_h = width * 8, height * 16
+            img.thumbnail((px_w, px_h), Image.LANCZOS)
+            buf = io.BytesIO()
+            img.save(buf, format="PNG")
+            b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+            chunks = [b64[i:i + 4096] for i in range(0, len(b64), 4096)]
+            seq = ""
+            for i, chunk in enumerate(chunks):
+                last = (i == len(chunks) - 1)
+                if i == 0:
+                    seq += f"\033_Ga=T,f=100,t=d,c={width},r={height},m={'0' if last else '1'};{chunk}\033\\"
+                else:
+                    seq += f"\033_Gm={'0' if last else '1'};{chunk}\033\\"
+            return seq
+        except Exception:
+            return None
+    elif _GRAPHICS_PROTO == PROTO_ITERM2:
+        try:
+            from PIL import Image
+            img = Image.open(io.BytesIO(img_data))
+            img = img.convert("RGB")
+            px_w, px_h = width * 8, height * 16
+            img.thumbnail((px_w, px_h), Image.LANCZOS)
+            buf = io.BytesIO()
+            img.save(buf, format="PNG")
+            b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+            return f"\033]1337;File=inline=1;width={width};height={height};preserveAspectRatio=1:{b64}\007"
+        except Exception:
+            return None
+    elif _GRAPHICS_PROTO == PROTO_SIXEL:
+        try:
+            from PIL import Image
+            img = Image.open(io.BytesIO(img_data))
+            img = img.convert("RGB")
+            px_w, px_h = width * 8, height * 16
+            img.thumbnail((px_w, px_h), Image.LANCZOS)
+            img_q = img.quantize(colors=256, method=Image.Quantize.MEDIANCUT)
+            palette = img_q.getpalette()
+            pixels = list(img_q.getdata())
+            w, h = img_q.size
+            sixel = f"\033Pq\"1;1;{w};{h}"
+            num_colors = min(256, len(palette) // 3)
+            for i in range(num_colors):
+                r = palette[i*3] * 100 // 255
+                g = palette[i*3+1] * 100 // 255
+                b = palette[i*3+2] * 100 // 255
+                sixel += f"#{i};2;{r};{g};{b}"
+            for strip_y in range(0, h, 6):
+                for color in range(num_colors):
+                    has = any(
+                        pixels[(strip_y + row) * w + x] == color
+                        for row in range(min(6, h - strip_y))
+                        for x in range(w)
+                    )
+                    if not has:
+                        continue
+                    sixel += f"#{color}"
+                    for x in range(w):
+                        val = 0
+                        for row in range(6):
+                            y = strip_y + row
+                            if y < h and pixels[y * w + x] == color:
+                                val |= (1 << row)
+                        sixel += chr(63 + val)
+                    sixel += "$"
+                sixel += "-"
+            sixel += "\033\\"
+            return sixel
+        except Exception:
+            return None
+    return None
+
+
 class ImageWidget(Static):
-    """Widget that displays images using half-block characters.
+    """Widget that displays images, using native terminal protocols when available.
 
-    Native terminal image protocols (Kitty, iTerm2, Sixel) cannot be used
-    within Textual because Rich's rendering pipeline strips non-SGR escape
-    sequences. The half-block approach works because it uses Rich's own
-    color markup, producing 2 vertical pixels per character cell.
-
-    For native protocol rendering outside of Textual, use render_image()
-    directly with print().
+    For terminals supporting Kitty/iTerm2/Sixel, renders actual pixel images
+    by writing escape sequences directly to the terminal after Textual renders,
+    bypassing Rich's pipeline. Falls back to half-block characters otherwise.
     """
 
     def __init__(self, width: int = 40, height: int = 20, **kwargs):
         super().__init__(**kwargs)
         self._img_width = width
         self._img_height = height
+        self._native_escape: str | None = None
+        self._use_native = _GRAPHICS_PROTO != PROTO_HALFBLOCK
 
     def set_image(self, img_data: bytes | None):
         """Update the displayed image."""
-        if img_data:
-            markup = image_to_halfblock(img_data, self._img_width, self._img_height)
-        else:
-            markup = "[dim italic]No image[/dim italic]"
+        self._native_escape = None
+        if not img_data:
+            self.update("[dim italic]No image[/dim italic]")
+            return
+
+        # Always render half-block as base (visible fallback)
+        markup = image_to_halfblock(img_data, self._img_width, self._img_height)
         self.update(markup)
+
+        # If native protocol available, build escape and punch through on top
+        if self._use_native:
+            self._native_escape = _build_native_escape(
+                img_data, self._img_width, self._img_height
+            )
+            if self._native_escape:
+                self.call_after_refresh(self._punch_through)
 
     def set_loading(self):
         """Show a loading placeholder."""
+        self._native_escape = None
         self.update("[dim italic]Loading image...[/dim italic]")
+
+    def _punch_through(self):
+        """Write the image escape sequence directly to the terminal."""
+        if not self._native_escape:
+            return
+        region = self.content_region
+        # Move cursor to widget's screen position and write the image
+        seq = f"\033[{region.y + 1};{region.x + 1}H{self._native_escape}"
+        try:
+            sys.stdout.write(seq)
+            sys.stdout.flush()
+        except Exception:
+            pass
 
 
 class GalleryScreen(Screen):
