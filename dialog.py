@@ -27,6 +27,7 @@ class JLCImportDialog(wx.Dialog):
         self.board = board
         self._search_results = []
         self._raw_search_results = []
+        self._search_request_id = 0
         self._image_request_id = 0
         self._gallery_request_id = 0
         self._init_ui()
@@ -274,27 +275,71 @@ class JLCImportDialog(wx.Dialog):
         self.status_text.Clear()
         self._log(f"Searching for \"{keyword}\"...")
 
+        self._search_request_id += 1
+        request_id = self._search_request_id
+        self._start_search_pulse()
+        threading.Thread(
+            target=self._fetch_search_results,
+            args=(keyword, request_id),
+            daemon=True,
+        ).start()
+
+    def _start_search_pulse(self):
+        """Start pulsing the search button label."""
+        self._pulse_phase = 0
+        if not hasattr(self, '_pulse_timer'):
+            self._pulse_timer = wx.Timer(self)
+            self.Bind(wx.EVT_TIMER, self._on_pulse_tick, self._pulse_timer)
+        self._pulse_timer.Start(400)
+        self.search_btn.SetLabel("Searching")
+
+    def _on_pulse_tick(self, event):
+        """Cycle the search button label dots."""
+        self._pulse_phase = (self._pulse_phase + 1) % 4
+        dots = "." * self._pulse_phase
+        self.search_btn.SetLabel(f"Searching{dots}")
+
+    def _stop_search_pulse(self):
+        """Stop pulsing and restore the search button."""
+        if hasattr(self, '_pulse_timer'):
+            self._pulse_timer.Stop()
+        self.search_btn.SetLabel("Search")
+        self.search_btn.Enable()
+
+    def _fetch_search_results(self, keyword, request_id):
+        """Background thread: fetch search results from API."""
         try:
             result = search_components(keyword, page_size=200)
-            results = result["results"]
-
-            results.sort(key=lambda r: r['stock'] or 0, reverse=True)
-
-            self._raw_search_results = results
-            self._sort_col = 3  # sorted by stock
-            self._sort_ascending = False
-            self._apply_filters()
-            self._log(f"  {result['total']} total results, showing {len(self._search_results)}")
-            self._refresh_imported_ids()
-            self._update_col_headers()
-            self._repopulate_results()
-
+            wx.CallAfter(self._on_search_complete, result, request_id)
         except APIError as e:
-            self._log(f"Search error: {e}")
+            wx.CallAfter(self._on_search_error, f"Search error: {e}", request_id)
         except Exception as e:
-            self._log(f"Unexpected error: {type(e).__name__}: {e}")
-        finally:
-            self.search_btn.Enable()
+            wx.CallAfter(self._on_search_error, f"Unexpected error: {type(e).__name__}: {e}", request_id)
+
+    def _on_search_complete(self, result, request_id):
+        """Handle search results on the main thread."""
+        if request_id != self._search_request_id:
+            return
+        self._stop_search_pulse()
+
+        results = result["results"]
+        results.sort(key=lambda r: r['stock'] or 0, reverse=True)
+
+        self._raw_search_results = results
+        self._sort_col = 3  # sorted by stock
+        self._sort_ascending = False
+        self._apply_filters()
+        self._log(f"  {result['total']} total results, showing {len(self._search_results)}")
+        self._refresh_imported_ids()
+        self._update_col_headers()
+        self._repopulate_results()
+
+    def _on_search_error(self, msg, request_id):
+        """Handle search error on the main thread."""
+        if request_id != self._search_request_id:
+            return
+        self._stop_search_pulse()
+        self._log(msg)
 
     def _on_col_click(self, event):
         """Sort results by clicked column."""
