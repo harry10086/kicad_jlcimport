@@ -10,7 +10,7 @@ from kicad_jlcimport.api import search_components, fetch_full_component, filter_
 from kicad_jlcimport.parser import parse_footprint_shapes, parse_symbol_shapes
 from kicad_jlcimport.footprint_writer import write_footprint
 from kicad_jlcimport.symbol_writer import write_symbol
-from kicad_jlcimport.library import sanitize_name
+from kicad_jlcimport.library import sanitize_name, load_config
 from kicad_jlcimport.model3d import compute_model_transform, download_and_save_models
 
 
@@ -106,8 +106,9 @@ def cmd_import(args):
     model_path = ""
     model_offset = (0.0, 0.0, 0.0)
     model_rotation = (0.0, 0.0, 0.0)
+    lib_name = args.lib_name
     if footprint.model:
-        model_path = f"${{KIPRJMOD}}/JLCImport.3dshapes/{name}.step"
+        model_path = f"${{KIPRJMOD}}/{lib_name}.3dshapes/{name}.step"
         model_offset, model_rotation = compute_model_transform(
             footprint.model, comp["fp_origin_x"], comp["fp_origin_y"]
         )
@@ -131,7 +132,7 @@ def cmd_import(args):
 
         sym_content = write_symbol(
             symbol, name, prefix=comp["prefix"],
-            footprint_ref=f"JLCImport:{name}",
+            footprint_ref=f"{lib_name}:{name}",
             lcsc_id=lcsc_id,
             datasheet=comp.get("datasheet", ""),
             description=comp.get("description", ""),
@@ -224,6 +225,8 @@ examples:
     ip.add_argument("part", help="LCSC part number (e.g. C427602)")
     ip.add_argument("--show", choices=["footprint", "symbol", "both"], help="Print generated output")
     ip.add_argument("-o", "--output", help="Directory to save output files")
+    ip.add_argument("--lib-name", default=load_config().get("lib_name", "JLCImport"),
+                    help="Library name (default: from config or 'JLCImport')")
     ip.set_defaults(func=cmd_import)
 
     args = parser.parse_args()

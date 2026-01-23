@@ -1,8 +1,41 @@
 """Library file management - create/append symbols, save footprints, update lib-tables."""
+import json
 import os
 import re
 import sys
 from typing import Optional
+
+
+_DEFAULT_CONFIG = {"lib_name": "JLCImport"}
+
+
+def _config_path() -> str:
+    """Get path to the jlcimport config file."""
+    return os.path.join(_kicad_config_base(), "jlcimport.json")
+
+
+def load_config() -> dict:
+    """Load config from jlcimport.json, returning defaults for missing keys."""
+    config = dict(_DEFAULT_CONFIG)
+    path = _config_path()
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                stored = json.load(f)
+            if isinstance(stored, dict):
+                config.update(stored)
+        except (json.JSONDecodeError, OSError):
+            pass
+    return config
+
+
+def save_config(config: dict) -> None:
+    """Save config to jlcimport.json."""
+    path = _config_path()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(config, f, indent=2)
+        f.write("\n")
 
 
 def ensure_lib_structure(base_path: str, lib_name: str = "JLCImport") -> dict:
@@ -145,16 +178,19 @@ def _detect_kicad_version() -> str:
 
     # Fall back: find newest version directory
     base = _kicad_data_base()
-    if os.path.isdir(base):
-        versions = []
-        for d in os.listdir(base):
-            try:
-                versions.append((float(d), d))
-            except ValueError:
-                continue
-        if versions:
-            versions.sort(reverse=True)
-            return versions[0][1]
+    try:
+        if os.path.isdir(base):
+            versions = []
+            for d in os.listdir(base):
+                try:
+                    versions.append((float(d), d))
+                except ValueError:
+                    continue
+            if versions:
+                versions.sort(reverse=True)
+                return versions[0][1]
+    except OSError:
+        pass
 
     return "9.0"
 
