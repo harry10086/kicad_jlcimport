@@ -81,6 +81,9 @@ class JLCImportDialog(wx.Dialog):
 
         vbox.Add(search_box, 0, wx.EXPAND | wx.ALL, 5)
 
+        self.results_count_label = wx.StaticText(panel, label="")
+        vbox.Add(self.results_count_label, 0, wx.LEFT | wx.RIGHT, 10)
+
         # --- Results list ---
         self.results_list = wx.ListCtrl(panel, style=wx.LC_REPORT | wx.LC_SINGLE_SEL)
         self.results_list.InsertColumn(0, "LCSC", width=80)
@@ -272,6 +275,7 @@ class JLCImportDialog(wx.Dialog):
         self.results_list.DeleteAllItems()
         self._search_results = []
         self._raw_search_results = []
+        self.results_count_label.SetLabel("")
         self.status_text.Clear()
         self._log(f"Searching for \"{keyword}\"...")
 
@@ -443,6 +447,18 @@ class JLCImportDialog(wx.Dialog):
             self.results_list.SetItem(i, 3, stock_str)
             self.results_list.SetItem(i, 4, r['model'])
             self.results_list.SetItem(i, 5, r.get('package', ''))
+        self._update_results_count()
+
+    def _update_results_count(self):
+        """Update the results count label."""
+        shown = len(self._search_results)
+        total = len(self._raw_search_results)
+        if total == 0:
+            self.results_count_label.SetLabel("")
+        elif shown == total:
+            self.results_count_label.SetLabel(f"{total} results")
+        else:
+            self.results_count_label.SetLabel(f"{shown} of {total}")
 
     def _on_result_select(self, event):
         """Select a search result to populate the part number and show details."""
