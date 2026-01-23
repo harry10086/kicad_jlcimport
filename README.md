@@ -83,6 +83,34 @@ python3 -m kicad_jlcimport.cli import C427602 --show both
 python3 -m kicad_jlcimport.cli import C427602 -o ./output
 ```
 
+### TUI
+
+A terminal-based interface with image preview support (Sixel, Kitty, iTerm2, or halfcell fallback).
+
+![TUI interface](images/tui.png)
+
+```bash
+# Install dependencies
+pip install textual textual-image[textual] Pillow
+
+# Run with project directory
+python3 -m tui -p /path/to/kicad/project
+
+# Run without project (global library only)
+python3 -m tui
+```
+
+Features:
+- Search with sortable columns (click headers to sort)
+- Filter by type (Basic/Extended) and package
+- Thumbnail preview with loading skeleton animation
+- Click thumbnail or press `Ctrl+G` to open full-screen gallery
+- Gallery navigation with arrow keys, `Escape` to return
+- Import directly from detail view or import section
+- Links to datasheets and LCSC product pages
+
+Requires Python 3.10+.
+
 ## How It Works
 
 JLCImport fetches component data from the EasyEDA/LCSC API, parses the proprietary shape format, and converts it to KiCad 9 file formats:

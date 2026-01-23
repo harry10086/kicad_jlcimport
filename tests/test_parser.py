@@ -68,6 +68,13 @@ class TestParseSvgArcPath:
     def test_invalid_malformed(self):
         assert _parse_svg_arc_path("M abc A def") is None
 
+    def test_invalid_zero_radius(self):
+        assert _parse_svg_arc_path("M 100 200 A 0 50 0 0 1 150 250") is None
+        assert _parse_svg_arc_path("M 100 200 A 50 0 0 0 1 150 250") is None
+
+    def test_invalid_negative_radius(self):
+        assert _parse_svg_arc_path("M 100 200 A -5 50 0 0 1 150 250") is None
+
 
 class TestFindSvgPath:
     def test_finds_path(self):
@@ -174,6 +181,24 @@ class TestParseSymbolShapes:
         assert len(sym.polylines) == 1
         assert len(sym.polylines[0].points) == 2
         assert sym.polylines[0].closed is False
+
+    def test_parse_polyline_space_separated(self):
+        """Test polyline with space-separated coordinates (e.g. C100072 capacitor)."""
+        shapes = [
+            "PL~13 -8 13 8~#880000~1~0~none~rep2~0",
+            "PL~17 -8 17 8~#880000~1~0~none~rep3~0",
+            "PL~10 0 13 0~#880000~1~0~none~rep6~0",
+            "PL~17 0 20 0~#880000~1~0~none~rep7~0",
+        ]
+        sym = parse_symbol_shapes(shapes, 15, 0)
+        assert len(sym.polylines) == 4
+        # First polyline: vertical line at x=13, from y=-8 to y=8
+        pl = sym.polylines[0]
+        assert len(pl.points) == 2
+        assert pl.points[0][0] == mil_to_mm(13 - 15)  # x relative to origin
+        assert pl.points[0][1] == -mil_to_mm(-8)  # y inverted
+        assert pl.points[1][0] == mil_to_mm(13 - 15)
+        assert pl.closed is False
 
     def test_parse_polygon(self):
         shape = "PG~100~100~200~200~100~200~0~3"

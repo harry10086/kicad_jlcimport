@@ -146,9 +146,10 @@ def search_components(keyword: str, page: int = 1, page_size: int = 10,
     except (urllib.error.HTTPError, urllib.error.URLError) as e:
         raise APIError(f"Search failed: {e}") from e
 
-    page_info = raw.get("data", {}).get("componentPageInfo", {})
+    page_info = raw.get("data") or {}
+    page_info = page_info.get("componentPageInfo") or {}
     total = page_info.get("total", 0)
-    items = page_info.get("list", [])
+    items = page_info.get("list") or []
 
     results = []
     for item in items:
@@ -224,7 +225,7 @@ def fetch_product_image(lcsc_url: str) -> Optional[bytes]:
     try:
         with _urlopen(req, timeout=10) as resp:
             html = resp.read().decode("utf-8")
-    except (urllib.error.HTTPError, urllib.error.URLError):
+    except (urllib.error.HTTPError, urllib.error.URLError, OSError):
         return None
 
     # Find product image URL
@@ -239,7 +240,7 @@ def fetch_product_image(lcsc_url: str) -> Optional[bytes]:
     try:
         with _urlopen(req2, timeout=10) as resp:
             return resp.read()
-    except (urllib.error.HTTPError, urllib.error.URLError):
+    except (urllib.error.HTTPError, urllib.error.URLError, OSError):
         return None
 
 
