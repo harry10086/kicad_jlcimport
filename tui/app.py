@@ -461,6 +461,7 @@ class JLCImportTUI(App):
 
     def on_button_pressed(self, event: Button.Pressed):
         """Handle button clicks."""
+        self._hide_suggestions()
         button_id = event.button.id
         if button_id == "search-btn":
             self._do_search()
