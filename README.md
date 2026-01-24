@@ -104,6 +104,9 @@ python3 cli.py import C427602 -p /path/to/kicad/project
 
 # Import into KiCad's global 3rd-party library (updates global lib tables)
 python3 cli.py import C427602 --global
+
+# Re-import a component, overwriting existing symbol/footprint/3D models
+python3 cli.py import C427602 -p /path/to/kicad/project --overwrite
 ```
 
 ### TUI
