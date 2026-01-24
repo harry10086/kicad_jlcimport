@@ -1,6 +1,7 @@
 """wxPython dialog for JLCImport plugin."""
 import io
 import os
+import re
 import threading
 import traceback
 
@@ -8,6 +9,7 @@ import webbrowser
 
 import wx
 
+from .categories import CATEGORIES
 from .api import fetch_full_component, search_components, fetch_product_image, filter_by_min_stock, filter_by_type, APIError, validate_lcsc_id
 from .parser import parse_footprint_shapes, parse_symbol_shapes
 from .footprint_writer import write_footprint
@@ -46,9 +48,11 @@ class JLCImportDialog(wx.Dialog):
 
         # Search input row
         hbox_search = wx.BoxSizer(wx.HORIZONTAL)
-        self.search_input = wx.TextCtrl(panel, style=wx.TE_PROCESS_ENTER)
+        self.search_input = wx.ComboBox(panel, style=wx.CB_DROPDOWN | wx.TE_PROCESS_ENTER)
         self.search_input.SetHint("Search JLCPCB parts...")
         self.search_input.Bind(wx.EVT_TEXT_ENTER, self._on_search)
+        self.search_input.Bind(wx.EVT_TEXT, self._on_search_text_changed)
+        self.search_input.Bind(wx.EVT_COMBOBOX, self._on_category_selected)
         hbox_search.Add(self.search_input, 1, wx.EXPAND | wx.RIGHT, 5)
         self.search_btn = wx.Button(panel, label="Search")
         self.search_btn.Bind(wx.EVT_BUTTON, self._on_search)
@@ -318,7 +322,36 @@ class JLCImportDialog(wx.Dialog):
         self.status_text.AppendText(msg + "\n")
         wx.Yield()
 
+    def _on_search_text_changed(self, event):
+        """Update ComboBox choices as user types."""
+        if getattr(self, '_updating_choices', False):
+            return
+        text = self.search_input.GetValue().strip().lower()
+        if len(text) < 2:
+            self.search_input.Dismiss()
+            return
+        pattern = re.compile(r'\b' + re.escape(text), re.IGNORECASE)
+        matches = [c for c in CATEGORIES if pattern.search(c)]
+        if matches and len(matches) <= 20:
+            if len(matches) == 1 and matches[0].lower() == text:
+                self.search_input.Dismiss()
+            else:
+                self._updating_choices = True
+                current = self.search_input.GetValue()
+                self.search_input.Set(matches)
+                self.search_input.SetValue(current)
+                self.search_input.SetInsertionPointEnd()
+                self._updating_choices = False
+                self.search_input.Popup()
+        else:
+            self.search_input.Dismiss()
+
+    def _on_category_selected(self, event):
+        """Handle category selection from dropdown."""
+        self.search_input.SetInsertionPointEnd()
+
     def _on_search(self, event):
+        self.search_input.Dismiss()
         keyword = self.search_input.GetValue().strip()
         if not keyword:
             return
@@ -534,7 +567,7 @@ class JLCImportDialog(wx.Dialog):
         if total == 0:
             self.results_count_label.SetLabel("")
         elif shown == total:
-            self.results_count_label.SetLabel(f"{total} results")
+            self.results_count_label.SetLabel(f"{total} {'result' if total == 1 else 'results'}")
         else:
             self.results_count_label.SetLabel(f"{shown} of {total}")
 
