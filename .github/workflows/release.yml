@@ -41,6 +41,12 @@ jobs:
         run: |
           pyinstaller --onedir tui_entry.py --name jlcimport-tui --paths . --collect-all textual --collect-all textual_image
 
+      - name: Codesign (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          codesign --force --deep -s - dist/jlcimport-cli/jlcimport-cli
+          codesign --force --deep -s - dist/jlcimport-tui/jlcimport-tui
+
       - name: Package (Unix)
         if: runner.os != 'Windows'
         run: |

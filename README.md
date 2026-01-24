@@ -71,6 +71,13 @@ cp -r /path/to/kicad_jlcimport <plugins-dir>/kicad_jlcimport
 
 Standalone binaries for the CLI and TUI are available on the [Releases](https://github.com/jvanderberg/kicad_jlcimport/releases) page — no Python installation required.
 
+**macOS:** After extracting, remove the quarantine attribute before running:
+
+```bash
+xattr -cr jlcimport-cli/
+xattr -cr jlcimport-tui/
+```
+
 ### CLI
 
 The CLI tool can be used outside KiCad for testing or scripted imports:
