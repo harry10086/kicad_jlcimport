@@ -1,6 +1,7 @@
 """wxPython dialog for JLCImport plugin."""
 import io
 import os
+import re
 import threading
 import traceback
 
@@ -339,7 +340,8 @@ class JLCImportDialog(wx.Dialog):
         if len(text) < 2:
             self._category_popup.Hide()
             return
-        matches = [c for c in CATEGORIES if text in c.lower()]
+        pattern = re.compile(r'\b' + re.escape(text), re.IGNORECASE)
+        matches = [c for c in CATEGORIES if pattern.search(c)]
         if matches and len(matches) <= 20:
             if len(matches) == 1 and matches[0].lower() == text:
                 self._category_popup.Hide()

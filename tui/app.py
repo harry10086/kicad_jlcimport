@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 import traceback
 import webbrowser
 
@@ -391,8 +392,9 @@ class JLCImportTUI(App):
         if len(text) < 2:
             self._hide_suggestions()
             return
-        # Match against the last word/phrase being typed
-        matches = [c for c in CATEGORIES if text in c.lower()]
+        # Match at word boundaries
+        pattern = re.compile(r'\b' + re.escape(text), re.IGNORECASE)
+        matches = [c for c in CATEGORIES if pattern.search(c)]
         if matches and len(matches) <= 20:
             if len(matches) == 1 and matches[0].lower() == text:
                 self._hide_suggestions()
