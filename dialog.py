@@ -62,7 +62,7 @@ class JLCImportDialog(wx.Dialog):
         # Category suggestions popup
         self._category_popup = wx.PopupWindow(self)
         self._category_listbox = wx.ListBox(self._category_popup, style=wx.LB_SINGLE)
-        self._category_listbox.Bind(wx.EVT_LISTBOX, self._on_category_selected)
+        self._category_listbox.Bind(wx.EVT_LEFT_DOWN, self._on_category_clicked)
         self._category_popup.Hide()
 
         # Filter row
@@ -358,16 +358,15 @@ class JLCImportDialog(wx.Dialog):
         else:
             self._category_popup.Hide()
 
-    def _on_category_selected(self, event):
-        """Set search input to the selected category."""
-        sel = self._category_listbox.GetSelection()
-        if sel == wx.NOT_FOUND:
-            return
-        category = self._category_listbox.GetString(sel)
-        self.search_input.ChangeValue(category)
-        self.search_input.SetInsertionPointEnd()
-        self._category_popup.Hide()
-        self.search_input.SetFocus()
+    def _on_category_clicked(self, event):
+        """Select category on first click via hit test."""
+        item = self._category_listbox.HitTest(event.GetPosition())
+        if item != wx.NOT_FOUND:
+            category = self._category_listbox.GetString(item)
+            self.search_input.ChangeValue(category)
+            self.search_input.SetInsertionPointEnd()
+            self._category_popup.Hide()
+            self.search_input.SetFocus()
 
     def _on_search(self, event):
         self._category_popup.Hide()
