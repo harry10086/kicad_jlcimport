@@ -182,11 +182,24 @@ def cmd_import(args):
         paths = ensure_lib_structure(lib_dir, lib_name)
 
         if uuid_3d:
-            step_path, wrl_path = download_and_save_models(uuid_3d, paths["models_dir"], name)
+            step_dest = os.path.join(paths["models_dir"], f"{name}.step")
+            wrl_dest = os.path.join(paths["models_dir"], f"{name}.wrl")
+            step_existed = os.path.exists(step_dest)
+            wrl_existed = os.path.exists(wrl_dest)
+
+            step_path, wrl_path = download_and_save_models(
+                uuid_3d, paths["models_dir"], name, overwrite=args.overwrite
+            )
             if step_path:
-                print(f"  Saved: {step_path}")
+                if step_existed and not args.overwrite:
+                    print(f"  Skipped: {step_path} (exists, overwrite=off)")
+                else:
+                    print(f"  Saved: {step_path}")
             if wrl_path:
-                print(f"  Saved: {wrl_path}")
+                if wrl_existed and not args.overwrite:
+                    print(f"  Skipped: {wrl_path} (exists, overwrite=off)")
+                else:
+                    print(f"  Saved: {wrl_path}")
 
             if use_global:
                 model_path = os.path.join(paths["models_dir"], f"{name}.step") if step_path else ""
@@ -263,7 +276,7 @@ def cmd_import(args):
         if uuid_3d:
             models_dir = os.path.join(out_dir, "3dmodels")
             step_path, wrl_path = download_and_save_models(
-                uuid_3d, models_dir, name
+                uuid_3d, models_dir, name, overwrite=True
             )
             if step_path:
                 print(f"  Saved: {step_path}")

@@ -824,18 +824,29 @@ class JLCImportTUI(App):
             uuid_3d = comp.get("uuid_3d", "")
 
         if uuid_3d:
-            log("Downloading 3D model...")
+            step_dest = os.path.join(paths["models_dir"], f"{name}.step")
+            wrl_dest = os.path.join(paths["models_dir"], f"{name}.wrl")
+            step_existed = os.path.exists(step_dest)
+            wrl_existed = os.path.exists(wrl_dest)
+
+            log("Ensuring 3D model...")
             step_path, wrl_path = download_and_save_models(
-                uuid_3d, paths["models_dir"], name
+                uuid_3d, paths["models_dir"], name, overwrite=overwrite
             )
             if step_path:
                 if use_global:
                     model_path = os.path.join(paths["models_dir"], f"{name}.step")
                 else:
                     model_path = f"${{KIPRJMOD}}/{lib_name}.3dshapes/{name}.step"
-                log(f"  STEP saved: {step_path}")
+                if step_existed and not overwrite:
+                    log(f"  STEP skipped: {step_path} (exists, overwrite=off)")
+                else:
+                    log(f"  STEP saved: {step_path}")
             if wrl_path:
-                log(f"  WRL saved: {wrl_path}")
+                if wrl_existed and not overwrite:
+                    log(f"  WRL skipped: {wrl_path} (exists, overwrite=off)")
+                else:
+                    log(f"  WRL saved: {wrl_path}")
         else:
             log("No 3D model available")
 

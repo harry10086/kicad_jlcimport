@@ -966,16 +966,29 @@ class JLCImportDialog(wx.Dialog):
             uuid_3d = comp.get("uuid_3d", "")
 
         if uuid_3d:
-            self._log("Downloading 3D model...")
-            step_path, wrl_path = download_and_save_models(uuid_3d, paths["models_dir"], name)
+            step_dest = os.path.join(paths["models_dir"], f"{name}.step")
+            wrl_dest = os.path.join(paths["models_dir"], f"{name}.wrl")
+            step_existed = os.path.exists(step_dest)
+            wrl_existed = os.path.exists(wrl_dest)
+
+            self._log("Ensuring 3D model...")
+            step_path, wrl_path = download_and_save_models(
+                uuid_3d, paths["models_dir"], name, overwrite=overwrite
+            )
             if step_path:
                 if use_global:
                     model_path = os.path.join(paths["models_dir"], f"{name}.step")
                 else:
                     model_path = f"${{KIPRJMOD}}/{lib_name}.3dshapes/{name}.step"
-                self._log(f"  STEP saved: {step_path}")
+                if step_existed and not overwrite:
+                    self._log(f"  STEP skipped: {step_path} (exists, overwrite=off)")
+                else:
+                    self._log(f"  STEP saved: {step_path}")
             if wrl_path:
-                self._log(f"  WRL saved: {wrl_path}")
+                if wrl_existed and not overwrite:
+                    self._log(f"  WRL skipped: {wrl_path} (exists, overwrite=off)")
+                else:
+                    self._log(f"  WRL saved: {wrl_path}")
         else:
             self._log("No 3D model available")
 

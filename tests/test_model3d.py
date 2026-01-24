@@ -1,7 +1,7 @@
 """Tests for model3d.py - VRML conversion and model transforms."""
 import pytest
 
-from kicad_jlcimport.model3d import convert_to_vrml, compute_model_transform
+from kicad_jlcimport.model3d import convert_to_vrml, compute_model_transform, download_and_save_models
 from kicad_jlcimport.ee_types import EE3DModel
 
 
@@ -147,3 +147,45 @@ class TestConvertToVrml:
         result = convert_to_vrml(source)
         lines = result.strip().split("\n")
         assert lines[0] == "#VRML V2.0 utf8"
+
+
+class TestDownloadAndSaveModels:
+    def test_skips_existing_files_by_default(self, tmp_path, monkeypatch):
+        import kicad_jlcimport.model3d as model3d
+
+        step_path = tmp_path / "part.step"
+        wrl_path = tmp_path / "part.wrl"
+        step_path.write_bytes(b"old-step")
+        wrl_path.write_text("old-wrl", encoding="utf-8")
+
+        def _should_not_download(*_a, **_k):
+            raise AssertionError("download should be skipped for existing files")
+
+        monkeypatch.setattr(model3d, "download_step", _should_not_download)
+        monkeypatch.setattr(model3d, "download_wrl_source", _should_not_download)
+
+        step_out, wrl_out = download_and_save_models("uuid", str(tmp_path), "part")
+        assert step_out == str(step_path)
+        assert wrl_out == str(wrl_path)
+        assert step_path.read_bytes() == b"old-step"
+        assert wrl_path.read_text(encoding="utf-8") == "old-wrl"
+
+    def test_overwrite_true_rewrites_files(self, tmp_path, monkeypatch):
+        import kicad_jlcimport.model3d as model3d
+
+        step_path = tmp_path / "part.step"
+        wrl_path = tmp_path / "part.wrl"
+        step_path.write_bytes(b"old-step")
+        wrl_path.write_text("old-wrl", encoding="utf-8")
+
+        monkeypatch.setattr(model3d, "download_step", lambda *_a, **_k: b"new-step")
+        monkeypatch.setattr(model3d, "download_wrl_source", lambda *_a, **_k: "src")
+        monkeypatch.setattr(model3d, "convert_to_vrml", lambda *_a, **_k: "new-wrl")
+
+        step_out, wrl_out = download_and_save_models(
+            "uuid", str(tmp_path), "part", overwrite=True
+        )
+        assert step_out == str(step_path)
+        assert wrl_out == str(wrl_path)
+        assert step_path.read_bytes() == b"new-step"
+        assert wrl_path.read_text(encoding="utf-8") == "new-wrl"
