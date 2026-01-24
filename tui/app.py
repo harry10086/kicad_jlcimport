@@ -692,9 +692,9 @@ class JLCImportTUI(App):
         if total == 0:
             label.update("")
         elif shown == total:
-            label.update(f"{total} results")
+            label.update(f"{total} {'result' if total == 1 else 'results'}")
         else:
-            label.update(f"{shown} of {total} results")
+            label.update(f"{shown} of {total} {'result' if total == 1 else 'results'}")
 
     # --- Sorting ---
 

@@ -567,7 +567,7 @@ class JLCImportDialog(wx.Dialog):
         if total == 0:
             self.results_count_label.SetLabel("")
         elif shown == total:
-            self.results_count_label.SetLabel(f"{total} results")
+            self.results_count_label.SetLabel(f"{total} {'result' if total == 1 else 'results'}")
         else:
             self.results_count_label.SetLabel(f"{shown} of {total}")
 
