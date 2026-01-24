@@ -10,7 +10,16 @@ from kicad_jlcimport.api import search_components, fetch_full_component, filter_
 from kicad_jlcimport.parser import parse_footprint_shapes, parse_symbol_shapes
 from kicad_jlcimport.footprint_writer import write_footprint
 from kicad_jlcimport.symbol_writer import write_symbol
-from kicad_jlcimport.library import sanitize_name, load_config
+from kicad_jlcimport.library import (
+    sanitize_name,
+    load_config,
+    ensure_lib_structure,
+    add_symbol_to_lib,
+    save_footprint,
+    update_project_lib_tables,
+    update_global_lib_tables,
+    get_global_lib_dir,
+)
 from kicad_jlcimport.model3d import compute_model_transform, download_and_save_models
 
 
@@ -70,6 +79,15 @@ def cmd_search(args):
     print()
 
 
+def _resolve_project_dir(path: str) -> str:
+    if not path:
+        return ""
+    abs_path = os.path.abspath(path)
+    if os.path.isfile(abs_path):
+        return os.path.dirname(abs_path)
+    return abs_path
+
+
 def cmd_import(args):
     """Import a component and show/save the output."""
     try:
@@ -103,15 +121,21 @@ def cmd_import(args):
         print(f"  3D model: {footprint.model.uuid}")
 
     # Generate footprint
+    uuid_3d = ""
     model_path = ""
     model_offset = (0.0, 0.0, 0.0)
     model_rotation = (0.0, 0.0, 0.0)
     lib_name = args.lib_name
     if footprint.model:
+        uuid_3d = footprint.model.uuid
         model_path = f"${{KIPRJMOD}}/{lib_name}.3dshapes/{name}.step"
         model_offset, model_rotation = compute_model_transform(
             footprint.model, comp["fp_origin_x"], comp["fp_origin_y"]
         )
+    if not uuid_3d:
+        uuid_3d = comp.get("uuid_3d", "")
+        if uuid_3d:
+            model_path = f"${{KIPRJMOD}}/{lib_name}.3dshapes/{name}.step"
 
     fp_content = write_footprint(
         footprint, name, lcsc_id=lcsc_id,
@@ -138,10 +162,82 @@ def cmd_import(args):
             description=comp.get("description", ""),
             manufacturer=comp.get("manufacturer", ""),
             manufacturer_part=comp.get("manufacturer_part", ""),
-        )
+    )
 
     # Output
     print()
+    if getattr(args, "project", None) or getattr(args, "global_dest", False):
+        if getattr(args, "project", None):
+            lib_dir = _resolve_project_dir(args.project)
+            if not os.path.isdir(lib_dir):
+                print(f"  Error: project path does not exist or is not a directory: {args.project}")
+                return
+            use_global = False
+        else:
+            lib_dir = get_global_lib_dir()
+            use_global = True
+
+        print(f"  Destination: {lib_dir} ({'global' if use_global else 'project'})")
+
+        paths = ensure_lib_structure(lib_dir, lib_name)
+
+        if uuid_3d:
+            step_path, wrl_path = download_and_save_models(uuid_3d, paths["models_dir"], name)
+            if step_path:
+                print(f"  Saved: {step_path}")
+            if wrl_path:
+                print(f"  Saved: {wrl_path}")
+
+            if use_global:
+                model_path = os.path.join(paths["models_dir"], f"{name}.step") if step_path else ""
+            else:
+                model_path = f"${{KIPRJMOD}}/{lib_name}.3dshapes/{name}.step" if step_path else ""
+
+            fp_content = write_footprint(
+                footprint, name, lcsc_id=lcsc_id,
+                description=comp.get("description", ""),
+                datasheet=comp.get("datasheet", ""),
+                model_path=model_path,
+                model_offset=model_offset,
+                model_rotation=model_rotation,
+            )
+
+        fp_saved = save_footprint(paths["fp_dir"], name, fp_content, overwrite=args.overwrite)
+        fp_path = os.path.join(paths["fp_dir"], f"{name}.kicad_mod")
+        if fp_saved:
+            print(f"  Saved: {fp_path}")
+        else:
+            print(f"  Skipped: {fp_path} (exists, overwrite=off)")
+
+        if sym_content:
+            sym_added = add_symbol_to_lib(paths["sym_path"], name, sym_content, overwrite=args.overwrite)
+            if sym_added:
+                print(f"  Updated: {paths['sym_path']}")
+            else:
+                print(f"  Skipped: {paths['sym_path']} (exists, overwrite=off)")
+
+        if use_global:
+            update_global_lib_tables(lib_dir, lib_name)
+            print("  Global library tables updated.")
+        else:
+            newly_created = update_project_lib_tables(lib_dir, lib_name)
+            print("  Project library tables updated.")
+            if newly_created:
+                print("  NOTE: Reopen project for new library tables to take effect.")
+
+        print(f"\n  Done: '{title}' imported as {lib_name}:{name}")
+
+        if args.show == "footprint" or args.show == "both":
+            print("\n  ── Footprint (.kicad_mod) ──")
+            print(fp_content)
+        if args.show == "symbol" or args.show == "both":
+            if sym_content:
+                print("\n  ── Symbol (.kicad_sym fragment) ──")
+                print(sym_content)
+            else:
+                print("\n  (No symbol data)")
+        return
+
     if args.output:
         out_dir = args.output
         os.makedirs(out_dir, exist_ok=True)
@@ -164,10 +260,10 @@ def cmd_import(args):
                 f.write(sym_lib)
             print(f"  Saved: {sym_path}")
 
-        if footprint.model:
+        if uuid_3d:
             models_dir = os.path.join(out_dir, "3dmodels")
             step_path, wrl_path = download_and_save_models(
-                footprint.model.uuid, models_dir, name
+                uuid_3d, models_dir, name
             )
             if step_path:
                 print(f"  Saved: {step_path}")
@@ -205,6 +301,8 @@ examples:
   %(prog)s import C42415655 --show footprint
   %(prog)s import C427602 --show both
   %(prog)s import C427602 -o ./output
+  %(prog)s import C427602 -p /path/to/project
+  %(prog)s import C427602 --global
 """)
 
     sub = parser.add_subparsers(dest="command")
@@ -224,7 +322,13 @@ examples:
     ip = sub.add_parser("import", aliases=["i"], help="Import a component by LCSC part number")
     ip.add_argument("part", help="LCSC part number (e.g. C427602)")
     ip.add_argument("--show", choices=["footprint", "symbol", "both"], help="Print generated output")
-    ip.add_argument("-o", "--output", help="Directory to save output files")
+    dest = ip.add_mutually_exclusive_group()
+    dest.add_argument("-o", "--output", help="Directory to save output files (export-only)")
+    dest.add_argument("-p", "--project", help="KiCad project directory (where .kicad_pro is)")
+    dest.add_argument("--global", dest="global_dest", action="store_true",
+                      help="Import into KiCad global 3rd-party library")
+    ip.add_argument("--overwrite", action="store_true",
+                    help="Overwrite existing symbol/footprint when importing to a library")
     ip.add_argument("--lib-name", default=load_config().get("lib_name", "JLCImport"),
                     help="Library name (default: from config or 'JLCImport')")
     ip.set_defaults(func=cmd_import)
