@@ -829,7 +829,7 @@ class JLCImportTUI(App):
             step_existed = os.path.exists(step_dest)
             wrl_existed = os.path.exists(wrl_dest)
 
-            log("Ensuring 3D model...")
+            log("Downloading 3D model...")
             step_path, wrl_path = download_and_save_models(
                 uuid_3d, paths["models_dir"], name, overwrite=overwrite
             )
