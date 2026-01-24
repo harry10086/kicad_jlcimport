@@ -34,13 +34,13 @@ A KiCad 9 Action Plugin that imports symbols, footprints, and 3D models directly
 ### Option 1: Symlink (recommended for development)
 
 ```bash
-ln -s /path/to/kicad_jlcimport ~/Documents/KiCad/9.0/scripting/plugins/kicad_jlcimport
+ln -s /path/to/kicad_jlcimport <plugins-dir>/kicad_jlcimport
 ```
 
 ### Option 2: Copy
 
 ```bash
-cp -r /path/to/kicad_jlcimport ~/Documents/KiCad/9.0/scripting/plugins/kicad_jlcimport
+cp -r /path/to/kicad_jlcimport <plugins-dir>/kicad_jlcimport
 ```
 
 ### Activate
@@ -73,20 +73,20 @@ The CLI tool can be used outside KiCad for testing or scripted imports:
 
 ```bash
 # Search (default: --min-stock 1, only shows parts in stock)
-python3 -m kicad_jlcimport.cli search "100nF 0402" -t basic
-python3 -m kicad_jlcimport.cli search "ESP32" -n 20 --min-stock 100
+python3 cli.py search "100nF 0402" -t basic
+python3 cli.py search "ESP32" -n 20 --min-stock 100
 
 # Search with CSV output
-python3 -m kicad_jlcimport.cli search "RP2350" --csv > parts.csv
+python3 cli.py search "RP2350" --csv > parts.csv
 
 # Import (prints generated output)
-python3 -m kicad_jlcimport.cli import C427602 --show both
+python3 cli.py import C427602 --show both
 
 # Import to directory (saves .kicad_sym, .kicad_mod, and 3D models)
-python3 -m kicad_jlcimport.cli import C427602 -o ./output
+python3 cli.py import C427602 -o ./output
 
 # Import using a custom library name
-python3 -m kicad_jlcimport.cli import C427602 -o ./output --lib-name MyParts
+python3 cli.py import C427602 -o ./output --lib-name MyParts
 ```
 
 ### TUI
@@ -96,10 +96,10 @@ A terminal-based interface with image preview support (Sixel, Kitty, iTerm2, or 
 ![TUI interface](images/tui.png)
 
 ```bash
-# Install dependencies
-pip install textual textual-image[textual] Pillow
+# Install TUI dependencies (requires Python 3.10+)
+pip install textual "textual-image[textual]" Pillow
 
-# Run with project directory
+# Run from the project directory
 python3 -m tui -p /path/to/kicad/project
 
 # Run without project (global library only)
@@ -115,8 +115,6 @@ Features:
 - Configurable library name (shared with the plugin)
 - Import directly from detail view or import section
 - Links to datasheets and LCSC product pages
-
-Requires Python 3.10+.
 
 ## Configuration
 
@@ -148,7 +146,7 @@ For a detailed look at the architecture, data flow, module responsibilities, and
 - Python 3 (bundled with KiCad)
 - Internet connection
 
-No additional Python packages are required — the plugin uses only the standard library (`urllib`, `json`, `ssl`, `io`, `threading`) and `wx` (bundled with KiCad).
+The plugin requires no additional Python packages — it uses only the standard library and `wx` (both bundled with KiCad). The TUI requires Python 3.10+ and additional packages (see [TUI](#tui) above).
 
 ## License
 
