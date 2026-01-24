@@ -51,7 +51,6 @@ class JLCImportDialog(wx.Dialog):
         self.search_input.SetHint("Search JLCPCB parts...")
         self.search_input.Bind(wx.EVT_TEXT_ENTER, self._on_search)
         self.search_input.Bind(wx.EVT_TEXT, self._on_search_text_changed)
-        self.search_input.Bind(wx.EVT_KILL_FOCUS, self._on_search_focus_lost)
         self.search_input.Bind(wx.EVT_KEY_DOWN, self._on_search_key_down)
         hbox_search.Add(self.search_input, 1, wx.EXPAND | wx.RIGHT, 5)
         self.search_btn = wx.Button(panel, label="Search")
@@ -328,17 +327,11 @@ class JLCImportDialog(wx.Dialog):
         self.status_text.AppendText(msg + "\n")
         wx.Yield()
 
-    def _on_search_focus_lost(self, event):
-        """Hide suggestions when search input loses focus."""
-        wx.CallAfter(self._category_popup.Hide)
-        event.Skip()
-
     def _on_search_key_down(self, event):
-        """Hide suggestions on Escape."""
-        if event.GetKeyCode() == wx.WXK_ESCAPE:
+        """Hide suggestions on Escape or Tab."""
+        if event.GetKeyCode() in (wx.WXK_ESCAPE, wx.WXK_TAB):
             self._category_popup.Hide()
-        else:
-            event.Skip()
+        event.Skip()
 
     def _on_search_text_changed(self, event):
         """Show category suggestions as user types."""
