@@ -67,6 +67,10 @@ cp -r /path/to/kicad_jlcimport <plugins-dir>/kicad_jlcimport
 
 > **Note:** If library tables (`sym-lib-table` / `fp-lib-table`) are newly created, reopen the project for them to take effect.
 
+### Pre-built Binaries
+
+Standalone binaries for the CLI and TUI are available on the [Releases](https://github.com/jvanderberg/kicad_jlcimport/releases) page — no Python installation required.
+
 ### CLI
 
 The CLI tool can be used outside KiCad for testing or scripted imports:

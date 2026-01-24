@@ -3,4 +3,7 @@ __pycache__/
 *.pyo
 .DS_Store
 .venv/
+dist/
+build/
+*.spec
 testdata/

@@ -1,0 +1,84 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            platform: macos-arm64
+          - os: macos-13
+            platform: macos-x86_64
+          - os: ubuntu-latest
+            platform: linux-x86_64
+          - os: windows-latest
+            platform: windows-x86_64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install dependencies
+        run: |
+          pip install pyinstaller textual "textual-image[textual]" Pillow
+
+      - name: Build CLI
+        run: |
+          pyinstaller --onedir cli.py --name jlcimport-cli --paths .
+
+      - name: Build TUI
+        run: |
+          pyinstaller --onedir tui_entry.py --name jlcimport-tui --paths . --collect-all textual --collect-all textual_image
+
+      - name: Package (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          cd dist
+          tar czf jlcimport-cli-${{ matrix.platform }}.tar.gz jlcimport-cli/
+          tar czf jlcimport-tui-${{ matrix.platform }}.tar.gz jlcimport-tui/
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cd dist
+          Compress-Archive -Path jlcimport-cli -DestinationPath jlcimport-cli-${{ matrix.platform }}.zip
+          Compress-Archive -Path jlcimport-tui -DestinationPath jlcimport-tui-${{ matrix.platform }}.zip
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ matrix.platform }}
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            *.tar.gz
+            *.zip
+          generate_release_notes: true
