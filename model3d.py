@@ -25,37 +25,60 @@ def compute_model_transform(model: EE3DModel, fp_origin_x: float, fp_origin_y: f
     return offset, model.rotation
 
 
-def download_and_save_models(uuid_3d: str, output_dir: str, name: str) -> Tuple[Optional[str], Optional[str]]:
+def download_and_save_models(
+    uuid_3d: str,
+    output_dir: str,
+    name: str,
+    overwrite: bool = False,
+) -> Tuple[Optional[str], Optional[str]]:
     """Download STEP and WRL models, save to output_dir.
 
-    Returns (step_path, wrl_path) - either may be None if download fails.
+    If overwrite is False, existing files are kept and their paths are returned.
+    Returns (step_path, wrl_path) - either may be None if unavailable.
     """
     os.makedirs(output_dir, exist_ok=True)
 
-    step_path = None
-    wrl_path = None
+    step_path = os.path.join(output_dir, f"{name}.step")
+    wrl_path = os.path.join(output_dir, f"{name}.wrl")
+
+    output_dir_abs = os.path.abspath(output_dir)
+    step_path_abs = os.path.abspath(step_path)
+    wrl_path_abs = os.path.abspath(wrl_path)
+
+    if not step_path_abs.startswith(output_dir_abs):
+        raise ValueError(f"Invalid model name: {name}")
+    if not wrl_path_abs.startswith(output_dir_abs):
+        raise ValueError(f"Invalid model name: {name}")
 
     # Download STEP
-    step_data = download_step(uuid_3d)
-    if step_data:
-        step_path = os.path.join(output_dir, f"{name}.step")
-        if not os.path.abspath(step_path).startswith(os.path.abspath(output_dir)):
-            raise ValueError(f"Invalid model name: {name}")
-        with open(step_path, "wb") as f:
-            f.write(step_data)
+    if os.path.exists(step_path) and not overwrite:
+        step_out = step_path
+    else:
+        step_data = download_step(uuid_3d)
+        if step_data:
+            with open(step_path, "wb") as f:
+                f.write(step_data)
+            step_out = step_path
+        else:
+            step_out = step_path if os.path.exists(step_path) else None
 
     # Download and convert WRL
-    wrl_source = download_wrl_source(uuid_3d)
-    if wrl_source:
-        wrl_content = convert_to_vrml(wrl_source)
-        if wrl_content:
-            wrl_path = os.path.join(output_dir, f"{name}.wrl")
-            if not os.path.abspath(wrl_path).startswith(os.path.abspath(output_dir)):
-                raise ValueError(f"Invalid model name: {name}")
-            with open(wrl_path, "w", encoding="utf-8") as f:
-                f.write(wrl_content)
+    if os.path.exists(wrl_path) and not overwrite:
+        wrl_out = wrl_path
+    else:
+        wrl_source = download_wrl_source(uuid_3d)
+        if wrl_source:
+            wrl_content = convert_to_vrml(wrl_source)
+            if wrl_content:
+                with open(wrl_path, "w", encoding="utf-8") as f:
+                    f.write(wrl_content)
+                wrl_out = wrl_path
+            else:
+                wrl_out = wrl_path if os.path.exists(wrl_path) else None
+        else:
+            wrl_out = wrl_path if os.path.exists(wrl_path) else None
 
-    return step_path, wrl_path
+    return step_out, wrl_out
 
 
 def convert_to_vrml(obj_source: str) -> Optional[str]:
