@@ -17,6 +17,7 @@ from textual.widgets import (
     Header,
     Input,
     Label,
+    OptionList,
     RadioButton,
     RadioSet,
     RichLog,
@@ -28,6 +29,7 @@ from textual_image.widget import HalfcellImage
 from .helpers import TIImage, pil_from_bytes, make_no_image, make_skeleton_frame
 from .gallery import GalleryScreen
 
+from kicad_jlcimport.categories import CATEGORIES
 from kicad_jlcimport.api import (
     fetch_full_component,
     search_components,
@@ -63,6 +65,7 @@ class JLCImportTUI(App):
     CSS = """
     Screen {
         background: #0a0a0a;
+        layers: default overlay;
     }
 
     /* Compact all widgets globally */
@@ -140,6 +143,22 @@ class JLCImportTUI(App):
     }
     #search-input { width: 1fr; }
     #search-btn { margin-left: 1; }
+    #category-suggestions {
+        display: none;
+        layer: overlay;
+        dock: top;
+        margin: 3 1 0 1;
+        height: auto;
+        max-height: 10;
+        background: #1a1a1a;
+        border: solid #333333;
+        padding: 0;
+    }
+    #category-suggestions.visible { display: block; }
+    #category-suggestions > .option-list--option-highlighted {
+        background: #1a3a1a;
+        color: #33ff33;
+    }
     #filter-row {
         height: 1;
         width: 100%;
@@ -171,6 +190,7 @@ class JLCImportTUI(App):
     #detail-image-wrap {
         width: 22;
         height: 10;
+        margin-left: 1;
         margin-right: 1;
     }
     #detail-skeleton {
@@ -336,6 +356,7 @@ class JLCImportTUI(App):
             with Container(id="status-section"):
                 yield RichLog(id="status-log", highlight=True, markup=True)
 
+        yield OptionList(id="category-suggestions")
         yield Footer()
 
     def on_mount(self):
@@ -356,9 +377,64 @@ class JLCImportTUI(App):
     def on_input_submitted(self, event: Input.Submitted):
         """Handle Enter key in inputs."""
         if event.input.id == "search-input":
+            self._hide_suggestions()
             self._do_search()
         elif event.input.id == "lib-name-input":
             self._persist_lib_name()
+
+    def on_input_changed(self, event: Input.Changed):
+        """Show category suggestions as user types in search."""
+        if event.input.id != "search-input":
+            return
+        text = event.value.strip().lower()
+        suggestions = self.query_one("#category-suggestions", OptionList)
+        if len(text) < 2:
+            self._hide_suggestions()
+            return
+        # Match against the last word/phrase being typed
+        matches = [c for c in CATEGORIES if text in c.lower()]
+        if matches and len(matches) <= 20:
+            if len(matches) == 1 and matches[0].lower() == text:
+                self._hide_suggestions()
+            else:
+                suggestions.clear_options()
+                for m in matches:
+                    suggestions.add_option(m)
+                suggestions.add_class("visible")
+        else:
+            self._hide_suggestions()
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected):
+        """Append selected category to search input."""
+        if event.option_list.id == "category-suggestions":
+            search_input = self.query_one("#search-input", Input)
+            current = search_input.value.strip()
+            category = str(event.option.prompt)
+            # Replace the current text with the category, or append if there's other text
+            words = current.lower().split()
+            # Remove words that are part of the category match
+            cat_lower = category.lower()
+            remaining = [w for w in current.split() if w.lower() not in cat_lower.lower()]
+            if remaining:
+                new_value = " ".join(remaining) + " " + category
+            else:
+                new_value = category
+            search_input.value = new_value + " "
+            self._hide_suggestions()
+            search_input.focus()
+            self.set_timer(0.05, lambda: self._deselect_search(len(new_value) + 1))
+
+    def _deselect_search(self, pos: int):
+        """Move cursor to end without selection after a brief delay."""
+        search_input = self.query_one("#search-input", Input)
+        from textual.widgets._input import Selection
+        search_input.selection = Selection(pos, pos)
+        search_input.cursor_position = pos
+
+    def _hide_suggestions(self):
+        """Hide the category suggestions dropdown."""
+        suggestions = self.query_one("#category-suggestions", OptionList)
+        suggestions.remove_class("visible")
 
     def on_input_blurred(self, event: Input.Blurred):
         """Persist lib name when input loses focus."""

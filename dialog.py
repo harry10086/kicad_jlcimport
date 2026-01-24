@@ -8,6 +8,7 @@ import webbrowser
 
 import wx
 
+from .categories import CATEGORIES
 from .api import fetch_full_component, search_components, fetch_product_image, filter_by_min_stock, filter_by_type, APIError, validate_lcsc_id
 from .parser import parse_footprint_shapes, parse_symbol_shapes
 from .footprint_writer import write_footprint
@@ -49,11 +50,18 @@ class JLCImportDialog(wx.Dialog):
         self.search_input = wx.TextCtrl(panel, style=wx.TE_PROCESS_ENTER)
         self.search_input.SetHint("Search JLCPCB parts...")
         self.search_input.Bind(wx.EVT_TEXT_ENTER, self._on_search)
+        self.search_input.Bind(wx.EVT_TEXT, self._on_search_text_changed)
         hbox_search.Add(self.search_input, 1, wx.EXPAND | wx.RIGHT, 5)
         self.search_btn = wx.Button(panel, label="Search")
         self.search_btn.Bind(wx.EVT_BUTTON, self._on_search)
         hbox_search.Add(self.search_btn, 0)
         search_box.Add(hbox_search, 0, wx.EXPAND | wx.ALL, 5)
+
+        # Category suggestions popup
+        self._category_popup = wx.PopupWindow(self)
+        self._category_listbox = wx.ListBox(self._category_popup, style=wx.LB_SINGLE)
+        self._category_listbox.Bind(wx.EVT_LISTBOX, self._on_category_selected)
+        self._category_popup.Hide()
 
         # Filter row
         hbox_filter = wx.BoxSizer(wx.HORIZONTAL)
@@ -318,7 +326,42 @@ class JLCImportDialog(wx.Dialog):
         self.status_text.AppendText(msg + "\n")
         wx.Yield()
 
+    def _on_search_text_changed(self, event):
+        """Show category suggestions as user types."""
+        text = self.search_input.GetValue().strip().lower()
+        if len(text) < 2:
+            self._category_popup.Hide()
+            return
+        matches = [c for c in CATEGORIES if text in c.lower()]
+        if matches and len(matches) <= 20:
+            if len(matches) == 1 and matches[0].lower() == text:
+                self._category_popup.Hide()
+            else:
+                self._category_listbox.Set(matches)
+                # Position popup below the search input
+                pos = self.search_input.ClientToScreen(wx.Point(0, self.search_input.GetSize().y))
+                width = self.search_input.GetSize().x
+                height = min(len(matches) * 26 + 4, 300)
+                self._category_popup.SetPosition(pos)
+                self._category_listbox.SetSize(width, height)
+                self._category_popup.SetSize(width, height)
+                self._category_popup.Show()
+        else:
+            self._category_popup.Hide()
+
+    def _on_category_selected(self, event):
+        """Set search input to the selected category."""
+        sel = self._category_listbox.GetSelection()
+        if sel == wx.NOT_FOUND:
+            return
+        category = self._category_listbox.GetString(sel)
+        self.search_input.ChangeValue(category)
+        self.search_input.SetInsertionPointEnd()
+        self._category_popup.Hide()
+        self.search_input.SetFocus()
+
     def _on_search(self, event):
+        self._category_popup.Hide()
         keyword = self.search_input.GetValue().strip()
         if not keyword:
             return
