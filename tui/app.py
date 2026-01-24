@@ -375,6 +375,11 @@ class JLCImportTUI(App):
 
     # --- Search ---
 
+    def on_key(self, event):
+        """Hide suggestions on Escape or Tab."""
+        if event.key == "escape" or event.key == "tab":
+            self._hide_suggestions()
+
     def on_input_submitted(self, event: Input.Submitted):
         """Handle Enter key in inputs."""
         if event.input.id == "search-input":
