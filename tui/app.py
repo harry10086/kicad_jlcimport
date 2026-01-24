@@ -487,8 +487,13 @@ class JLCImportTUI(App):
             self.push_screen(GalleryScreen(self._search_results, idx), self._on_gallery_return)
 
     def on_click(self, event):
-        """Handle clicks - open gallery when thumbnail is clicked."""
+        """Handle clicks."""
         widget = event.widget
+        # Hide suggestions when clicking outside them
+        suggestions = self.query_one("#category-suggestions", OptionList)
+        if widget is not suggestions:
+            self._hide_suggestions()
+        # Open gallery when thumbnail is clicked
         wrap = self.query_one("#detail-image-wrap")
         if widget is wrap or widget in wrap.query("*"):
             self.action_gallery()
