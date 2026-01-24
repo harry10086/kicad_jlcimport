@@ -48,22 +48,16 @@ class JLCImportDialog(wx.Dialog):
 
         # Search input row
         hbox_search = wx.BoxSizer(wx.HORIZONTAL)
-        self.search_input = wx.TextCtrl(panel, style=wx.TE_PROCESS_ENTER)
+        self.search_input = wx.ComboBox(panel, style=wx.CB_DROPDOWN | wx.TE_PROCESS_ENTER)
         self.search_input.SetHint("Search JLCPCB parts...")
         self.search_input.Bind(wx.EVT_TEXT_ENTER, self._on_search)
         self.search_input.Bind(wx.EVT_TEXT, self._on_search_text_changed)
-        self.search_input.Bind(wx.EVT_KEY_DOWN, self._on_search_key_down)
+        self.search_input.Bind(wx.EVT_COMBOBOX, self._on_category_selected)
         hbox_search.Add(self.search_input, 1, wx.EXPAND | wx.RIGHT, 5)
         self.search_btn = wx.Button(panel, label="Search")
         self.search_btn.Bind(wx.EVT_BUTTON, self._on_search)
         hbox_search.Add(self.search_btn, 0)
         search_box.Add(hbox_search, 0, wx.EXPAND | wx.ALL, 5)
-
-        # Category suggestions popup
-        self._category_popup = wx.PopupWindow(self)
-        self._category_listbox = wx.ListBox(self._category_popup, style=wx.LB_SINGLE)
-        self._category_listbox.Bind(wx.EVT_LEFT_DOWN, self._on_category_clicked)
-        self._category_popup.Hide()
 
         # Filter row
         hbox_filter = wx.BoxSizer(wx.HORIZONTAL)
@@ -328,48 +322,36 @@ class JLCImportDialog(wx.Dialog):
         self.status_text.AppendText(msg + "\n")
         wx.Yield()
 
-    def _on_search_key_down(self, event):
-        """Hide suggestions on Escape or Tab."""
-        if event.GetKeyCode() in (wx.WXK_ESCAPE, wx.WXK_TAB):
-            self._category_popup.Hide()
-        event.Skip()
-
     def _on_search_text_changed(self, event):
-        """Show category suggestions as user types."""
+        """Update ComboBox choices as user types."""
+        if getattr(self, '_updating_choices', False):
+            return
         text = self.search_input.GetValue().strip().lower()
         if len(text) < 2:
-            self._category_popup.Hide()
+            self.search_input.Dismiss()
             return
         pattern = re.compile(r'\b' + re.escape(text), re.IGNORECASE)
         matches = [c for c in CATEGORIES if pattern.search(c)]
         if matches and len(matches) <= 20:
             if len(matches) == 1 and matches[0].lower() == text:
-                self._category_popup.Hide()
+                self.search_input.Dismiss()
             else:
-                self._category_listbox.Set(matches)
-                # Position popup below the search input
-                pos = self.search_input.ClientToScreen(wx.Point(0, self.search_input.GetSize().y))
-                width = self.search_input.GetSize().x
-                height = min(len(matches) * 26 + 4, 300)
-                self._category_popup.SetPosition(pos)
-                self._category_listbox.SetSize(width, height)
-                self._category_popup.SetSize(width, height)
-                self._category_popup.Show()
+                self._updating_choices = True
+                current = self.search_input.GetValue()
+                self.search_input.Set(matches)
+                self.search_input.SetValue(current)
+                self.search_input.SetInsertionPointEnd()
+                self._updating_choices = False
+                self.search_input.Popup()
         else:
-            self._category_popup.Hide()
+            self.search_input.Dismiss()
 
-    def _on_category_clicked(self, event):
-        """Select category on first click via hit test."""
-        item = self._category_listbox.HitTest(event.GetPosition())
-        if item != wx.NOT_FOUND:
-            category = self._category_listbox.GetString(item)
-            self.search_input.ChangeValue(category)
-            self.search_input.SetInsertionPointEnd()
-            self._category_popup.Hide()
-            self.search_input.SetFocus()
+    def _on_category_selected(self, event):
+        """Handle category selection from dropdown."""
+        self.search_input.SetInsertionPointEnd()
 
     def _on_search(self, event):
-        self._category_popup.Hide()
+        self.search_input.Dismiss()
         keyword = self.search_input.GetValue().strip()
         if not keyword:
             return
