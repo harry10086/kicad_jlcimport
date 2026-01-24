@@ -29,7 +29,6 @@ from .helpers import TIImage, pil_from_bytes, make_no_image, make_skeleton_frame
 from .gallery import GalleryScreen
 
 from kicad_jlcimport.api import (
-    fetch_full_component,
     search_components,
     fetch_product_image,
     filter_by_min_stock,
@@ -37,21 +36,12 @@ from kicad_jlcimport.api import (
     APIError,
     validate_lcsc_id,
 )
-from kicad_jlcimport.parser import parse_footprint_shapes, parse_symbol_shapes
-from kicad_jlcimport.footprint_writer import write_footprint
-from kicad_jlcimport.symbol_writer import write_symbol
-from kicad_jlcimport.model3d import download_and_save_models, compute_model_transform
 from kicad_jlcimport.library import (
-    ensure_lib_structure,
-    add_symbol_to_lib,
-    save_footprint,
-    update_project_lib_tables,
-    update_global_lib_tables,
     get_global_lib_dir,
-    sanitize_name,
     load_config,
     save_config,
 )
+from kicad_jlcimport.importer import import_component
 
 
 class JLCImportTUI(App):
@@ -788,128 +778,13 @@ class JLCImportTUI(App):
         lib_name = self._lib_name
         log = lambda msg: self.app.call_from_thread(self._log, msg)
 
-        log(f"Fetching component {lcsc_id}...")
-        log(f"Destination: {lib_dir}")
-
-        comp = fetch_full_component(lcsc_id)
-        title = comp["title"]
-        name = sanitize_name(title)
-        log(f"Component: {title}")
-        log(f"Prefix: {comp['prefix']}, Name: {name}")
-
-        # Set up library structure
-        paths = ensure_lib_structure(lib_dir, lib_name)
-
-        # Parse footprint
-        log("Parsing footprint...")
-        fp_shapes = comp["footprint_data"]["dataStr"]["shape"]
-        footprint = parse_footprint_shapes(
-            fp_shapes, comp["fp_origin_x"], comp["fp_origin_y"]
+        result = import_component(
+            lcsc_id, lib_dir, lib_name,
+            overwrite=overwrite, use_global=use_global, log=log,
         )
-        log(f"  {len(footprint.pads)} pads, {len(footprint.tracks)} tracks")
 
-        # 3D model
-        model_path = ""
-        model_offset = (0.0, 0.0, 0.0)
-        model_rotation = (0.0, 0.0, 0.0)
-
-        uuid_3d = ""
-        if footprint.model:
-            uuid_3d = footprint.model.uuid
-            model_offset, model_rotation = compute_model_transform(
-                footprint.model, comp["fp_origin_x"], comp["fp_origin_y"]
-            )
-
-        if not uuid_3d:
-            uuid_3d = comp.get("uuid_3d", "")
-
-        if uuid_3d:
-            step_dest = os.path.join(paths["models_dir"], f"{name}.step")
-            wrl_dest = os.path.join(paths["models_dir"], f"{name}.wrl")
-            step_existed = os.path.exists(step_dest)
-            wrl_existed = os.path.exists(wrl_dest)
-
-            log("Downloading 3D model...")
-            step_path, wrl_path = download_and_save_models(
-                uuid_3d, paths["models_dir"], name, overwrite=overwrite
-            )
-            if step_path:
-                if use_global:
-                    model_path = os.path.join(paths["models_dir"], f"{name}.step")
-                else:
-                    model_path = f"${{KIPRJMOD}}/{lib_name}.3dshapes/{name}.step"
-                if step_existed and not overwrite:
-                    log(f"  STEP skipped: {step_path} (exists, overwrite=off)")
-                else:
-                    log(f"  STEP saved: {step_path}")
-            if wrl_path:
-                if wrl_existed and not overwrite:
-                    log(f"  WRL skipped: {wrl_path} (exists, overwrite=off)")
-                else:
-                    log(f"  WRL saved: {wrl_path}")
-        else:
-            log("No 3D model available")
-
-        # Write footprint
-        log("Writing footprint...")
-        fp_content = write_footprint(
-            footprint,
-            name,
-            lcsc_id=lcsc_id,
-            description=comp.get("description", ""),
-            datasheet=comp.get("datasheet", ""),
-            model_path=model_path,
-            model_offset=model_offset,
-            model_rotation=model_rotation,
-        )
-        fp_path = os.path.join(paths["fp_dir"], f"{name}.kicad_mod")
-        fp_saved = save_footprint(paths["fp_dir"], name, fp_content, overwrite)
-        if fp_saved:
-            log(f"  Saved: {fp_path}")
-        else:
-            log(f"  Skipped: {fp_path} (exists, overwrite=off)")
-
-        # Parse and write symbol
-        if comp["symbol_data_list"]:
-            log("Parsing symbol...")
-            sym_data = comp["symbol_data_list"][0]
-            sym_shapes = sym_data["dataStr"]["shape"]
-            symbol = parse_symbol_shapes(
-                sym_shapes, comp["sym_origin_x"], comp["sym_origin_y"]
-            )
-            log(f"  {len(symbol.pins)} pins, {len(symbol.rectangles)} rects")
-
-            footprint_ref = f"{lib_name}:{name}"
-            sym_content = write_symbol(
-                symbol,
-                name,
-                prefix=comp["prefix"],
-                footprint_ref=footprint_ref,
-                lcsc_id=lcsc_id,
-                datasheet=comp.get("datasheet", ""),
-                description=comp.get("description", ""),
-                manufacturer=comp.get("manufacturer", ""),
-                manufacturer_part=comp.get("manufacturer_part", ""),
-            )
-
-            sym_added = add_symbol_to_lib(paths["sym_path"], name, sym_content, overwrite)
-            if sym_added:
-                log(f"  Symbol added: {paths['sym_path']}")
-            else:
-                log(f"  Symbol skipped: {paths['sym_path']} (exists, overwrite=off)")
-        else:
-            log("No symbol data available")
-
-        # Update lib tables
-        if use_global:
-            update_global_lib_tables(lib_dir, lib_name)
-            log("[green]Global library tables updated.[/green]")
-        else:
-            newly_created = update_project_lib_tables(lib_dir, lib_name)
-            log("[green]Project library tables updated.[/green]")
-            if newly_created:
-                log("[yellow]NOTE: Reopen project for new library tables to take effect.[/yellow]")
-
+        title = result["title"]
+        name = result["name"]
         log(f"\n[green bold]Done! '{title}' imported as {lib_name}:{name}[/green bold]")
         self.app.call_from_thread(self._refresh_imported_ids)
         self.app.call_from_thread(self._repopulate_results)

@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 def test_cli_import_project_writes_kicad_library(tmp_path, monkeypatch, capsys):
     import kicad_jlcimport.cli as cli
+    import kicad_jlcimport.importer as importer
 
     fake_comp = {
         "title": "TestPart",
@@ -31,11 +32,11 @@ def test_cli_import_project_writes_kicad_library(tmp_path, monkeypatch, capsys):
         pins = [object(), object()]
         rectangles = []
 
-    monkeypatch.setattr(cli, "fetch_full_component", lambda _lcsc: fake_comp)
-    monkeypatch.setattr(cli, "parse_footprint_shapes", lambda *_a, **_k: _Footprint())
-    monkeypatch.setattr(cli, "parse_symbol_shapes", lambda *_a, **_k: _Symbol())
-    monkeypatch.setattr(cli, "write_footprint", lambda *_a, **_k: "fp\n")
-    monkeypatch.setattr(cli, "write_symbol", lambda *_a, **_k: "sym\n")
+    monkeypatch.setattr(importer, "fetch_full_component", lambda _lcsc: fake_comp)
+    monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *_a, **_k: _Footprint())
+    monkeypatch.setattr(importer, "parse_symbol_shapes", lambda *_a, **_k: _Symbol())
+    monkeypatch.setattr(importer, "write_footprint", lambda *_a, **_k: "fp\n")
+    monkeypatch.setattr(importer, "write_symbol", lambda *_a, **_k: "sym\n")
 
     args = SimpleNamespace(
         part="C123",
@@ -58,6 +59,7 @@ def test_cli_import_project_writes_kicad_library(tmp_path, monkeypatch, capsys):
 
 def test_cli_import_global_does_not_require_project_dir(tmp_path, monkeypatch, capsys):
     import kicad_jlcimport.cli as cli
+    import kicad_jlcimport.importer as importer
 
     fake_comp = {
         "title": "TestPart",
@@ -82,11 +84,11 @@ def test_cli_import_global_does_not_require_project_dir(tmp_path, monkeypatch, c
         tracks = []
         model = None
 
-    monkeypatch.setattr(cli, "fetch_full_component", lambda _lcsc: fake_comp)
-    monkeypatch.setattr(cli, "parse_footprint_shapes", lambda *_a, **_k: _Footprint())
-    monkeypatch.setattr(cli, "write_footprint", lambda *_a, **_k: "fp\n")
+    monkeypatch.setattr(importer, "fetch_full_component", lambda _lcsc: fake_comp)
+    monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *_a, **_k: _Footprint())
+    monkeypatch.setattr(importer, "write_footprint", lambda *_a, **_k: "fp\n")
     monkeypatch.setattr(cli, "get_global_lib_dir", lambda: str(tmp_path))
-    monkeypatch.setattr(cli, "update_global_lib_tables", lambda *_a, **_k: None)
+    monkeypatch.setattr(importer, "update_global_lib_tables", lambda *_a, **_k: None)
 
     args = SimpleNamespace(
         part="C123",
@@ -106,6 +108,7 @@ def test_cli_import_global_does_not_require_project_dir(tmp_path, monkeypatch, c
 
 def test_cli_import_project_skips_existing_3d_models_without_overwrite(tmp_path, monkeypatch, capsys):
     import kicad_jlcimport.cli as cli
+    import kicad_jlcimport.importer as importer
     import kicad_jlcimport.model3d as model3d
 
     fake_comp = {
@@ -132,9 +135,9 @@ def test_cli_import_project_skips_existing_3d_models_without_overwrite(tmp_path,
         tracks = []
         model = None
 
-    monkeypatch.setattr(cli, "fetch_full_component", lambda _lcsc: fake_comp)
-    monkeypatch.setattr(cli, "parse_footprint_shapes", lambda *_a, **_k: _Footprint())
-    monkeypatch.setattr(cli, "write_footprint", lambda *_a, **_k: "fp\n")
+    monkeypatch.setattr(importer, "fetch_full_component", lambda _lcsc: fake_comp)
+    monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *_a, **_k: _Footprint())
+    monkeypatch.setattr(importer, "write_footprint", lambda *_a, **_k: "fp\n")
 
     calls = {"step": 0, "wrl": 0}
 

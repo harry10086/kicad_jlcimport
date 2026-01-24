@@ -6,21 +6,9 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from kicad_jlcimport.api import search_components, fetch_full_component, filter_by_min_stock, filter_by_type, APIError, validate_lcsc_id
-from kicad_jlcimport.parser import parse_footprint_shapes, parse_symbol_shapes
-from kicad_jlcimport.footprint_writer import write_footprint
-from kicad_jlcimport.symbol_writer import write_symbol
-from kicad_jlcimport.library import (
-    sanitize_name,
-    load_config,
-    ensure_lib_structure,
-    add_symbol_to_lib,
-    save_footprint,
-    update_project_lib_tables,
-    update_global_lib_tables,
-    get_global_lib_dir,
-)
-from kicad_jlcimport.model3d import compute_model_transform, download_and_save_models
+from kicad_jlcimport.api import search_components, filter_by_min_stock, filter_by_type, APIError, validate_lcsc_id
+from kicad_jlcimport.library import load_config, get_global_lib_dir
+from kicad_jlcimport.importer import import_component
 
 
 def cmd_search(args):
@@ -96,208 +84,63 @@ def cmd_import(args):
         print(f"  Error: {e}")
         return
 
-    print(f"\n  Fetching {lcsc_id}...")
+    lib_name = args.lib_name
+    log = lambda msg: print(f"  {msg}")
 
     try:
-        comp = fetch_full_component(lcsc_id)
-    except APIError as e:
-        print(f"  Error: {e}")
-        return
-
-    title = comp["title"]
-    name = sanitize_name(title)
-    print(f"  Component: {title}")
-    print(f"  Prefix: {comp['prefix']}, Name: {name}")
-
-    # Parse footprint
-    fp_shapes = comp["footprint_data"]["dataStr"]["shape"]
-    footprint = parse_footprint_shapes(fp_shapes, comp["fp_origin_x"], comp["fp_origin_y"])
-    print(f"  Footprint: {len(footprint.pads)} pads, {len(footprint.tracks)} tracks")
-
-    has_tht = any(p.layer == "11" for p in footprint.pads)
-    print(f"  Type: {'Through-hole' if has_tht else 'SMD'}")
-
-    if footprint.model:
-        print(f"  3D model: {footprint.model.uuid}")
-
-    # Generate footprint
-    uuid_3d = ""
-    model_path = ""
-    model_offset = (0.0, 0.0, 0.0)
-    model_rotation = (0.0, 0.0, 0.0)
-    lib_name = args.lib_name
-    if footprint.model:
-        uuid_3d = footprint.model.uuid
-        model_path = f"${{KIPRJMOD}}/{lib_name}.3dshapes/{name}.step"
-        model_offset, model_rotation = compute_model_transform(
-            footprint.model, comp["fp_origin_x"], comp["fp_origin_y"]
-        )
-    if not uuid_3d:
-        uuid_3d = comp.get("uuid_3d", "")
-        if uuid_3d:
-            model_path = f"${{KIPRJMOD}}/{lib_name}.3dshapes/{name}.step"
-
-    fp_content = write_footprint(
-        footprint, name, lcsc_id=lcsc_id,
-        description=comp.get("description", ""),
-        datasheet=comp.get("datasheet", ""),
-        model_path=model_path,
-        model_offset=model_offset,
-        model_rotation=model_rotation,
-    )
-
-    # Parse symbol
-    sym_content = ""
-    if comp["symbol_data_list"]:
-        sym_data = comp["symbol_data_list"][0]
-        sym_shapes = sym_data["dataStr"]["shape"]
-        symbol = parse_symbol_shapes(sym_shapes, comp["sym_origin_x"], comp["sym_origin_y"])
-        print(f"  Symbol: {len(symbol.pins)} pins, {len(symbol.rectangles)} rects")
-
-        sym_content = write_symbol(
-            symbol, name, prefix=comp["prefix"],
-            footprint_ref=f"{lib_name}:{name}",
-            lcsc_id=lcsc_id,
-            datasheet=comp.get("datasheet", ""),
-            description=comp.get("description", ""),
-            manufacturer=comp.get("manufacturer", ""),
-            manufacturer_part=comp.get("manufacturer_part", ""),
-    )
-
-    # Output
-    print()
-    if getattr(args, "project", None) or getattr(args, "global_dest", False):
         if getattr(args, "project", None):
             lib_dir = _resolve_project_dir(args.project)
             if not os.path.isdir(lib_dir):
                 print(f"  Error: project path does not exist or is not a directory: {args.project}")
                 return
-            use_global = False
-        else:
+            result = import_component(
+                lcsc_id, lib_dir, lib_name,
+                overwrite=args.overwrite, use_global=False, log=log,
+            )
+        elif getattr(args, "global_dest", False):
             lib_dir = get_global_lib_dir()
-            use_global = True
-
-        print(f"  Destination: {lib_dir} ({'global' if use_global else 'project'})")
-
-        paths = ensure_lib_structure(lib_dir, lib_name)
-
-        if uuid_3d:
-            step_dest = os.path.join(paths["models_dir"], f"{name}.step")
-            wrl_dest = os.path.join(paths["models_dir"], f"{name}.wrl")
-            step_existed = os.path.exists(step_dest)
-            wrl_existed = os.path.exists(wrl_dest)
-
-            step_path, wrl_path = download_and_save_models(
-                uuid_3d, paths["models_dir"], name, overwrite=args.overwrite
+            result = import_component(
+                lcsc_id, lib_dir, lib_name,
+                overwrite=args.overwrite, use_global=True, log=log,
             )
-            if step_path:
-                if step_existed and not args.overwrite:
-                    print(f"  Skipped: {step_path} (exists, overwrite=off)")
-                else:
-                    print(f"  Saved: {step_path}")
-            if wrl_path:
-                if wrl_existed and not args.overwrite:
-                    print(f"  Skipped: {wrl_path} (exists, overwrite=off)")
-                else:
-                    print(f"  Saved: {wrl_path}")
-
-            if use_global:
-                model_path = os.path.join(paths["models_dir"], f"{name}.step") if step_path else ""
-            else:
-                model_path = f"${{KIPRJMOD}}/{lib_name}.3dshapes/{name}.step" if step_path else ""
-
-            fp_content = write_footprint(
-                footprint, name, lcsc_id=lcsc_id,
-                description=comp.get("description", ""),
-                datasheet=comp.get("datasheet", ""),
-                model_path=model_path,
-                model_offset=model_offset,
-                model_rotation=model_rotation,
+        elif args.output:
+            result = import_component(
+                lcsc_id, args.output, lib_name,
+                export_only=True, log=log,
             )
-
-        fp_saved = save_footprint(paths["fp_dir"], name, fp_content, overwrite=args.overwrite)
-        fp_path = os.path.join(paths["fp_dir"], f"{name}.kicad_mod")
-        if fp_saved:
-            print(f"  Saved: {fp_path}")
         else:
-            print(f"  Skipped: {fp_path} (exists, overwrite=off)")
-
-        if sym_content:
-            sym_added = add_symbol_to_lib(paths["sym_path"], name, sym_content, overwrite=args.overwrite)
-            if sym_added:
-                print(f"  Updated: {paths['sym_path']}")
-            else:
-                print(f"  Skipped: {paths['sym_path']} (exists, overwrite=off)")
-
-        if use_global:
-            update_global_lib_tables(lib_dir, lib_name)
-            print("  Global library tables updated.")
-        else:
-            newly_created = update_project_lib_tables(lib_dir, lib_name)
-            print("  Project library tables updated.")
-            if newly_created:
-                print("  NOTE: Reopen project for new library tables to take effect.")
-
-        print(f"\n  Done: '{title}' imported as {lib_name}:{name}")
-
-        if args.show == "footprint" or args.show == "both":
-            print("\n  ── Footprint (.kicad_mod) ──")
-            print(fp_content)
-        if args.show == "symbol" or args.show == "both":
-            if sym_content:
-                print("\n  ── Symbol (.kicad_sym fragment) ──")
-                print(sym_content)
-            else:
-                print("\n  (No symbol data)")
+            # No destination: fetch, parse, and show summary without writing
+            import tempfile
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                result = import_component(
+                    lcsc_id, tmp_dir, lib_name,
+                    export_only=True, log=log,
+                )
+            if not args.show:
+                fp_content = result["fp_content"]
+                sym_content = result["sym_content"]
+                print(f"  Footprint: {len(fp_content)} bytes")
+                if sym_content:
+                    print(f"  Symbol: {len(sym_content)} bytes")
+                print(f"\n  Use --show footprint|symbol|both to see output")
+                print(f"  Use -o <dir> to save files")
+                return
+    except APIError as e:
+        print(f"  Error: {e}")
         return
 
-    if args.output:
-        out_dir = args.output
-        os.makedirs(out_dir, exist_ok=True)
-        fp_path = os.path.join(out_dir, f"{name}.kicad_mod")
-        with open(fp_path, "w") as f:
-            f.write(fp_content)
-        print(f"  Saved: {fp_path}")
+    fp_content = result["fp_content"]
+    sym_content = result["sym_content"]
 
+    if args.show == "footprint" or args.show == "both":
+        print("\n  ── Footprint (.kicad_mod) ──")
+        print(fp_content)
+    if args.show == "symbol" or args.show == "both":
         if sym_content:
-            sym_path = os.path.join(out_dir, f"{name}.kicad_sym")
-            sym_lib = (
-                '(kicad_symbol_lib\n'
-                '  (version 20241209)\n'
-                '  (generator "JLCImport")\n'
-                '  (generator_version "1.0")\n'
-                + sym_content +
-                ')\n'
-            )
-            with open(sym_path, "w") as f:
-                f.write(sym_lib)
-            print(f"  Saved: {sym_path}")
-
-        if uuid_3d:
-            models_dir = os.path.join(out_dir, "3dmodels")
-            step_path, wrl_path = download_and_save_models(
-                uuid_3d, models_dir, name, overwrite=True
-            )
-            if step_path:
-                print(f"  Saved: {step_path}")
-            if wrl_path:
-                print(f"  Saved: {wrl_path}")
-    else:
-        if args.show == "footprint" or args.show == "both":
-            print("  ── Footprint (.kicad_mod) ──")
-            print(fp_content)
-        if args.show == "symbol" or args.show == "both":
-            if sym_content:
-                print("  ── Symbol (.kicad_sym fragment) ──")
-                print(sym_content)
-            else:
-                print("  (No symbol data)")
-        if not args.show:
-            print(f"  Footprint: {len(fp_content)} bytes")
-            if sym_content:
-                print(f"  Symbol: {len(sym_content)} bytes")
-            print(f"\n  Use --show footprint|symbol|both to see output")
-            print(f"  Use -o <dir> to save files")
+            print("\n  ── Symbol (.kicad_sym fragment) ──")
+            print(sym_content)
+        else:
+            print("\n  (No symbol data)")
 
 
 def main():
