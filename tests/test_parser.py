@@ -4,7 +4,10 @@ from kicad_jlcimport.ee_types import EEFootprint, EESymbol
 from kicad_jlcimport.parser import (
     MILS_TO_MM_DIVISOR,
     _find_svg_path,
+    _parse_solid_region,
     _parse_svg_arc_path,
+    _parse_svg_polygon,
+    _parse_sym_path,
     compute_arc_midpoint,
     mil_to_mm,
     parse_footprint_shapes,
@@ -223,6 +226,34 @@ class TestParseSymbolShapes:
         assert pin.number == "1"
         assert pin.electrical_type == "unspecified"
 
+    def test_parse_pin_horizontal_right(self):
+        """Test horizontal pin extending right (h +N) -> KiCad 0°."""
+        shape = "P~show~0~1~400~300~0~id1^^400~300^^M 400 300 h 10~#880000^^1~0~0~0~1~start~~#0000FF"
+        sym = parse_symbol_shapes([shape], 400, 300)
+        assert len(sym.pins) == 1
+        assert sym.pins[0].rotation == 0
+
+    def test_parse_pin_horizontal_left(self):
+        """Test horizontal pin extending left (h -N) -> KiCad 180°."""
+        shape = "P~show~0~1~400~300~180~id1^^400~300^^M 400 300 h -10~#880000^^1~0~0~0~1~end~~#0000FF"
+        sym = parse_symbol_shapes([shape], 400, 300)
+        assert len(sym.pins) == 1
+        assert sym.pins[0].rotation == 180
+
+    def test_parse_pin_vertical_up(self):
+        """Test vertical pin extending up (v -N in SVG) -> KiCad 90°."""
+        shape = "P~show~0~1~400~300~270~id1^^400~300^^M 400 300 v -10~#880000^^1~0~0~0~1~start~~#0000FF"
+        sym = parse_symbol_shapes([shape], 400, 300)
+        assert len(sym.pins) == 1
+        assert sym.pins[0].rotation == 90
+
+    def test_parse_pin_vertical_down(self):
+        """Test vertical pin extending down (v +N in SVG) -> KiCad 270°."""
+        shape = "P~show~0~1~400~300~90~id1^^400~300^^M 400 300 v 10~#880000^^1~0~0~0~1~start~~#0000FF"
+        sym = parse_symbol_shapes([shape], 400, 300)
+        assert len(sym.pins) == 1
+        assert sym.pins[0].rotation == 270
+
     def test_y_inversion_for_symbols(self):
         shape = "E~100~200~10~10~0~0"
         sym = parse_symbol_shapes([shape], 0, 0)
@@ -248,3 +279,212 @@ class TestComputeArcMidpoint:
         mid1 = compute_arc_midpoint((0, 0), (2, 0), 2, 2, 1, 1)
         # Different large_arc flags should give different midpoints
         assert mid0 != mid1
+
+
+class TestParseSvgPolygon:
+    """Test SVG polygon path parsing with different coordinate formats."""
+
+    def test_space_separated_coordinates(self):
+        """Test parsing paths with space-separated coordinates (e.g. 'M 390 304 L 397 304')."""
+        path = "M 390 304 L 397 304 L 397 305 L 390 305 Z"
+        points = _parse_svg_polygon(path)
+        assert len(points) == 4
+        # Points are converted from mils to mm
+        assert points[0] == (mil_to_mm(390), mil_to_mm(304))
+        assert points[1] == (mil_to_mm(397), mil_to_mm(304))
+        assert points[2] == (mil_to_mm(397), mil_to_mm(305))
+        assert points[3] == (mil_to_mm(390), mil_to_mm(305))
+
+    def test_comma_separated_coordinates(self):
+        """Test parsing paths with comma-separated coordinates (e.g. 'M414,286L414,314')."""
+        path = "M414,286L414,314L417,310L419,304L420,298L419,294Z"
+        points = _parse_svg_polygon(path)
+        assert len(points) == 6
+        assert points[0] == (mil_to_mm(414), mil_to_mm(286))
+        assert points[1] == (mil_to_mm(414), mil_to_mm(314))
+        assert points[2] == (mil_to_mm(417), mil_to_mm(310))
+        assert points[3] == (mil_to_mm(419), mil_to_mm(304))
+        assert points[4] == (mil_to_mm(420), mil_to_mm(298))
+        assert points[5] == (mil_to_mm(419), mil_to_mm(294))
+
+    def test_mixed_separators(self):
+        """Test paths that mix commas and spaces."""
+        path = "M 100,200 L 150 250 L200,300Z"
+        points = _parse_svg_polygon(path)
+        assert len(points) == 3
+        assert points[0] == (mil_to_mm(100), mil_to_mm(200))
+        assert points[1] == (mil_to_mm(150), mil_to_mm(250))
+        assert points[2] == (mil_to_mm(200), mil_to_mm(300))
+
+    def test_empty_path(self):
+        """Test empty path returns empty list."""
+        assert _parse_svg_polygon("") == []
+
+    def test_path_without_z(self):
+        """Test path without closing Z command."""
+        path = "M100,100L200,200"
+        points = _parse_svg_polygon(path)
+        assert len(points) == 2
+
+
+class TestParseSolidRegion:
+    """Test SOLIDREGION shape parsing."""
+
+    def test_silkscreen_solid_region_space_separated(self):
+        """Test parsing silkscreen solid region with space-separated path."""
+        shape = "SOLIDREGION~3~~M 390 304 L 397 304 L 397 305 L 390 305 Z ~solid~gge104~~~~0"
+        parts = shape.split("~")
+        region = _parse_solid_region(parts)
+        assert region is not None
+        assert region.layer == "F.SilkS"
+        assert len(region.points) == 4
+        assert region.region_type == "solid"
+
+    def test_silkscreen_solid_region_comma_separated(self):
+        """Test parsing silkscreen solid region with comma-separated path (no spaces)."""
+        shape = "SOLIDREGION~3~~M414,286L414,314L417,310L419,304L420,298L419,294Z~solid~gge14~~~~0"
+        parts = shape.split("~")
+        region = _parse_solid_region(parts)
+        assert region is not None
+        assert region.layer == "F.SilkS"
+        assert len(region.points) == 6
+        assert region.region_type == "solid"
+
+    def test_npth_region(self):
+        """Test parsing NPTH (edge cuts) region."""
+        shape = "SOLIDREGION~99~~M 100 100 L 200 100 L 200 200 L 100 200 Z~npth~gge1~~~~0"
+        parts = shape.split("~")
+        region = _parse_solid_region(parts)
+        assert region is not None
+        assert region.layer == "Edge.Cuts"
+        assert region.region_type == "npth"
+
+    def test_document_layer_filtered(self):
+        """Test that document layer (12) regions are filtered out."""
+        shape = "SOLIDREGION~12~~M 390 304 L 397 304 L 397 305 L 390 305 Z ~solid~gge104~~~~0"
+        parts = shape.split("~")
+        region = _parse_solid_region(parts)
+        assert region is None
+
+    def test_path_starting_with_m_digit(self):
+        """Test detection of paths starting with M followed immediately by digit."""
+        shape = "SOLIDREGION~3~~M100,100L200,200L100,200Z~solid~gge1~~~~0"
+        parts = shape.split("~")
+        region = _parse_solid_region(parts)
+        assert region is not None
+        assert len(region.points) == 3
+
+    def test_path_starting_with_m_negative(self):
+        """Test detection of paths starting with M followed by negative number."""
+        shape = "SOLIDREGION~3~~M-100,-100L-200,-200L-100,-200Z~solid~gge1~~~~0"
+        parts = shape.split("~")
+        region = _parse_solid_region(parts)
+        assert region is not None
+        assert len(region.points) == 3
+
+
+class TestC17451410PinRotations:
+    """Test pin rotations for C17451410 (IS01EBFRGB) - has pins in all 4 directions."""
+
+    def test_all_pin_rotations(self):
+        """Validate all 10 pins have correct rotations based on their direction."""
+        import json
+        from pathlib import Path
+
+        testdata = Path(__file__).parent.parent / "testdata" / "C17451410_symbol.json"
+        with open(testdata) as f:
+            data = json.load(f)
+
+        ds = data["result"]["dataStr"]
+        shapes = ds.get("shape", [])
+        head = ds.get("head", {})
+        origin_x = head.get("x", 0)
+        origin_y = head.get("y", 0)
+
+        symbol = parse_symbol_shapes(shapes, origin_x, origin_y)
+
+        assert len(symbol.pins) == 10
+
+        # Build a dict of pin number -> rotation
+        pin_rotations = {pin.number: pin.rotation for pin in symbol.pins}
+
+        # Pins 1-3: left side, extending right (h +N) -> 0°
+        assert pin_rotations["1"] == 0, "Pin 1 (SCK) should extend right"
+        assert pin_rotations["2"] == 0, "Pin 2 (SS#) should extend right"
+        assert pin_rotations["3"] == 0, "Pin 3 (SDO) should extend right"
+
+        # Pins 4-6: right side, extending left (h -N) -> 180°
+        assert pin_rotations["4"] == 180, "Pin 4 (SDI) should extend left"
+        assert pin_rotations["5"] == 180, "Pin 5 (GND) should extend left"
+        assert pin_rotations["6"] == 180, "Pin 6 (VDD) should extend left"
+
+        # Pins 7-8: top, extending down (v +N) -> 270°
+        assert pin_rotations["7"] == 270, "Pin 7 (EH) should extend down"
+        assert pin_rotations["8"] == 270, "Pin 8 (EH) should extend down"
+
+        # Pins 9-10: bottom, extending up (v -N) -> 90°
+        assert pin_rotations["9"] == 90, "Pin 9 (EH) should extend up"
+        assert pin_rotations["10"] == 90, "Pin 10 (EH) should extend up"
+
+
+class TestParseSymPath:
+    """Test _parse_sym_path function (PT~ symbol paths)."""
+
+    def test_space_separated_coordinates(self):
+        """Test parsing path with space-separated coordinates."""
+        shape = "PT~M 100 200 L 150 250 L 100 250 Z~#880000~1~0~#880000~gge1~0~"
+        result = _parse_sym_path(shape, 100, 200)
+        assert result is not None
+        assert len(result.points) == 3
+        assert result.closed is True
+        assert result.fill is True
+
+    def test_comma_separated_coordinates(self):
+        """Test parsing path with comma-separated coordinates (no spaces)."""
+        shape = "PT~M100,200L150,250L100,250Z~#880000~1~0~#880000~gge1~0~"
+        result = _parse_sym_path(shape, 100, 200)
+        assert result is not None
+        assert len(result.points) == 3
+        assert result.closed is True
+
+    def test_mixed_separators(self):
+        """Test parsing path with mixed comma and space separators."""
+        shape = "PT~M 100,200 L 150 250 L100,250Z~#880000~1~0~#880000~gge1~0~"
+        result = _parse_sym_path(shape, 100, 200)
+        assert result is not None
+        assert len(result.points) == 3
+
+    def test_open_path(self):
+        """Test parsing open path (no Z command)."""
+        shape = "PT~M 100 200 L 150 250~#880000~1~0~none~gge1~0~"
+        result = _parse_sym_path(shape, 100, 200)
+        assert result is not None
+        assert len(result.points) == 2
+        assert result.closed is False
+        assert result.fill is False
+
+    def test_no_fill(self):
+        """Test parsing path with fill set to 'none'."""
+        shape = "PT~M 100 200 L 150 250 Z~#880000~1~0~none~gge1~0~"
+        result = _parse_sym_path(shape, 100, 200)
+        assert result is not None
+        assert result.fill is False
+
+    def test_empty_path(self):
+        """Test parsing empty path returns None."""
+        shape = "PT~~#880000~1~0~none~gge1~0~"
+        result = _parse_sym_path(shape, 0, 0)
+        assert result is None
+
+    def test_malformed_path(self):
+        """Test parsing malformed path with invalid coordinates returns None."""
+        shape = "PT~M abc def L 150 250~#880000~1~0~none~gge1~0~"
+        result = _parse_sym_path(shape, 0, 0)
+        # Should return None or have fewer points since invalid coords are skipped
+        assert result is None or len(result.points) < 2
+
+    def test_insufficient_parts(self):
+        """Test parsing shape with insufficient parts returns None."""
+        shape = "PT"
+        result = _parse_sym_path(shape, 0, 0)
+        assert result is None

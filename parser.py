@@ -223,9 +223,9 @@ def _parse_pad(parts: List[str]) -> EEPad:
     if polygon_str and shape == "POLYGON":
         try:
             coords = polygon_str.strip().split(" ")
-            _ = [float(c) for c in coords if c]  # validate coords are numeric
+            [float(c) for c in coords if c]  # validate coords are numeric
         except ValueError:
-            pass
+            return None  # Reject pad with invalid polygon coordinates
 
     return EEPad(
         shape=shape,
@@ -349,7 +349,8 @@ def _parse_solid_region(parts: List[str]) -> EESolidRegion:
     region_type = "solid"
     for i in range(2, len(parts)):
         p = parts[i].strip()
-        if p.startswith("M ") or p.startswith("M\t"):
+        # SVG paths start with M followed by coordinates (with or without space)
+        if p.startswith("M") and len(p) > 1 and (p[1].isdigit() or p[1] in " \t-"):
             svg_path = p
         elif p in ("npth", "solid", "cutout"):
             region_type = p
@@ -391,7 +392,8 @@ def _parse_svg_polygon(svg_path: str) -> List[Tuple[float, float]]:
         token = token.strip()
         if not token:
             continue
-        coords = token.split()
+        # Split on whitespace or commas
+        coords = re.split(r"[,\s]+", token)
         if len(coords) >= 2:
             try:
                 x = mil_to_mm(float(coords[0]))
@@ -525,17 +527,29 @@ def _parse_pin(shape_str: str, origin_x: float, origin_y: float) -> EEPin:
     except (ValueError, IndexError):
         return None
 
-    # Parse pin length from the path section (section index 2)
+    # Parse pin length and direction from the path section (section index 2)
+    # The SVG path is the source of truth for pin direction
     length = 10.0  # default
+    path_direction = None  # Will be 0, 90, 180, or 270
     if len(sections) > 2:
         path_section = sections[2]
-        # Path is like "M360,290h10" or "M 440 310 h -10"
+        # Path is like "M360,290h10" or "M 440 310 h -10" or "M400,300v10"
         h_match = re.search(r"h\s*([-\d.]+)", path_section)
         v_match = re.search(r"v\s*([-\d.]+)", path_section)
         if h_match:
-            length = abs(float(h_match.group(1)))
+            val = float(h_match.group(1))
+            length = abs(val)
+            # h positive = right = KiCad 0°, h negative = left = KiCad 180°
+            path_direction = 0 if val > 0 else 180
         elif v_match:
-            length = abs(float(v_match.group(1)))
+            val = float(v_match.group(1))
+            length = abs(val)
+            # SVG path goes from body toward connection point
+            # v negative = path goes UP in SVG = connection point is above body
+            #   -> pin extends UP from connection = KiCad 90°
+            # v positive = path goes DOWN in SVG = connection point is below body
+            #   -> pin extends DOWN from connection = KiCad 270°
+            path_direction = 270 if val > 0 else 90
 
     # Parse pin name from section 3 (name display)
     # Format: visible~x~y~rotation~text~alignment~...~color
@@ -557,8 +571,11 @@ def _parse_pin(shape_str: str, origin_x: float, origin_y: float) -> EEPin:
         if num_parts and num_parts[0] == "0":
             number_visible = False
 
-    # EasyEDA rotation indicates pin line direction, same as KiCad
-    kicad_rotation = rotation
+    # Use path direction if available, otherwise fall back to rotation field with +180
+    if path_direction is not None:
+        kicad_rotation = path_direction
+    else:
+        kicad_rotation = (rotation + 180) % 360
 
     # Convert coordinates (symbol: origin-relative, Y-inverted)
     kicad_x = mil_to_mm(x - origin_x)
@@ -686,19 +703,8 @@ def _parse_sym_path(shape_str: str, origin_x: float, origin_y: float) -> EEPolyl
     if not svg_path:
         return None
 
-    # Parse SVG path to get points
-    raw_points = _parse_svg_polygon(svg_path)
-    if len(raw_points) < 2:
-        return None
-
-    # Transform points relative to origin
-    points = []
-    for x, y in raw_points:
-        # _parse_svg_polygon already converts to mm, so we need raw values
-        # Re-parse to get raw coordinates for origin adjustment
-        pass
-
-    # Re-parse manually to apply origin offset correctly
+    # Parse SVG path manually to apply origin offset correctly
+    # (can't use _parse_svg_polygon directly as it converts to mm before we apply offset)
     points = []
     path = svg_path.replace("Z", "").replace("z", "").strip()
     tokens = re.split(r"[ML]\s*", path)
@@ -706,7 +712,8 @@ def _parse_sym_path(shape_str: str, origin_x: float, origin_y: float) -> EEPolyl
         token = token.strip()
         if not token:
             continue
-        coords = token.split()
+        # Split on whitespace or commas for consistency with _parse_svg_polygon
+        coords = re.split(r"[,\s]+", token)
         if len(coords) >= 2:
             try:
                 x = float(coords[0])
