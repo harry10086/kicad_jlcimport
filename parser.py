@@ -343,8 +343,6 @@ def _parse_solid_region(parts: List[str]) -> EESolidRegion:
     if not svg_path:
         return None
 
-    kicad_layer = LAYER_MAP.get(layer, "Edge.Cuts")
-
     # Handle npth (edge cuts) and silkscreen solid regions
     if region_type == "npth":
         # Parse M x y L x y L x y ... Z

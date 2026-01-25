@@ -107,11 +107,11 @@ def write_footprint(
 
     # Solid regions (e.g., pin 1 indicators)
     for region in footprint.regions:
-        pts_str = " ".join(f'(xy {_fmt(x)} {_fmt(y)})' for x, y in region.points)
+        pts_str = " ".join(f"(xy {_fmt(x)} {_fmt(y)})" for x, y in region.points)
         lines.append(
-            f'  (fp_poly (pts {pts_str})'
-            f' (stroke (width 0) (type solid))'
-            f' (fill solid)'
+            f"  (fp_poly (pts {pts_str})"
+            f" (stroke (width 0) (type solid))"
+            f" (fill solid)"
             f' (layer "{region.layer}") (uuid "{_uuid()}"))'
         )
 

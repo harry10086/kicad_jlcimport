@@ -1,12 +1,13 @@
 """Integration tests using real downloaded EasyEDA component data."""
+
 import json
 import os
+
 import pytest
 
-from kicad_jlcimport.parser import parse_footprint_shapes, parse_symbol_shapes
 from kicad_jlcimport.footprint_writer import write_footprint
+from kicad_jlcimport.parser import parse_footprint_shapes, parse_symbol_shapes
 from kicad_jlcimport.symbol_writer import write_symbol
-
 
 TESTDATA_DIR = os.path.join(os.path.dirname(__file__), "..", "testdata")
 
@@ -43,20 +44,12 @@ class TestC427602:
 
     def test_footprint_pad_count(self, component):
         """Should have 5 pads for SOT-23-5."""
-        fp = parse_footprint_shapes(
-            component["fp_shapes"],
-            component["fp_origin_x"],
-            component["fp_origin_y"]
-        )
+        fp = parse_footprint_shapes(component["fp_shapes"], component["fp_origin_x"], component["fp_origin_y"])
         assert len(fp.pads) == 5
 
     def test_footprint_pad_numbers(self, component):
         """Pads should be numbered 1-5."""
-        fp = parse_footprint_shapes(
-            component["fp_shapes"],
-            component["fp_origin_x"],
-            component["fp_origin_y"]
-        )
+        fp = parse_footprint_shapes(component["fp_shapes"], component["fp_origin_x"], component["fp_origin_y"])
         pad_numbers = sorted([p.number for p in fp.pads])
         assert pad_numbers == ["1", "2", "3", "4", "5"]
 
@@ -64,16 +57,11 @@ class TestC427602:
         """Layer 101 (Component Marking Layer) circles should be filtered."""
         # Verify raw data has layer 101 circles
         raw_layer_101_count = sum(
-            1 for s in component["fp_shapes"]
-            if s.startswith("CIRCLE") and s.split("~")[5] == "101"
+            1 for s in component["fp_shapes"] if s.startswith("CIRCLE") and s.split("~")[5] == "101"
         )
         assert raw_layer_101_count > 0, "Test data should have layer 101 circles"
 
-        fp = parse_footprint_shapes(
-            component["fp_shapes"],
-            component["fp_origin_x"],
-            component["fp_origin_y"]
-        )
+        fp = parse_footprint_shapes(component["fp_shapes"], component["fp_origin_x"], component["fp_origin_y"])
         # Only the F.Fab circle (layer 12) should remain, layer 101 filtered
         assert len(fp.circles) == 1
         assert fp.circles[0].layer == "F.Fab"
@@ -88,11 +76,7 @@ class TestC427602:
         The pin 1 dot is stored as a filled arc/circle SOLIDREGION on layer 3
         (Top Silkscreen Layer), not as a CIRCLE shape.
         """
-        fp = parse_footprint_shapes(
-            component["fp_shapes"],
-            component["fp_origin_x"],
-            component["fp_origin_y"]
-        )
+        fp = parse_footprint_shapes(component["fp_shapes"], component["fp_origin_x"], component["fp_origin_y"])
         # Should have at least one silkscreen region for the pin 1 dot
         silkscreen_regions = [r for r in fp.regions if r.layer == "F.SilkS"]
         assert len(silkscreen_regions) >= 1, "Missing silkscreen pin 1 indicator"
@@ -106,11 +90,7 @@ class TestC427602:
 
     def test_footprint_has_silkscreen_tracks(self, component):
         """Should have silkscreen outline tracks."""
-        fp = parse_footprint_shapes(
-            component["fp_shapes"],
-            component["fp_origin_x"],
-            component["fp_origin_y"]
-        )
+        fp = parse_footprint_shapes(component["fp_shapes"], component["fp_origin_x"], component["fp_origin_y"])
         silk_tracks = [t for t in fp.tracks if t.layer == "F.SilkS"]
         assert len(silk_tracks) > 0
 
@@ -121,11 +101,7 @@ class TestC427602:
 
     def test_footprint_writes_valid_kicad(self, component):
         """Should generate valid KiCad footprint format."""
-        fp = parse_footprint_shapes(
-            component["fp_shapes"],
-            component["fp_origin_x"],
-            component["fp_origin_y"]
-        )
+        fp = parse_footprint_shapes(component["fp_shapes"], component["fp_origin_x"], component["fp_origin_y"])
         output = write_footprint(fp, "SOT-23-5_Test", lcsc_id="C427602")
 
         assert output.startswith('(footprint "SOT-23-5_Test"')
@@ -134,11 +110,7 @@ class TestC427602:
 
     def test_symbol_pin_count(self, component):
         """Symbol should have 5 pins."""
-        sym = parse_symbol_shapes(
-            component["sym_shapes"],
-            component["sym_origin_x"],
-            component["sym_origin_y"]
-        )
+        sym = parse_symbol_shapes(component["sym_shapes"], component["sym_origin_x"], component["sym_origin_y"])
         assert len(sym.pins) == 5
 
         # Verify pins appear in output
@@ -147,11 +119,7 @@ class TestC427602:
 
     def test_symbol_has_rectangle(self, component):
         """Symbol should have a body rectangle."""
-        sym = parse_symbol_shapes(
-            component["sym_shapes"],
-            component["sym_origin_x"],
-            component["sym_origin_y"]
-        )
+        sym = parse_symbol_shapes(component["sym_shapes"], component["sym_origin_x"], component["sym_origin_y"])
         assert len(sym.rectangles) >= 1
 
         # Verify rectangle appears in output
@@ -178,11 +146,7 @@ class TestC2040:
 
     def test_footprint_pad_count(self, component):
         """Should have 57 pads (56 pins + thermal pad)."""
-        fp = parse_footprint_shapes(
-            component["fp_shapes"],
-            component["fp_origin_x"],
-            component["fp_origin_y"]
-        )
+        fp = parse_footprint_shapes(component["fp_shapes"], component["fp_origin_x"], component["fp_origin_y"])
         assert len(fp.pads) == 57
 
         # Verify output has all 57 pads
@@ -191,11 +155,7 @@ class TestC2040:
 
     def test_footprint_centered_at_origin(self, component):
         """After origin adjustment, footprint should be roughly centered."""
-        fp = parse_footprint_shapes(
-            component["fp_shapes"],
-            component["fp_origin_x"],
-            component["fp_origin_y"]
-        )
+        fp = parse_footprint_shapes(component["fp_shapes"], component["fp_origin_x"], component["fp_origin_y"])
         # Calculate centroid of pads
         avg_x = sum(p.x for p in fp.pads) / len(fp.pads)
         avg_y = sum(p.y for p in fp.pads) / len(fp.pads)
@@ -205,11 +165,7 @@ class TestC2040:
 
     def test_footprint_has_silkscreen_pin1(self, component):
         """QFN should have silkscreen pin 1 indicator circles."""
-        fp = parse_footprint_shapes(
-            component["fp_shapes"],
-            component["fp_origin_x"],
-            component["fp_origin_y"]
-        )
+        fp = parse_footprint_shapes(component["fp_shapes"], component["fp_origin_x"], component["fp_origin_y"])
         silk_circles = [c for c in fp.circles if c.layer == "F.SilkS"]
         assert len(silk_circles) >= 1, "Missing silkscreen pin 1 indicator"
 
@@ -220,11 +176,7 @@ class TestC2040:
 
     def test_symbol_pin_count(self, component):
         """Symbol should have 57 pins."""
-        sym = parse_symbol_shapes(
-            component["sym_shapes"],
-            component["sym_origin_x"],
-            component["sym_origin_y"]
-        )
+        sym = parse_symbol_shapes(component["sym_shapes"], component["sym_origin_x"], component["sym_origin_y"])
         assert len(sym.pins) == 57
 
         # Verify output has all 57 pins
@@ -233,16 +185,8 @@ class TestC2040:
 
     def test_symbol_writes_valid_kicad(self, component):
         """Should generate valid KiCad symbol format."""
-        sym = parse_symbol_shapes(
-            component["sym_shapes"],
-            component["sym_origin_x"],
-            component["sym_origin_y"]
-        )
-        output = write_symbol(
-            sym, "RP2040_Test",
-            prefix="U",
-            lcsc_id="C2040"
-        )
+        sym = parse_symbol_shapes(component["sym_shapes"], component["sym_origin_x"], component["sym_origin_y"])
+        output = write_symbol(sym, "RP2040_Test", prefix="U", lcsc_id="C2040")
 
         assert '(symbol "RP2040_Test"' in output
         assert "(pin " in output
@@ -268,11 +212,7 @@ class TestC87097:
 
     def test_footprint_pad_count(self, component):
         """Should have 16 pads for DIP-16."""
-        fp = parse_footprint_shapes(
-            component["fp_shapes"],
-            component["fp_origin_x"],
-            component["fp_origin_y"]
-        )
+        fp = parse_footprint_shapes(component["fp_shapes"], component["fp_origin_x"], component["fp_origin_y"])
         assert len(fp.pads) == 16
 
         # Verify output has all 16 pads
@@ -287,26 +227,21 @@ class TestC87097:
         """
         # Count circles by layer in raw data
         raw_layer_101_count = sum(
-            1 for s in component["fp_shapes"]
-            if s.startswith("CIRCLE") and s.split("~")[5] == "101"
+            1 for s in component["fp_shapes"] if s.startswith("CIRCLE") and s.split("~")[5] == "101"
         )
         assert raw_layer_101_count > 0, "Test data should have layer 101 circles"
 
         # Count non-101 circles in raw data
         raw_other_circles = sum(
-            1 for s in component["fp_shapes"]
-            if s.startswith("CIRCLE") and s.split("~")[5] != "101"
+            1 for s in component["fp_shapes"] if s.startswith("CIRCLE") and s.split("~")[5] != "101"
         )
 
-        fp = parse_footprint_shapes(
-            component["fp_shapes"],
-            component["fp_origin_x"],
-            component["fp_origin_y"]
-        )
+        fp = parse_footprint_shapes(component["fp_shapes"], component["fp_origin_x"], component["fp_origin_y"])
 
         # Parsed circles should only include non-101 circles
-        assert len(fp.circles) == raw_other_circles, \
+        assert len(fp.circles) == raw_other_circles, (
             f"Expected {raw_other_circles} circles, got {len(fp.circles)} (layer 101 not filtered)"
+        )
 
         # Verify output has correct circle count
         output = write_footprint(fp, "DIP-16_Test", lcsc_id="C87097")
@@ -314,11 +249,7 @@ class TestC87097:
 
     def test_symbol_pin_count(self, component):
         """Symbol should have 16 pins."""
-        sym = parse_symbol_shapes(
-            component["sym_shapes"],
-            component["sym_origin_x"],
-            component["sym_origin_y"]
-        )
+        sym = parse_symbol_shapes(component["sym_shapes"], component["sym_origin_x"], component["sym_origin_y"])
         assert len(sym.pins) == 16
 
         # Verify output has all 16 pins
@@ -327,11 +258,7 @@ class TestC87097:
 
     def test_footprint_writes_valid_kicad(self, component):
         """Should generate valid KiCad footprint format."""
-        fp = parse_footprint_shapes(
-            component["fp_shapes"],
-            component["fp_origin_x"],
-            component["fp_origin_y"]
-        )
+        fp = parse_footprint_shapes(component["fp_shapes"], component["fp_origin_x"], component["fp_origin_y"])
         output = write_footprint(fp, "DIP-16_Test", lcsc_id="C87097")
 
         assert output.startswith('(footprint "DIP-16_Test"')
@@ -358,11 +285,7 @@ class TestC5360901:
 
     def test_footprint_parses(self, component):
         """Footprint should parse without errors and produce valid output."""
-        fp = parse_footprint_shapes(
-            component["fp_shapes"],
-            component["fp_origin_x"],
-            component["fp_origin_y"]
-        )
+        fp = parse_footprint_shapes(component["fp_shapes"], component["fp_origin_x"], component["fp_origin_y"])
         assert len(fp.pads) > 0
 
         # Verify output matches parsed data
@@ -371,11 +294,7 @@ class TestC5360901:
 
     def test_symbol_parses(self, component):
         """Symbol should parse without errors and produce valid output."""
-        sym = parse_symbol_shapes(
-            component["sym_shapes"],
-            component["sym_origin_x"],
-            component["sym_origin_y"]
-        )
+        sym = parse_symbol_shapes(component["sym_shapes"], component["sym_origin_x"], component["sym_origin_y"])
         assert len(sym.pins) > 0
 
         # Verify output matches parsed data
@@ -384,11 +303,7 @@ class TestC5360901:
 
     def test_roundtrip_footprint(self, component):
         """Parse and write should produce valid output with all elements."""
-        fp = parse_footprint_shapes(
-            component["fp_shapes"],
-            component["fp_origin_x"],
-            component["fp_origin_y"]
-        )
+        fp = parse_footprint_shapes(component["fp_shapes"], component["fp_origin_x"], component["fp_origin_y"])
         output = write_footprint(fp, "C5360901_Test", lcsc_id="C5360901")
 
         # Verify all elements present in output
@@ -400,11 +315,7 @@ class TestC5360901:
 
     def test_roundtrip_symbol(self, component):
         """Parse and write should produce valid output with all elements."""
-        sym = parse_symbol_shapes(
-            component["sym_shapes"],
-            component["sym_origin_x"],
-            component["sym_origin_y"]
-        )
+        sym = parse_symbol_shapes(component["sym_shapes"], component["sym_origin_x"], component["sym_origin_y"])
         output = write_symbol(sym, "C5360901_Test", prefix="U", lcsc_id="C5360901")
 
         # Verify all elements present in output
@@ -414,11 +325,7 @@ class TestC5360901:
 
     def test_symbol_pin1_dot_filled(self, component):
         """Pin 1 indicator circle should be filled, not hollow."""
-        sym = parse_symbol_shapes(
-            component["sym_shapes"],
-            component["sym_origin_x"],
-            component["sym_origin_y"]
-        )
+        sym = parse_symbol_shapes(component["sym_shapes"], component["sym_origin_x"], component["sym_origin_y"])
         # Should have one filled circle
         assert len(sym.circles) == 1
         assert sym.circles[0].filled is True
@@ -430,11 +337,7 @@ class TestC5360901:
 
     def test_symbol_pin_names_parsed(self, component):
         """Pin names (including numeric ones like '1') must be parsed and output."""
-        sym = parse_symbol_shapes(
-            component["sym_shapes"],
-            component["sym_origin_x"],
-            component["sym_origin_y"]
-        )
+        sym = parse_symbol_shapes(component["sym_shapes"], component["sym_origin_x"], component["sym_origin_y"])
         # All 9 pins should have names
         for pin in sym.pins:
             assert pin.name != "", f"Pin {pin.number} has empty name"
