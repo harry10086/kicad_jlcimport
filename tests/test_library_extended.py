@@ -232,9 +232,7 @@ class TestUpdateLibTableExtended:
         table_path = tmp_path / "sym-lib-table"
         table_path.write_text("(sym_lib_table\n  (version 7)\n")  # No closing paren
 
-        result = library._update_lib_table(
-            str(table_path), "sym_lib_table", "TestLib", "KiCad", "/path/to/lib"
-        )
+        result = library._update_lib_table(str(table_path), "sym_lib_table", "TestLib", "KiCad", "/path/to/lib")
         assert result is False  # Appended to existing
 
 
@@ -243,7 +241,7 @@ class TestRemoveSymbolExtended:
 
     def test_removes_nested_symbol(self):
         """Test removal of symbol with nested parens."""
-        content = '''(kicad_symbol_lib
+        content = """(kicad_symbol_lib
   (symbol "R_100"
     (pin_names)
     (property "Reference" "R" (at 0 0 0))
@@ -252,7 +250,7 @@ class TestRemoveSymbolExtended:
     )
   )
 )
-'''
+"""
         result = library._remove_symbol(content, "R_100")
         assert '(symbol "R_100"' not in result
         assert "(kicad_symbol_lib" in result

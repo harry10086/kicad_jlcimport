@@ -34,24 +34,16 @@ class TestImportComponent:
     def _make_fake_footprint(self, with_model=False):
         """Create a fake footprint for testing."""
         fp = EEFootprint()
-        pad = EEPad(
-            shape="RECT", x=0, y=0, width=1, height=1,
-            layer="1", number="1", drill=0, rotation=0
-        )
+        pad = EEPad(shape="RECT", x=0, y=0, width=1, height=1, layer="1", number="1", drill=0, rotation=0)
         fp.pads.append(pad)
         if with_model:
-            fp.model = EE3DModel(
-                uuid="model_uuid", origin_x=100, origin_y=200, z=5, rotation=(0, 0, 0)
-            )
+            fp.model = EE3DModel(uuid="model_uuid", origin_x=100, origin_y=200, z=5, rotation=(0, 0, 0))
         return fp
 
     def _make_fake_symbol(self):
         """Create a fake symbol for testing."""
         sym = EESymbol()
-        pin = EEPin(
-            number="1", name="VCC", x=0, y=0, rotation=0,
-            length=2.54, electrical_type="power_in"
-        )
+        pin = EEPin(number="1", name="VCC", x=0, y=0, rotation=0, length=2.54, electrical_type="power_in")
         sym.pins.append(pin)
         return sym
 
@@ -284,9 +276,7 @@ class TestImportComponent:
 
         # Pre-create the symbol library with the symbol
         sym_path = tmp_path / "TestLib.kicad_sym"
-        sym_path.write_text(
-            '(kicad_symbol_lib\n  (version 20241209)\n  (generator "test")\n  (symbol "TestPart")\n)\n'
-        )
+        sym_path.write_text('(kicad_symbol_lib\n  (version 20241209)\n  (generator "test")\n  (symbol "TestPart")\n)\n')
 
         monkeypatch.setattr(importer, "fetch_full_component", lambda _: fake_comp)
         monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *a, **k: fake_fp)

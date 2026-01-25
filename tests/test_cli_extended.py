@@ -37,10 +37,26 @@ class TestCmdSearch:
         mock_results = {
             "total": 2,
             "results": [
-                {"lcsc": "C1", "type": "Basic", "stock": 100, "price": 0.01,
-                 "model": "R1", "package": "0402", "brand": "ACME", "description": "Test"},
-                {"lcsc": "C2", "type": "Extended", "stock": 50, "price": 0.02,
-                 "model": "R2", "package": "0603", "brand": "ACME", "description": "Test2"},
+                {
+                    "lcsc": "C1",
+                    "type": "Basic",
+                    "stock": 100,
+                    "price": 0.01,
+                    "model": "R1",
+                    "package": "0402",
+                    "brand": "ACME",
+                    "description": "Test",
+                },
+                {
+                    "lcsc": "C2",
+                    "type": "Extended",
+                    "stock": 50,
+                    "price": 0.02,
+                    "model": "R2",
+                    "package": "0603",
+                    "brand": "ACME",
+                    "description": "Test2",
+                },
             ],
         }
         monkeypatch.setattr(cli, "search_components", lambda *a, **k: mock_results)
@@ -61,10 +77,26 @@ class TestCmdSearch:
         mock_results = {
             "total": 2,
             "results": [
-                {"lcsc": "C1", "type": "Basic", "stock": 100, "price": 0.01,
-                 "model": "R1", "package": "0402", "brand": "ACME", "description": "Test"},
-                {"lcsc": "C2", "type": "Extended", "stock": 50, "price": 0.02,
-                 "model": "R2", "package": "0603", "brand": "ACME", "description": "Test2"},
+                {
+                    "lcsc": "C1",
+                    "type": "Basic",
+                    "stock": 100,
+                    "price": 0.01,
+                    "model": "R1",
+                    "package": "0402",
+                    "brand": "ACME",
+                    "description": "Test",
+                },
+                {
+                    "lcsc": "C2",
+                    "type": "Extended",
+                    "stock": 50,
+                    "price": 0.02,
+                    "model": "R2",
+                    "package": "0603",
+                    "brand": "ACME",
+                    "description": "Test2",
+                },
             ],
         }
         monkeypatch.setattr(cli, "search_components", lambda *a, **k: mock_results)
@@ -85,10 +117,26 @@ class TestCmdSearch:
         mock_results = {
             "total": 2,
             "results": [
-                {"lcsc": "C1", "type": "Basic", "stock": 100, "price": 0.01,
-                 "model": "R1", "package": "0402", "brand": "ACME", "description": "Test"},
-                {"lcsc": "C2", "type": "Extended", "stock": 50, "price": 0.02,
-                 "model": "R2", "package": "0603", "brand": "ACME", "description": "Test2"},
+                {
+                    "lcsc": "C1",
+                    "type": "Basic",
+                    "stock": 100,
+                    "price": 0.01,
+                    "model": "R1",
+                    "package": "0402",
+                    "brand": "ACME",
+                    "description": "Test",
+                },
+                {
+                    "lcsc": "C2",
+                    "type": "Extended",
+                    "stock": 50,
+                    "price": 0.02,
+                    "model": "R2",
+                    "package": "0603",
+                    "brand": "ACME",
+                    "description": "Test2",
+                },
             ],
         }
         monkeypatch.setattr(cli, "search_components", lambda *a, **k: mock_results)
@@ -109,10 +157,26 @@ class TestCmdSearch:
         mock_results = {
             "total": 2,
             "results": [
-                {"lcsc": "C1", "type": "Basic", "stock": 100, "price": 0.01,
-                 "model": "R1", "package": "0402", "brand": "ACME", "description": "Test"},
-                {"lcsc": "C2", "type": "Basic", "stock": 5, "price": 0.02,
-                 "model": "R2", "package": "0603", "brand": "ACME", "description": "Test2"},
+                {
+                    "lcsc": "C1",
+                    "type": "Basic",
+                    "stock": 100,
+                    "price": 0.01,
+                    "model": "R1",
+                    "package": "0402",
+                    "brand": "ACME",
+                    "description": "Test",
+                },
+                {
+                    "lcsc": "C2",
+                    "type": "Basic",
+                    "stock": 5,
+                    "price": 0.02,
+                    "model": "R2",
+                    "package": "0603",
+                    "brand": "ACME",
+                    "description": "Test2",
+                },
             ],
         }
         monkeypatch.setattr(cli, "search_components", lambda *a, **k: mock_results)
@@ -133,8 +197,16 @@ class TestCmdSearch:
         mock_results = {
             "total": 1,
             "results": [
-                {"lcsc": "C123", "type": "Basic", "stock": 100, "price": 0.01,
-                 "model": "R100K", "package": "0402", "brand": "ACME", "description": "100K Resistor"},
+                {
+                    "lcsc": "C123",
+                    "type": "Basic",
+                    "stock": 100,
+                    "price": 0.01,
+                    "model": "R100K",
+                    "package": "0402",
+                    "brand": "ACME",
+                    "description": "100K Resistor",
+                },
             ],
         }
         monkeypatch.setattr(cli, "search_components", lambda *a, **k: mock_results)
@@ -171,8 +243,16 @@ class TestCmdSearch:
         mock_results = {
             "total": 1,
             "results": [
-                {"lcsc": "C1", "type": "Basic", "stock": 100, "price": None,
-                 "model": "R1", "package": "0402", "brand": "ACME", "description": "Test"},
+                {
+                    "lcsc": "C1",
+                    "type": "Basic",
+                    "stock": 100,
+                    "price": None,
+                    "model": "R1",
+                    "package": "0402",
+                    "brand": "ACME",
+                    "description": "Test",
+                },
             ],
         }
         monkeypatch.setattr(cli, "search_components", lambda *a, **k: mock_results)
@@ -192,8 +272,16 @@ class TestCmdSearch:
         mock_results = {
             "total": 1,
             "results": [
-                {"lcsc": "C1", "type": "Basic", "stock": None, "price": 0.01,
-                 "model": "R1", "package": "0402", "brand": "ACME", "description": "Test"},
+                {
+                    "lcsc": "C1",
+                    "type": "Basic",
+                    "stock": None,
+                    "price": 0.01,
+                    "model": "R1",
+                    "package": "0402",
+                    "brand": "ACME",
+                    "description": "Test",
+                },
             ],
         }
         monkeypatch.setattr(cli, "search_components", lambda *a, **k: mock_results)

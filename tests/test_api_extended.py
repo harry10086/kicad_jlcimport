@@ -148,29 +148,31 @@ class TestSearchComponents:
         mock_response = MagicMock()
         mock_response.__enter__ = MagicMock(return_value=mock_response)
         mock_response.__exit__ = MagicMock(return_value=False)
-        mock_response.read.return_value = json.dumps({
-            "data": {
-                "componentPageInfo": {
-                    "total": 1,
-                    "list": [
-                        {
-                            "componentCode": "C123",
-                            "componentName": "Resistor",
-                            "componentModelEn": "100K",
-                            "componentBrandEn": "ACME",
-                            "componentSpecificationEn": "0402",
-                            "componentTypeEn": "Resistors",
-                            "stockCount": 1000,
-                            "componentLibraryType": "base",
-                            "componentPrices": [{"productPrice": 0.01}],
-                            "describe": "100K Resistor",
-                            "lcscGoodsUrl": "https://lcsc.com/product",
-                            "dataManualUrl": "https://datasheet.com",
-                        }
-                    ],
+        mock_response.read.return_value = json.dumps(
+            {
+                "data": {
+                    "componentPageInfo": {
+                        "total": 1,
+                        "list": [
+                            {
+                                "componentCode": "C123",
+                                "componentName": "Resistor",
+                                "componentModelEn": "100K",
+                                "componentBrandEn": "ACME",
+                                "componentSpecificationEn": "0402",
+                                "componentTypeEn": "Resistors",
+                                "stockCount": 1000,
+                                "componentLibraryType": "base",
+                                "componentPrices": [{"productPrice": 0.01}],
+                                "describe": "100K Resistor",
+                                "lcscGoodsUrl": "https://lcsc.com/product",
+                                "dataManualUrl": "https://datasheet.com",
+                            }
+                        ],
+                    }
                 }
             }
-        }).encode()
+        ).encode()
 
         with patch.object(api, "_urlopen", return_value=mock_response):
             result = api.search_components("resistor", page=1, page_size=10)
@@ -184,29 +186,31 @@ class TestSearchComponents:
         mock_response = MagicMock()
         mock_response.__enter__ = MagicMock(return_value=mock_response)
         mock_response.__exit__ = MagicMock(return_value=False)
-        mock_response.read.return_value = json.dumps({
-            "data": {
-                "componentPageInfo": {
-                    "total": 1,
-                    "list": [
-                        {
-                            "componentCode": "C456",
-                            "componentName": "Capacitor",
-                            "componentModelEn": "100uF",
-                            "componentBrandEn": "ACME",
-                            "componentSpecificationEn": "0805",
-                            "componentTypeEn": "Capacitors",
-                            "stockCount": 500,
-                            "componentLibraryType": "expand",
-                            "componentPrices": [],
-                            "describe": "100uF Capacitor",
-                            "lcscGoodsUrl": "",
-                            "dataManualUrl": "",
-                        }
-                    ],
+        mock_response.read.return_value = json.dumps(
+            {
+                "data": {
+                    "componentPageInfo": {
+                        "total": 1,
+                        "list": [
+                            {
+                                "componentCode": "C456",
+                                "componentName": "Capacitor",
+                                "componentModelEn": "100uF",
+                                "componentBrandEn": "ACME",
+                                "componentSpecificationEn": "0805",
+                                "componentTypeEn": "Capacitors",
+                                "stockCount": 500,
+                                "componentLibraryType": "expand",
+                                "componentPrices": [],
+                                "describe": "100uF Capacitor",
+                                "lcscGoodsUrl": "",
+                                "dataManualUrl": "",
+                            }
+                        ],
+                    }
                 }
             }
-        }).encode()
+        ).encode()
 
         with patch.object(api, "_urlopen", return_value=mock_response):
             result = api.search_components("capacitor")
