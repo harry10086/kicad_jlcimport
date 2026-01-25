@@ -14,11 +14,8 @@ import argparse
 import os
 import sys
 
-# Ensure the kicad_jlcimport package is importable when running from project directory
+# Add package directory to path for PyInstaller and direct execution
 _script_dir = os.path.dirname(os.path.abspath(__file__))
-_parent_dir = os.path.dirname(_script_dir)
-if _parent_dir not in sys.path:
-    sys.path.insert(0, _parent_dir)
 if _script_dir not in sys.path:
     sys.path.insert(0, _script_dir)
 
@@ -57,12 +54,13 @@ Examples:
         import wx
     except ImportError:
         print("Error: wxPython is required for the GUI.")
-        print("Install it with: pip install wxPython")
+        print("Install it with: pip install 'kicad-jlcimport[gui]'")
         sys.exit(1)
 
     from dialog import JLCImportDialog
 
-    _app = wx.App()  # noqa: F841 - wx.App must exist for dialogs to work
+    app = wx.App()
+    app.SetAppName("JLCImport")
 
     project_dir = None
 

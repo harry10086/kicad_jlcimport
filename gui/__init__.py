@@ -42,12 +42,13 @@ Examples:
         import wx
     except ImportError:
         print("Error: wxPython is required for the GUI.")
-        print("Install it with: pip install wxPython")
+        print("Install it with: pip install 'kicad-jlcimport[gui]'")
         sys.exit(1)
 
     from ..dialog import JLCImportDialog
 
-    _app = wx.App()  # noqa: F841 - wx.App must exist for dialogs to work
+    app = wx.App()
+    app.SetAppName("JLCImport")
 
     project_dir = None
 
