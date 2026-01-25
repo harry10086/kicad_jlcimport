@@ -14,10 +14,11 @@ import argparse
 import os
 import sys
 
-# Add package directory to path for PyInstaller and direct execution
+# Add parent directory to path so kicad_jlcimport package is importable
 _script_dir = os.path.dirname(os.path.abspath(__file__))
-if _script_dir not in sys.path:
-    sys.path.insert(0, _script_dir)
+_parent_dir = os.path.dirname(_script_dir)
+if _parent_dir not in sys.path:
+    sys.path.insert(0, _parent_dir)
 
 
 def main():
@@ -57,7 +58,7 @@ Examples:
         print("Install it with: pip install 'kicad-jlcimport[gui]'")
         sys.exit(1)
 
-    from dialog import JLCImportDialog
+    from kicad_jlcimport.dialog import JLCImportDialog
 
     app = wx.App()
     app.SetAppName("JLCImport")
