@@ -20,6 +20,7 @@ source = ["."]
 omit = ["tests/*", "tui/*", "tui_entry.py"]
 
 [tool.coverage.report]
+fail_under = 40
 exclude_lines = [
     "pragma: no cover",
     "if TYPE_CHECKING:",

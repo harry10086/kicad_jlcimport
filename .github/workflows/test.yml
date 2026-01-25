@@ -36,3 +36,14 @@ jobs:
         with:
           files: ./coverage.xml
           fail_ci_if_error: false
+
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pytest pytest-cov
+      - name: Check coverage threshold
+        run: pytest tests/ --cov=. --cov-report=term-missing --cov-fail-under=40
