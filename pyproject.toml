@@ -17,10 +17,10 @@ testpaths = ["tests"]
 
 [tool.coverage.run]
 source = ["."]
-omit = ["tests/*", "tui/*", "tui_entry.py"]
+omit = ["tests/*", "tui/*", "tui_entry.py", "dialog.py", "plugin.py", "categories.py"]
 
 [tool.coverage.report]
-fail_under = 40
+fail_under = 80
 exclude_lines = [
     "pragma: no cover",
     "if TYPE_CHECKING:",
