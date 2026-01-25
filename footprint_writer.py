@@ -96,6 +96,16 @@ def write_footprint(footprint: EEFootprint, name: str, lcsc_id: str = "",
             f' (layer "{arc.layer}") (uuid "{_uuid()}"))'
         )
 
+    # Solid regions (e.g., pin 1 indicators)
+    for region in footprint.regions:
+        pts_str = " ".join(f'(xy {_fmt(x)} {_fmt(y)})' for x, y in region.points)
+        lines.append(
+            f'  (fp_poly (pts {pts_str})'
+            f' (stroke (width 0) (type solid))'
+            f' (fill solid)'
+            f' (layer "{region.layer}") (uuid "{_uuid()}"))'
+        )
+
     # Pads
     for pad in footprint.pads:
         pad_type, pad_shape, layers = _pad_type_info(pad)

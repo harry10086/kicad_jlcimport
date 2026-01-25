@@ -6,31 +6,33 @@ from kicad_jlcimport.ee_types import EE3DModel
 
 
 class TestComputeModelTransform:
-    def test_zero_origin(self):
+    def test_zero_z(self):
+        """X/Y offset is always 0 - only Z is used."""
         model = EE3DModel(uuid="test", origin_x=0, origin_y=0, z=0,
                           rotation=(0, 0, 0))
         offset, rotation = compute_model_transform(model, 0, 0)
         assert offset == (0.0, 0.0, 0.0)
         assert rotation == (0, 0, 0)
 
-    def test_offset_calculation(self):
+    def test_z_offset(self):
+        """Z offset is converted from 3D units (100/mm) to mm."""
         model = EE3DModel(uuid="test", origin_x=200, origin_y=300, z=50,
                           rotation=(0, 0, 90))
         offset, rotation = compute_model_transform(model, 100, 100)
-        # (200-100)/100 = 1.0
-        assert offset[0] == pytest.approx(1.0)
-        # -(300-100)/100 = -2.0
-        assert offset[1] == pytest.approx(-2.0)
-        # 50/100 = 0.5
+        # X/Y are always 0 - c_origin is just canvas position, not offset
+        assert offset[0] == 0.0
+        assert offset[1] == 0.0
+        # z: 50/100 = 0.5 mm
         assert offset[2] == pytest.approx(0.5)
         assert rotation == (0, 0, 90)
 
-    def test_negative_offset(self):
+    def test_rotation_preserved(self):
+        """Rotation tuple is passed through unchanged."""
         model = EE3DModel(uuid="test", origin_x=50, origin_y=50, z=0,
                           rotation=(10, 20, 30))
         offset, rotation = compute_model_transform(model, 100, 100)
-        assert offset[0] == pytest.approx(-0.5)
-        assert offset[1] == pytest.approx(0.5)  # -(50-100)/100 = 0.5
+        assert offset[0] == 0.0
+        assert offset[1] == 0.0
         assert rotation == (10, 20, 30)
 
 

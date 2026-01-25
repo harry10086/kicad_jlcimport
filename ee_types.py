@@ -43,6 +43,8 @@ class EECircle:
     radius: float
     width: float
     layer: str
+    flag: str = ""  # EasyEDA flag field - "0" may indicate auxiliary circles
+    filled: bool = False
 
 
 @dataclass

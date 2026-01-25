@@ -137,6 +137,12 @@ class TestParseFootprintShapes:
         fp = parse_footprint_shapes([shape], 0, 0)
         assert len(fp.circles) == 0
 
+    def test_skip_component_marking_circle(self):
+        """Layer 101 (Component Marking Layer) circles should be filtered."""
+        shape = "CIRCLE~100~100~10~1~101~id1~0~~"
+        fp = parse_footprint_shapes([shape], 0, 0)
+        assert len(fp.circles) == 0
+
     def test_parse_hole(self):
         shape = "HOLE~200~200~5~id1"
         fp = parse_footprint_shapes([shape], 0, 0)

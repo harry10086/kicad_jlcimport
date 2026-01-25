@@ -79,7 +79,9 @@ def write_symbol(symbol: EESymbol, name: str, prefix: str = "U",
         lines.append(f'      (circle (center {_fmt(circle.cx)} {_fmt(circle.cy)})'
                      f' (radius {_fmt(circle.radius)})')
         lines.append(f'        (stroke (width 0.254) (type solid))')
-        lines.append(f'        (fill (type none))')
+        # Use "outline" for filled circles (solid dark dot) vs "none" for hollow
+        fill_type = "outline" if circle.filled else "none"
+        lines.append(f'        (fill (type {fill_type}))')
         lines.append(f'      )')
 
     # Polylines
