@@ -15,12 +15,15 @@ def compute_model_transform(
 ) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
     """Compute 3D model offset and rotation from footprint model data.
 
-    Converts from EasyEDA coordinate units (100 units/mm) to KiCad mm.
-    Returns (offset, rotation) tuples.
+    The c_origin in EasyEDA is just the canvas position - not relevant for KiCad.
+    The footprint and 3D model are already aligned at their origins.
+    Only Z offset needs to be applied.
+
+    Returns (offset, rotation) tuples in mm.
     """
     offset = (
-        (model.origin_x - fp_origin_x) / _EE_3D_UNITS_PER_MM,
-        -(model.origin_y - fp_origin_y) / _EE_3D_UNITS_PER_MM,
+        0.0,
+        0.0,
         model.z / _EE_3D_UNITS_PER_MM,
     )
     return offset, model.rotation

@@ -290,15 +290,19 @@ def _parse_fp_arc(parts: List[str]) -> EEArc:
 
 def _parse_circle(parts: List[str]) -> EECircle:
     """Parse CIRCLE shape string."""
-    # CIRCLE~cx~cy~radius~width~layer~...
+    # CIRCLE~cx~cy~radius~width~layer~id~flag~...
     cx = float(parts[1])
     cy = float(parts[2])
     radius = float(parts[3])
     width = float(parts[4])
     layer = parts[5]
+    # Flag at position 7 - "0" may indicate auxiliary/interior circles
+    flag = parts[7] if len(parts) > 7 else ""
 
-    # Skip decorative pad circles on layer 100
-    if layer == "100":
+    # Skip decorative/annotation circles:
+    # - Layer 100: Lead shape layer (decorative pad circles)
+    # - Layer 101: Component Marking Layer (small annotation markers)
+    if layer in ("100", "101"):
         return None
 
     kicad_layer = LAYER_MAP.get(layer, "F.SilkS")
@@ -308,6 +312,7 @@ def _parse_circle(parts: List[str]) -> EECircle:
         radius=mil_to_mm(radius),
         width=mil_to_mm(width),
         layer=kicad_layer,
+        flag=flag,
     )
 
 
@@ -338,17 +343,27 @@ def _parse_solid_region(parts: List[str]) -> EESolidRegion:
     if not svg_path:
         return None
 
-    # Only handle npth (edge cuts) regions
-    if region_type != "npth":
-        return None
+    # Handle npth (edge cuts) and silkscreen solid regions
+    if region_type == "npth":
+        # Parse M x y L x y L x y ... Z
+        points = _parse_svg_polygon(svg_path)
+        if not points:
+            return None
+        return EESolidRegion(layer="Edge.Cuts", points=points, region_type=region_type)
 
-    # Parse M x y L x y L x y ... Z
-    points = _parse_svg_polygon(svg_path)
-    if not points:
-        return None
+    # For silkscreen (layer 3), import solid regions (e.g., pin 1 dots)
+    if layer == "3" and region_type == "solid":
+        # Check if path contains arc commands - if so, use arc parser
+        if " A " in svg_path or "\tA " in svg_path:
+            points = _parse_svg_path_with_arcs(svg_path)
+            if points:
+                return EESolidRegion(layer="F.SilkS", points=points, region_type=region_type)
+        # Otherwise try to parse as polygon (needs at least 3 points)
+        points = _parse_svg_polygon(svg_path)
+        if len(points) >= 3:
+            return EESolidRegion(layer="F.SilkS", points=points, region_type=region_type)
 
-    kicad_layer = LAYER_MAP.get(layer, "Edge.Cuts")
-    return EESolidRegion(layer=kicad_layer, points=points, region_type=region_type)
+    return None
 
 
 def _parse_svg_polygon(svg_path: str) -> List[Tuple[float, float]]:
@@ -370,6 +385,54 @@ def _parse_svg_polygon(svg_path: str) -> List[Tuple[float, float]]:
                 points.append((x, y))
             except ValueError:
                 continue
+    return points
+
+
+def _parse_svg_path_with_arcs(svg_path: str) -> List[Tuple[float, float]]:
+    """Parse SVG path containing arc commands, approximating arcs as polygons.
+
+    Handles paths like: M x y A rx ry rot large sweep ex ey A rx ry rot large sweep ex ey
+    which draw circles using two 180-degree arcs.
+    """
+    points = []
+    # Remove Z at end
+    path = svg_path.replace("Z", "").replace("z", "").strip()
+
+    # Extract starting point from M command
+    m_match = re.match(r"M\s*([\d.e+-]+)\s+([\d.e+-]+)", path)
+    if not m_match:
+        return []
+
+    start_x = float(m_match.group(1))
+    start_y = float(m_match.group(2))
+
+    # Find all arc commands
+    arc_pattern = r"A\s*([\d.e+-]+)\s+([\d.e+-]+)\s+([\d.e+-]+)\s+([01])\s+([01])\s+([\d.e+-]+)\s+([\d.e+-]+)"
+    arcs = re.findall(arc_pattern, path)
+
+    if not arcs:
+        return []
+
+    # For a circle made of two arcs, compute center and radius
+    # First arc goes from start to end1, second arc goes from end1 back to start
+    rx = float(arcs[0][0])
+    ry = float(arcs[0][1])
+    end1_x = float(arcs[0][5])
+    end1_y = float(arcs[0][6])
+
+    # Center is midpoint between start and end1 (for a circle)
+    cx = (start_x + end1_x) / 2
+    cy = (start_y + end1_y) / 2
+    radius = (rx + ry) / 2  # Average for slight ellipses
+
+    # Generate polygon approximation of circle (16 segments)
+    num_segments = 16
+    for i in range(num_segments):
+        angle = 2 * math.pi * i / num_segments
+        px = cx + radius * math.cos(angle)
+        py = cy + radius * math.sin(angle)
+        points.append((mil_to_mm(px), mil_to_mm(py)))
+
     return points
 
 
@@ -461,20 +524,14 @@ def _parse_pin(shape_str: str, origin_x: float, origin_y: float) -> EEPin:
             length = abs(float(v_match.group(1)))
 
     # Parse pin name from section 3 (name display)
+    # Format: visible~x~y~rotation~text~alignment~...~color
     name = ""
     name_visible = True
     if len(sections) > 3:
         name_parts = sections[3].split("~")
-        # Find the name text - it's typically after position coords
-        for p in name_parts:
-            if (
-                p
-                and not p.replace(".", "").replace("-", "").isdigit()
-                and p not in ("start", "end", "0", "1")
-                and not p.startswith("#")
-            ):
-                name = p
-                break
+        # Text is at index 4
+        if len(name_parts) > 4:
+            name = name_parts[4]
         # Visibility: "0" in first field means hidden
         if name_parts and name_parts[0] == "0":
             name_visible = False
@@ -536,7 +593,7 @@ def _parse_sym_rect(shape_str: str, origin_x: float, origin_y: float) -> EERecta
 def _parse_sym_circle(shape_str: str, origin_x: float, origin_y: float) -> EECircle:
     """Parse symbol circle/ellipse."""
     parts = shape_str.split("~")
-    # E~cx~cy~rx~ry~...
+    # E~cx~cy~rx~ry~stroke_color~stroke_width~?~fill_color~id~...
     try:
         cx = float(parts[1])
         cy = float(parts[2])
@@ -544,12 +601,20 @@ def _parse_sym_circle(shape_str: str, origin_x: float, origin_y: float) -> EECir
     except (ValueError, IndexError):
         return None
 
+    # Check for fill color at parts[8] - if it's a color (starts with #) and not "none", it's filled
+    filled = False
+    if len(parts) > 8:
+        fill_color = parts[8].strip().lower()
+        if fill_color.startswith("#") and fill_color != "none":
+            filled = True
+
     return EECircle(
         cx=mil_to_mm(cx - origin_x),
         cy=-mil_to_mm(cy - origin_y),
         radius=mil_to_mm(radius),
         width=0.254,
         layer="",
+        filled=filled,
     )
 
 

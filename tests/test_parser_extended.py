@@ -328,41 +328,42 @@ class TestParsePin:
     """Tests for _parse_pin function."""
 
     def test_parse_basic_pin(self):
-        shape = "P~show~0~1~400~300~0~id1^^section1^^M400,300h10^^1~0~0~0~0~TestPin^^1~0~0~0~0~1"
+        # Real format: visible~x~y~rotation~text~alignment~...
+        shape = "P~show~0~1~400~300~0~id1^^section1^^M400,300h10^^1~0~0~0~TestPin~start^^1~0~0~0~1~end"
         pin = _parse_pin(shape, 400, 300)
         assert pin.number == "1"
         assert pin.name == "TestPin"
         assert pin.electrical_type == "unspecified"
 
     def test_parse_pin_with_input_type(self):
-        shape = "P~show~1~2~400~300~90~id1^^section1^^M400,300v10^^1~0~0~0~0~IN^^1~0~0~0~0~2"
+        shape = "P~show~1~2~400~300~90~id1^^section1^^M400,300v10^^1~0~0~0~IN~start^^1~0~0~0~2~end"
         pin = _parse_pin(shape, 400, 300)
         assert pin.number == "2"
         assert pin.electrical_type == "input"
         assert pin.rotation == 270  # (90 + 180) % 360
 
     def test_parse_pin_output_type(self):
-        shape = "P~show~2~3~400~300~180~id1^^section1^^M400,300h-10^^1~0~0~0~0~OUT^^1~0~0~0~0~3"
+        shape = "P~show~2~3~400~300~180~id1^^section1^^M400,300h-10^^1~0~0~0~OUT~start^^1~0~0~0~3~end"
         pin = _parse_pin(shape, 400, 300)
         assert pin.electrical_type == "output"
 
     def test_parse_pin_bidirectional_type(self):
-        shape = "P~show~3~4~400~300~0~id1^^section1^^M400,300h10^^1~0~0~0~0~IO^^1~0~0~0~0~4"
+        shape = "P~show~3~4~400~300~0~id1^^section1^^M400,300h10^^1~0~0~0~IO~start^^1~0~0~0~4~end"
         pin = _parse_pin(shape, 400, 300)
         assert pin.electrical_type == "bidirectional"
 
     def test_parse_pin_power_type(self):
-        shape = "P~show~4~5~400~300~270~id1^^section1^^M400,300v-10^^1~0~0~0~0~VCC^^1~0~0~0~0~5"
+        shape = "P~show~4~5~400~300~270~id1^^section1^^M400,300v-10^^1~0~0~0~VCC~start^^1~0~0~0~5~end"
         pin = _parse_pin(shape, 400, 300)
         assert pin.electrical_type == "power_in"
 
     def test_parse_pin_hidden_name(self):
-        shape = "P~show~0~1~400~300~0~id1^^section1^^M400,300h10^^0~0~0~0~0~HiddenName^^1~0~0~0~0~1"
+        shape = "P~show~0~1~400~300~0~id1^^section1^^M400,300h10^^0~0~0~0~HiddenName~start^^1~0~0~0~1~end"
         pin = _parse_pin(shape, 400, 300)
         assert pin.name_visible is False
 
     def test_parse_pin_hidden_number(self):
-        shape = "P~show~0~1~400~300~0~id1^^section1^^M400,300h10^^1~0~0~0~0~Name^^0~0~0~0~0~1"
+        shape = "P~show~0~1~400~300~0~id1^^section1^^M400,300h10^^1~0~0~0~Name~start^^0~0~0~0~1~end"
         pin = _parse_pin(shape, 400, 300)
         assert pin.number_visible is False
 
