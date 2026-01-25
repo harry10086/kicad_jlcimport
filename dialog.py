@@ -16,9 +16,10 @@ from .library import get_global_lib_dir, load_config, save_config
 
 
 class JLCImportDialog(wx.Dialog):
-    def __init__(self, parent, board):
+    def __init__(self, parent, board, project_dir=None):
         super().__init__(parent, title="JLCImport", size=(700, 600), style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER)
         self.board = board
+        self._project_dir = project_dir  # Used when board is None (standalone mode)
         self._search_results = []
         self._raw_search_results = []
         self._search_request_id = 0
@@ -293,6 +294,9 @@ class JLCImportDialog(wx.Dialog):
             board_path = self.board.GetFileName()
             if board_path:
                 return os.path.dirname(board_path)
+        # Standalone mode: use provided project_dir
+        if self._project_dir:
+            return self._project_dir
         return ""
 
     def _on_lib_name_change(self, event):

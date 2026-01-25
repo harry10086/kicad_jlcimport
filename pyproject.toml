@@ -7,17 +7,19 @@ license = {text = "MIT"}
 
 [project.optional-dependencies]
 tui = ["textual>=1.0.0", "textual-image[textual]>=0.6.0", "Pillow>=9.0.0"]
+gui = ["wxPython>=4.2.0"]
 dev = ["ruff>=0.4.0", "pytest>=7.0.0", "pytest-cov>=4.0.0"]
 
 [project.scripts]
 jlcimport-tui = "kicad_jlcimport.tui:main"
+jlcimport-gui = "kicad_jlcimport.gui:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
 [tool.coverage.run]
 source = ["."]
-omit = ["tests/*", "tui/*", "tui_entry.py", "dialog.py", "plugin.py", "categories.py"]
+omit = ["tests/*", "tui/*", "gui/*", "tui_entry.py", "gui_entry.py", "dialog.py", "plugin.py", "categories.py"]
 
 [tool.coverage.report]
 fail_under = 80
