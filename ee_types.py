@@ -1,4 +1,5 @@
 """Dataclass types for parsed EasyEDA primitives."""
+
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 

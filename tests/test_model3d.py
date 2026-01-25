@@ -1,23 +1,22 @@
 """Tests for model3d.py - VRML conversion and model transforms."""
+
 import pytest
 
-from kicad_jlcimport.model3d import convert_to_vrml, compute_model_transform, download_and_save_models
 from kicad_jlcimport.ee_types import EE3DModel
+from kicad_jlcimport.model3d import compute_model_transform, convert_to_vrml, download_and_save_models
 
 
 class TestComputeModelTransform:
     def test_zero_z(self):
         """X/Y offset is always 0 - only Z is used."""
-        model = EE3DModel(uuid="test", origin_x=0, origin_y=0, z=0,
-                          rotation=(0, 0, 0))
+        model = EE3DModel(uuid="test", origin_x=0, origin_y=0, z=0, rotation=(0, 0, 0))
         offset, rotation = compute_model_transform(model, 0, 0)
         assert offset == (0.0, 0.0, 0.0)
         assert rotation == (0, 0, 0)
 
     def test_z_offset(self):
         """Z offset is converted from 3D units (100/mm) to mm."""
-        model = EE3DModel(uuid="test", origin_x=200, origin_y=300, z=50,
-                          rotation=(0, 0, 90))
+        model = EE3DModel(uuid="test", origin_x=200, origin_y=300, z=50, rotation=(0, 0, 90))
         offset, rotation = compute_model_transform(model, 100, 100)
         # X/Y are always 0 - c_origin is just canvas position, not offset
         assert offset[0] == 0.0
@@ -28,8 +27,7 @@ class TestComputeModelTransform:
 
     def test_rotation_preserved(self):
         """Rotation tuple is passed through unchanged."""
-        model = EE3DModel(uuid="test", origin_x=50, origin_y=50, z=0,
-                          rotation=(10, 20, 30))
+        model = EE3DModel(uuid="test", origin_x=50, origin_y=50, z=0, rotation=(10, 20, 30))
         offset, rotation = compute_model_transform(model, 100, 100)
         assert offset[0] == 0.0
         assert offset[1] == 0.0
@@ -71,14 +69,7 @@ class TestConvertToVrml:
 
     def test_unit_conversion(self):
         # Vertices should be divided by 2.54
-        source = (
-            "newmtl m\nKd 0.5 0.5 0.5\nendmtl\n"
-            "v 2.54 5.08 7.62\n"
-            "v 0 0 0\n"
-            "v 2.54 2.54 0\n"
-            "usemtl m\n"
-            "f 1 2 3\n"
-        )
+        source = "newmtl m\nKd 0.5 0.5 0.5\nendmtl\nv 2.54 5.08 7.62\nv 0 0 0\nv 2.54 2.54 0\nusemtl m\nf 1 2 3\n"
         result = convert_to_vrml(source)
         # 2.54 / 2.54 = 1.0, 5.08 / 2.54 = 2.0, 7.62 / 2.54 = 3.0
         assert "1.000000 2.000000 3.000000" in result
@@ -99,53 +90,30 @@ class TestConvertToVrml:
 
     def test_face_with_normals(self):
         # f v1//n1 v2//n2 v3//n3 format
-        source = (
-            "newmtl m\nKd 0.5 0.5 0.5\nendmtl\n"
-            "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
-            "usemtl m\n"
-            "f 1//1 2//2 3//3\n"
-        )
+        source = "newmtl m\nKd 0.5 0.5 0.5\nendmtl\nv 0 0 0\nv 1 0 0\nv 0 1 0\nusemtl m\nf 1//1 2//2 3//3\n"
         result = convert_to_vrml(source)
         assert result is not None
         assert "coordIndex" in result
 
     def test_face_with_texture_coords(self):
         # f v1/t1 v2/t2 v3/t3 format
-        source = (
-            "newmtl m\nKd 0.5 0.5 0.5\nendmtl\n"
-            "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
-            "usemtl m\n"
-            "f 1/1 2/2 3/3\n"
-        )
+        source = "newmtl m\nKd 0.5 0.5 0.5\nendmtl\nv 0 0 0\nv 1 0 0\nv 0 1 0\nusemtl m\nf 1/1 2/2 3/3\n"
         result = convert_to_vrml(source)
         assert result is not None
 
     def test_transparency(self):
-        source = (
-            "newmtl glass\nKd 0.9 0.9 0.9\nd 0.5\nendmtl\n"
-            "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
-            "usemtl glass\nf 1 2 3\n"
-        )
+        source = "newmtl glass\nKd 0.9 0.9 0.9\nd 0.5\nendmtl\nv 0 0 0\nv 1 0 0\nv 0 1 0\nusemtl glass\nf 1 2 3\n"
         result = convert_to_vrml(source)
         assert "transparency 0.5000" in result
 
     def test_quad_face(self):
-        source = (
-            "newmtl m\nKd 0.5 0.5 0.5\nendmtl\n"
-            "v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\n"
-            "usemtl m\n"
-            "f 1 2 3 4\n"
-        )
+        source = "newmtl m\nKd 0.5 0.5 0.5\nendmtl\nv 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nusemtl m\nf 1 2 3 4\n"
         result = convert_to_vrml(source)
         assert result is not None
         assert "-1" in result  # face terminator
 
     def test_vrml_header(self):
-        source = (
-            "newmtl m\nKd 0.5 0.5 0.5\nendmtl\n"
-            "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
-            "usemtl m\nf 1 2 3\n"
-        )
+        source = "newmtl m\nKd 0.5 0.5 0.5\nendmtl\nv 0 0 0\nv 1 0 0\nv 0 1 0\nusemtl m\nf 1 2 3\n"
         result = convert_to_vrml(source)
         lines = result.strip().split("\n")
         assert lines[0] == "#VRML V2.0 utf8"
@@ -184,9 +152,7 @@ class TestDownloadAndSaveModels:
         monkeypatch.setattr(model3d, "download_wrl_source", lambda *_a, **_k: "src")
         monkeypatch.setattr(model3d, "convert_to_vrml", lambda *_a, **_k: "new-wrl")
 
-        step_out, wrl_out = download_and_save_models(
-            "uuid", str(tmp_path), "part", overwrite=True
-        )
+        step_out, wrl_out = download_and_save_models("uuid", str(tmp_path), "part", overwrite=True)
         assert step_out == str(step_path)
         assert wrl_out == str(wrl_path)
         assert step_path.read_bytes() == b"new-step"

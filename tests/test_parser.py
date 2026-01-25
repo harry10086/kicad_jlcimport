@@ -1,13 +1,15 @@
 """Tests for parser.py - shape parsing and coordinate conversion."""
-import math
-import pytest
 
-from kicad_jlcimport.parser import (
-    mil_to_mm, parse_footprint_shapes, parse_symbol_shapes,
-    compute_arc_midpoint, _parse_svg_arc_path, _find_svg_path,
-    MILS_TO_MM_DIVISOR,
-)
 from kicad_jlcimport.ee_types import EEFootprint, EESymbol
+from kicad_jlcimport.parser import (
+    MILS_TO_MM_DIVISOR,
+    _find_svg_path,
+    _parse_svg_arc_path,
+    compute_arc_midpoint,
+    mil_to_mm,
+    parse_footprint_shapes,
+    parse_symbol_shapes,
+)
 
 
 class TestMilToMm:

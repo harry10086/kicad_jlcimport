@@ -1,24 +1,23 @@
 """wxPython dialog for JLCImport plugin."""
+
 import io
 import os
 import re
 import threading
 import traceback
-
 import webbrowser
 
 import wx
 
+from .api import APIError, fetch_product_image, filter_by_min_stock, filter_by_type, search_components, validate_lcsc_id
 from .categories import CATEGORIES
-from .api import search_components, fetch_product_image, filter_by_min_stock, filter_by_type, APIError, validate_lcsc_id
-from .library import get_global_lib_dir, load_config, save_config
 from .importer import import_component
+from .library import get_global_lib_dir, load_config, save_config
 
 
 class JLCImportDialog(wx.Dialog):
     def __init__(self, parent, board):
-        super().__init__(parent, title="JLCImport", size=(700, 600),
-                         style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER)
+        super().__init__(parent, title="JLCImport", size=(700, 600), style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER)
         self.board = board
         self._search_results = []
         self._raw_search_results = []
@@ -54,8 +53,7 @@ class JLCImportDialog(wx.Dialog):
 
         # Filter row
         hbox_filter = wx.BoxSizer(wx.HORIZONTAL)
-        hbox_filter.Add(wx.StaticText(panel, label="Type:"), 0,
-                        wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
+        hbox_filter.Add(wx.StaticText(panel, label="Type:"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
         self.type_both = wx.RadioButton(panel, label="Both", style=wx.RB_GROUP)
         self.type_basic = wx.RadioButton(panel, label="Basic")
         self.type_extended = wx.RadioButton(panel, label="Extended")
@@ -66,16 +64,14 @@ class JLCImportDialog(wx.Dialog):
         hbox_filter.Add(self.type_both, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 8)
         hbox_filter.Add(self.type_basic, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 8)
         hbox_filter.Add(self.type_extended, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 20)
-        hbox_filter.Add(wx.StaticText(panel, label="Min stock:"), 0,
-                        wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
+        hbox_filter.Add(wx.StaticText(panel, label="Min stock:"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
         self._min_stock_choices = [0, 1, 10, 100, 1000, 10000, 100000]
         self._min_stock_labels = ["Any", "1+", "10+", "100+", "1000+", "10000+", "100000+"]
         self.min_stock_choice = wx.Choice(panel, choices=self._min_stock_labels)
         self.min_stock_choice.SetSelection(1)  # Default to "1+" (in stock)
         self.min_stock_choice.Bind(wx.EVT_CHOICE, self._on_min_stock_change)
         hbox_filter.Add(self.min_stock_choice, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 20)
-        hbox_filter.Add(wx.StaticText(panel, label="Package:"), 0,
-                        wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
+        hbox_filter.Add(wx.StaticText(panel, label="Package:"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
         self.package_choice = wx.Choice(panel, choices=["All"])
         self.package_choice.SetSelection(0)
         self.package_choice.Bind(wx.EVT_CHOICE, self._on_filter_change)
@@ -153,7 +149,9 @@ class JLCImportDialog(wx.Dialog):
 
         info_sizer.Add(detail_grid, 0, wx.EXPAND | wx.BOTTOM, 4)
 
-        self.detail_desc = wx.TextCtrl(panel, style=wx.TE_MULTILINE | wx.TE_READONLY | wx.TE_NO_VSCROLL | wx.BORDER_NONE)
+        self.detail_desc = wx.TextCtrl(
+            panel, style=wx.TE_MULTILINE | wx.TE_READONLY | wx.TE_NO_VSCROLL | wx.BORDER_NONE
+        )
         self.detail_desc.SetMinSize((-1, 40))
         info_sizer.Add(self.detail_desc, 1, wx.EXPAND | wx.BOTTOM, 4)
 
@@ -209,8 +207,7 @@ class JLCImportDialog(wx.Dialog):
         dest_sizer.Add(global_row, 0, wx.BOTTOM, 2)
 
         lib_name_sizer = wx.BoxSizer(wx.HORIZONTAL)
-        lib_name_sizer.Add(wx.StaticText(panel, label="Library"), 0,
-                           wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
+        lib_name_sizer.Add(wx.StaticText(panel, label="Library"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
         self._lib_name = load_config().get("lib_name", "JLCImport")
         self.lib_name_input = wx.TextCtrl(panel, size=(120, -1), value=self._lib_name)
         self.lib_name_input.Bind(wx.EVT_KILL_FOCUS, self._on_lib_name_change)
@@ -222,8 +219,7 @@ class JLCImportDialog(wx.Dialog):
         # Right side: options and button
         right_sizer = wx.BoxSizer(wx.VERTICAL)
         opts_sizer = wx.BoxSizer(wx.HORIZONTAL)
-        opts_sizer.Add(wx.StaticText(panel, label="Part #"), 0,
-                       wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
+        opts_sizer.Add(wx.StaticText(panel, label="Part #"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
         self.part_input = wx.TextCtrl(panel, size=(100, -1))
         self.part_input.SetHint("C427602")
         opts_sizer.Add(self.part_input, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 10)
@@ -258,7 +254,7 @@ class JLCImportDialog(wx.Dialog):
 
         # Navigation row: [<] image [>]
         nav_sizer = wx.BoxSizer(wx.HORIZONTAL)
-        self._gallery_prev = wx.Button(self._gallery_panel, label="\u25C0", size=(40, -1))
+        self._gallery_prev = wx.Button(self._gallery_panel, label="\u25c0", size=(40, -1))
         self._gallery_prev.Bind(wx.EVT_BUTTON, self._on_gallery_prev)
         nav_sizer.Add(self._gallery_prev, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
 
@@ -267,7 +263,7 @@ class JLCImportDialog(wx.Dialog):
         self._gallery_image.Bind(wx.EVT_LEFT_DOWN, self._on_gallery_close)
         nav_sizer.Add(self._gallery_image, 1, wx.EXPAND)
 
-        self._gallery_next = wx.Button(self._gallery_panel, label="\u25B6", size=(40, -1))
+        self._gallery_next = wx.Button(self._gallery_panel, label="\u25b6", size=(40, -1))
         self._gallery_next.Bind(wx.EVT_BUTTON, self._on_gallery_next)
         nav_sizer.Add(self._gallery_next, 0, wx.ALIGN_CENTER_VERTICAL | wx.LEFT, 5)
 
@@ -317,13 +313,13 @@ class JLCImportDialog(wx.Dialog):
 
     def _on_search_text_changed(self, event):
         """Update ComboBox choices as user types."""
-        if getattr(self, '_updating_choices', False):
+        if getattr(self, "_updating_choices", False):
             return
         text = self.search_input.GetValue().strip().lower()
         if len(text) < 2:
             self.search_input.Dismiss()
             return
-        pattern = re.compile(r'\b' + re.escape(text), re.IGNORECASE)
+        pattern = re.compile(r"\b" + re.escape(text), re.IGNORECASE)
         matches = [c for c in CATEGORIES if pattern.search(c)]
         if matches and len(matches) <= 20:
             if len(matches) == 1 and matches[0].lower() == text:
@@ -357,7 +353,7 @@ class JLCImportDialog(wx.Dialog):
         self.package_choice.SetSelection(0)
         self.results_count_label.SetLabel("")
         self.status_text.Clear()
-        self._log(f"Searching for \"{keyword}\"...")
+        self._log(f'Searching for "{keyword}"...')
 
         self._search_request_id += 1
         request_id = self._search_request_id
@@ -371,7 +367,7 @@ class JLCImportDialog(wx.Dialog):
     def _start_search_pulse(self):
         """Start animating dots on the search button."""
         self._pulse_phase = 0
-        if not hasattr(self, '_pulse_timer'):
+        if not hasattr(self, "_pulse_timer"):
             self._pulse_timer = wx.Timer(self)
             self.Bind(wx.EVT_TIMER, self._on_pulse_tick, self._pulse_timer)
         self._pulse_timer.Start(300)
@@ -384,7 +380,7 @@ class JLCImportDialog(wx.Dialog):
 
     def _stop_search_pulse(self):
         """Stop pulsing and restore the search button."""
-        if hasattr(self, '_pulse_timer'):
+        if hasattr(self, "_pulse_timer"):
             self._pulse_timer.Stop()
         self.search_btn.SetLabel("Search")
         self.search_btn.Enable()
@@ -406,7 +402,7 @@ class JLCImportDialog(wx.Dialog):
         self._stop_search_pulse()
 
         results = result["results"]
-        results.sort(key=lambda r: r['stock'] or 0, reverse=True)
+        results.sort(key=lambda r: r["stock"] or 0, reverse=True)
 
         self._raw_search_results = results
         self._populate_package_choices()
@@ -438,13 +434,13 @@ class JLCImportDialog(wx.Dialog):
 
         # Map column index to sort key
         key_map = {
-            0: lambda r: r.get('lcsc', ''),
-            1: lambda r: r.get('type', ''),
-            2: lambda r: r.get('price') or 0,
-            3: lambda r: r.get('stock') or 0,
-            4: lambda r: r.get('model', '').lower(),
-            5: lambda r: r.get('package', '').lower(),
-            6: lambda r: r.get('description', '').lower(),
+            0: lambda r: r.get("lcsc", ""),
+            1: lambda r: r.get("type", ""),
+            2: lambda r: r.get("price") or 0,
+            3: lambda r: r.get("stock") or 0,
+            4: lambda r: r.get("model", "").lower(),
+            5: lambda r: r.get("package", "").lower(),
+            6: lambda r: r.get("description", "").lower(),
         }
         key_fn = key_map.get(col)
         if key_fn:
@@ -458,7 +454,7 @@ class JLCImportDialog(wx.Dialog):
         """Update column headers with sort indicator."""
         for i, name in enumerate(self._col_names):
             if i == self._sort_col:
-                arrow = " \u25B2" if self._sort_ascending else " \u25BC"
+                arrow = " \u25b2" if self._sort_ascending else " \u25bc"
                 label = name + arrow
             else:
                 label = name
@@ -469,6 +465,7 @@ class JLCImportDialog(wx.Dialog):
     def _refresh_imported_ids(self):
         """Scan symbol libraries for already-imported LCSC IDs."""
         import re
+
         self._imported_ids = set()
         paths = []
         lib_name = self._lib_name
@@ -480,7 +477,7 @@ class JLCImportDialog(wx.Dialog):
         for p in paths:
             if os.path.exists(p):
                 try:
-                    with open(p, "r", encoding="utf-8") as f:
+                    with open(p, encoding="utf-8") as f:
                         for match in re.finditer(r'\(property "LCSC" "(C\d+)"', f.read()):
                             self._imported_ids.add(match.group(1))
                 except Exception:
@@ -503,10 +500,7 @@ class JLCImportDialog(wx.Dialog):
 
     def _populate_package_choices(self):
         """Populate the package dropdown from current raw results."""
-        packages = sorted(set(
-            r.get('package', '') for r in self._raw_search_results
-            if r.get('package')
-        ))
+        packages = sorted({r.get("package", "") for r in self._raw_search_results if r.get("package")})
         self.package_choice.Set(["All"] + packages)
         self.package_choice.SetSelection(0)
 
@@ -523,7 +517,7 @@ class JLCImportDialog(wx.Dialog):
         filtered = filter_by_min_stock(filtered, self._get_min_stock())
         pkg = self._get_package_filter()
         if pkg:
-            filtered = [r for r in filtered if r.get('package') == pkg]
+            filtered = [r for r in filtered if r.get("package") == pkg]
         self._search_results = filtered
 
     def _on_filter_change(self, event):
@@ -540,17 +534,17 @@ class JLCImportDialog(wx.Dialog):
         """Repopulate the list control from _search_results."""
         self.results_list.DeleteAllItems()
         for i, r in enumerate(self._search_results):
-            lcsc = r['lcsc']
+            lcsc = r["lcsc"]
             prefix = "\u2713 " if lcsc in self._imported_ids else ""
             self.results_list.InsertItem(i, prefix + lcsc)
-            self.results_list.SetItem(i, 1, r['type'])
-            price_str = f"${r['price']:.4f}" if r['price'] else "N/A"
+            self.results_list.SetItem(i, 1, r["type"])
+            price_str = f"${r['price']:.4f}" if r["price"] else "N/A"
             self.results_list.SetItem(i, 2, price_str)
-            stock_str = f"{r['stock']:,}" if r['stock'] else "N/A"
+            stock_str = f"{r['stock']:,}" if r["stock"] else "N/A"
             self.results_list.SetItem(i, 3, stock_str)
-            self.results_list.SetItem(i, 4, r['model'])
-            self.results_list.SetItem(i, 5, r.get('package', ''))
-            self.results_list.SetItem(i, 6, r.get('description', ''))
+            self.results_list.SetItem(i, 4, r["model"])
+            self.results_list.SetItem(i, 5, r.get("package", ""))
+            self.results_list.SetItem(i, 6, r.get("description", ""))
         self._update_results_count()
 
     def _update_results_count(self):
@@ -570,29 +564,29 @@ class JLCImportDialog(wx.Dialog):
         if idx < 0 or idx >= len(self._search_results):
             return
         r = self._search_results[idx]
-        self.part_input.SetValue(r['lcsc'])
+        self.part_input.SetValue(r["lcsc"])
 
         # Populate detail fields
         self.detail_lcsc.SetLabel(f"{r['lcsc']}  ({r['type']})")
-        self.detail_part.SetLabel(r['model'])
-        self.detail_brand.SetLabel(r['brand'])
-        self.detail_package.SetLabel(r['package'])
-        price_str = f"${r['price']:.4f}" if r['price'] else "N/A"
+        self.detail_part.SetLabel(r["model"])
+        self.detail_brand.SetLabel(r["brand"])
+        self.detail_package.SetLabel(r["package"])
+        price_str = f"${r['price']:.4f}" if r["price"] else "N/A"
         self.detail_price.SetLabel(price_str)
-        stock_str = f"{r['stock']:,}" if r['stock'] else "N/A"
+        stock_str = f"{r['stock']:,}" if r["stock"] else "N/A"
         self.detail_stock.SetLabel(stock_str)
-        self.detail_desc.SetValue(r['description'])
+        self.detail_desc.SetValue(r["description"])
 
-        self._datasheet_url = r.get('datasheet', '')
+        self._datasheet_url = r.get("datasheet", "")
         self.detail_datasheet_btn.Enable(bool(self._datasheet_url))
 
-        self._lcsc_page_url = r.get('url', '')
+        self._lcsc_page_url = r.get("url", "")
         self.detail_lcsc_btn.Enable(bool(self._lcsc_page_url))
 
         self.detail_import_btn.Enable()
 
         # Fetch image in background
-        lcsc_url = r.get('url', '')
+        lcsc_url = r.get("url", "")
         self._image_request_id += 1
         request_id = self._image_request_id
         if lcsc_url:
@@ -607,7 +601,7 @@ class JLCImportDialog(wx.Dialog):
     def _show_skeleton(self):
         """Show an animated skeleton placeholder while image loads."""
         self._skeleton_phase = 0
-        if not hasattr(self, '_skeleton_timer'):
+        if not hasattr(self, "_skeleton_timer"):
             self._skeleton_timer = wx.Timer(self)
             self.Bind(wx.EVT_TIMER, self._on_skeleton_tick, self._skeleton_timer)
         self._skeleton_timer.Start(30)
@@ -615,7 +609,7 @@ class JLCImportDialog(wx.Dialog):
 
     def _stop_skeleton(self):
         """Stop skeleton animation."""
-        if hasattr(self, '_skeleton_timer'):
+        if hasattr(self, "_skeleton_timer"):
             self._skeleton_timer.Stop()
 
     def _show_no_image(self):
@@ -646,6 +640,7 @@ class JLCImportDialog(wx.Dialog):
     def _draw_skeleton_frame(self):
         """Draw one frame of the skeleton shimmer over a rounded rect."""
         import math
+
         bmp = wx.Bitmap(100, 100)
         dc = wx.MemoryDC(bmp)
         dc.SetBackground(wx.Brush(wx.Colour(240, 240, 240)))
@@ -713,11 +708,13 @@ class JLCImportDialog(wx.Dialog):
         r = self._search_results[idx]
 
         # Update info
-        price_str = f"${r['price']:.4f}" if r['price'] else "N/A"
-        stock_str = f"{r['stock']:,}" if r['stock'] else "N/A"
-        info = f"{r['lcsc']}  |  {r['model']}  |  {r['brand']}  |  {r['package']}  |  {price_str}  |  Stock: {stock_str}"
+        price_str = f"${r['price']:.4f}" if r["price"] else "N/A"
+        stock_str = f"{r['stock']:,}" if r["stock"] else "N/A"
+        info = (
+            f"{r['lcsc']}  |  {r['model']}  |  {r['brand']}  |  {r['package']}  |  {price_str}  |  Stock: {stock_str}"
+        )
         self._gallery_info.SetLabel(info)
-        self._gallery_desc.SetLabel(r.get('description', ''))
+        self._gallery_desc.SetLabel(r.get("description", ""))
         self._gallery_desc.Wrap(self.GetSize().width - 30)
 
         # Update nav buttons
@@ -728,7 +725,7 @@ class JLCImportDialog(wx.Dialog):
         self._show_gallery_skeleton()
 
         # Fetch image
-        lcsc_url = r.get('url', '')
+        lcsc_url = r.get("url", "")
         self._gallery_request_id += 1
         request_id = self._gallery_request_id
         if lcsc_url:
@@ -740,7 +737,7 @@ class JLCImportDialog(wx.Dialog):
     def _show_gallery_skeleton(self):
         """Show an animated skeleton placeholder in gallery."""
         self._gallery_skeleton_phase = 0
-        if not hasattr(self, '_gallery_skeleton_timer'):
+        if not hasattr(self, "_gallery_skeleton_timer"):
             self._gallery_skeleton_timer = wx.Timer(self)
             self.Bind(wx.EVT_TIMER, self._on_gallery_skeleton_tick, self._gallery_skeleton_timer)
         self._gallery_skeleton_timer.Start(30)
@@ -748,7 +745,7 @@ class JLCImportDialog(wx.Dialog):
 
     def _stop_gallery_skeleton(self):
         """Stop gallery skeleton animation."""
-        if hasattr(self, '_gallery_skeleton_timer'):
+        if hasattr(self, "_gallery_skeleton_timer"):
             self._gallery_skeleton_timer.Stop()
 
     def _on_gallery_skeleton_tick(self, event):
@@ -759,6 +756,7 @@ class JLCImportDialog(wx.Dialog):
     def _draw_gallery_skeleton_frame(self):
         """Draw one frame of the gallery skeleton shimmer."""
         import math
+
         size = self._get_gallery_image_size()
         bmp = wx.Bitmap(size, size)
         dc = wx.MemoryDC(bmp)
@@ -960,8 +958,12 @@ class JLCImportDialog(wx.Dialog):
         lib_name = self._lib_name
 
         result = import_component(
-            lcsc_id, lib_dir, lib_name,
-            overwrite=overwrite, use_global=use_global, log=self._log,
+            lcsc_id,
+            lib_dir,
+            lib_name,
+            overwrite=overwrite,
+            use_global=use_global,
+            log=self._log,
         )
 
         title = result["title"]

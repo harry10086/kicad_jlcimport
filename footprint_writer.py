@@ -1,16 +1,24 @@
 """Generate KiCad 9 .kicad_mod footprint files."""
+
 from typing import Tuple
 
-from ._kicad_format import gen_uuid as _uuid, fmt_float as _fmt, escape_sexpr as _escape
+from ._kicad_format import escape_sexpr as _escape
+from ._kicad_format import fmt_float as _fmt
+from ._kicad_format import gen_uuid as _uuid
 from .ee_types import EEFootprint
 from .parser import compute_arc_midpoint
 
 
-def write_footprint(footprint: EEFootprint, name: str, lcsc_id: str = "",
-                    description: str = "", datasheet: str = "",
-                    model_path: str = "",
-                    model_offset: Tuple[float, float, float] = (0, 0, 0),
-                    model_rotation: Tuple[float, float, float] = (0, 0, 0)) -> str:
+def write_footprint(
+    footprint: EEFootprint,
+    name: str,
+    lcsc_id: str = "",
+    description: str = "",
+    datasheet: str = "",
+    model_path: str = "",
+    model_offset: Tuple[float, float, float] = (0, 0, 0),
+    model_rotation: Tuple[float, float, float] = (0, 0, 0),
+) -> str:
     """Generate complete .kicad_mod content for a footprint."""
     lines = []
 
@@ -31,32 +39,34 @@ def write_footprint(footprint: EEFootprint, name: str, lcsc_id: str = "",
     val_y = max_y + 1.0
 
     lines.append(f'(footprint "{name}"')
-    lines.append('  (version 20241229)')
+    lines.append("  (version 20241229)")
     lines.append('  (generator "JLCImport")')
     lines.append('  (generator_version "1.0")')
     lines.append('  (layer "F.Cu")')
 
     # Properties
     lines.append(f'  (property "Reference" "REF**" (at 0 {_fmt(ref_y)} 0) (layer "F.SilkS") (uuid "{_uuid()}")')
-    lines.append(f'    (effects (font (size 1 1) (thickness 0.15)))')
-    lines.append(f'  )')
+    lines.append("    (effects (font (size 1 1) (thickness 0.15)))")
+    lines.append("  )")
     lines.append(f'  (property "Value" "~" (at 0 {_fmt(val_y)} 0) (layer "F.Fab") (uuid "{_uuid()}")')
-    lines.append(f'    (effects (font (size 1 1) (thickness 0.15)))')
-    lines.append(f'  )')
+    lines.append("    (effects (font (size 1 1) (thickness 0.15)))")
+    lines.append("  )")
     if datasheet:
         lines.append(f'  (property "Datasheet" "{datasheet}" (at 0 0 0) (layer "F.Fab") (hide yes) (uuid "{_uuid()}")')
-        lines.append(f'    (effects (font (size 1 1) (thickness 0.15)))')
-        lines.append(f'  )')
+        lines.append("    (effects (font (size 1 1) (thickness 0.15)))")
+        lines.append("  )")
     if description:
-        lines.append(f'  (property "Description" "{_escape(description)}" (at 0 0 0) (layer "F.Fab") (hide yes) (uuid "{_uuid()}")')
-        lines.append(f'    (effects (font (size 1 1) (thickness 0.15)))')
-        lines.append(f'  )')
+        lines.append(
+            f'  (property "Description" "{_escape(description)}" (at 0 0 0) (layer "F.Fab") (hide yes) (uuid "{_uuid()}")'
+        )
+        lines.append("    (effects (font (size 1 1) (thickness 0.15)))")
+        lines.append("  )")
     if lcsc_id:
         lines.append(f'  (property "LCSC" "{lcsc_id}" (at 0 0 0) (layer "F.Fab") (hide yes) (uuid "{_uuid()}")')
-        lines.append(f'    (effects (font (size 1 1) (thickness 0.15)))')
-        lines.append(f'  )')
+        lines.append("    (effects (font (size 1 1) (thickness 0.15)))")
+        lines.append("  )")
 
-    lines.append(f'  (attr {attr})')
+    lines.append(f"  (attr {attr})")
 
     # Tracks (fp_line segments)
     for track in footprint.tracks:
@@ -64,8 +74,8 @@ def write_footprint(footprint: EEFootprint, name: str, lcsc_id: str = "",
             x1, y1 = track.points[i]
             x2, y2 = track.points[i + 1]
             lines.append(
-                f'  (fp_line (start {_fmt(x1)} {_fmt(y1)}) (end {_fmt(x2)} {_fmt(y2)})'
-                f' (stroke (width {_fmt(track.width)}) (type solid))'
+                f"  (fp_line (start {_fmt(x1)} {_fmt(y1)}) (end {_fmt(x2)} {_fmt(y2)})"
+                f" (stroke (width {_fmt(track.width)}) (type solid))"
                 f' (layer "{track.layer}") (uuid "{_uuid()}"))'
             )
 
@@ -73,26 +83,25 @@ def write_footprint(footprint: EEFootprint, name: str, lcsc_id: str = "",
     for circle in footprint.circles:
         end_x = circle.cx + circle.radius
         lines.append(
-            f'  (fp_circle (center {_fmt(circle.cx)} {_fmt(circle.cy)})'
-            f' (end {_fmt(end_x)} {_fmt(circle.cy)})'
-            f' (stroke (width {_fmt(circle.width)}) (type solid))'
+            f"  (fp_circle (center {_fmt(circle.cx)} {_fmt(circle.cy)})"
+            f" (end {_fmt(end_x)} {_fmt(circle.cy)})"
+            f" (stroke (width {_fmt(circle.width)}) (type solid))"
             f' (layer "{circle.layer}") (uuid "{_uuid()}"))'
         )
 
     # Arcs
     for arc in footprint.arcs:
-        mid = compute_arc_midpoint(arc.start, arc.end, arc.rx, arc.ry,
-                                   arc.large_arc, arc.sweep)
+        mid = compute_arc_midpoint(arc.start, arc.end, arc.rx, arc.ry, arc.large_arc, arc.sweep)
         # If sweep == 0, swap start and end
         if arc.sweep == 0:
             s, e = arc.end, arc.start
         else:
             s, e = arc.start, arc.end
         lines.append(
-            f'  (fp_arc (start {_fmt(s[0])} {_fmt(s[1])})'
-            f' (mid {_fmt(mid[0])} {_fmt(mid[1])})'
-            f' (end {_fmt(e[0])} {_fmt(e[1])})'
-            f' (stroke (width {_fmt(arc.width)}) (type solid))'
+            f"  (fp_arc (start {_fmt(s[0])} {_fmt(s[1])})"
+            f" (mid {_fmt(mid[0])} {_fmt(mid[1])})"
+            f" (end {_fmt(e[0])} {_fmt(e[1])})"
+            f" (stroke (width {_fmt(arc.width)}) (type solid))"
             f' (layer "{arc.layer}") (uuid "{_uuid()}"))'
         )
 
@@ -109,17 +118,17 @@ def write_footprint(footprint: EEFootprint, name: str, lcsc_id: str = "",
     # Pads
     for pad in footprint.pads:
         pad_type, pad_shape, layers = _pad_type_info(pad)
-        at_str = f'(at {_fmt(pad.x)} {_fmt(pad.y)}'
+        at_str = f"(at {_fmt(pad.x)} {_fmt(pad.y)}"
         if pad.rotation != 0:
-            at_str += f' {_fmt(pad.rotation)}'
-        at_str += ')'
+            at_str += f" {_fmt(pad.rotation)}"
+        at_str += ")"
 
-        size_str = f'(size {_fmt(pad.width)} {_fmt(pad.height)})'
-        layers_str = " ".join(f'"{l}"' for l in layers)
+        size_str = f"(size {_fmt(pad.width)} {_fmt(pad.height)})"
+        layers_str = " ".join(f'"{layer}"' for layer in layers)
 
         pad_line = f'  (pad "{pad.number}" {pad_type} {pad_shape} {at_str} {size_str}'
         if pad.drill > 0:
-            pad_line += f' (drill {_fmt(pad.drill)})'
+            pad_line += f" (drill {_fmt(pad.drill)})"
         pad_line += f' (layers {layers_str}) (uuid "{_uuid()}"))'
         lines.append(pad_line)
 
@@ -128,8 +137,8 @@ def write_footprint(footprint: EEFootprint, name: str, lcsc_id: str = "",
         diameter = hole.radius * 2
         lines.append(
             f'  (pad "" np_thru_hole circle (at {_fmt(hole.x)} {_fmt(hole.y)})'
-            f' (size {_fmt(diameter)} {_fmt(diameter)})'
-            f' (drill {_fmt(diameter)})'
+            f" (size {_fmt(diameter)} {_fmt(diameter)})"
+            f" (drill {_fmt(diameter)})"
             f' (layers "*.Cu" "*.Mask") (uuid "{_uuid()}"))'
         )
 
@@ -138,13 +147,13 @@ def write_footprint(footprint: EEFootprint, name: str, lcsc_id: str = "",
         ox, oy, oz = model_offset
         rx, ry, rz = model_rotation
         lines.append(f'  (model "{model_path}"')
-        lines.append(f'    (offset (xyz {_fmt(ox)} {_fmt(oy)} {_fmt(oz)}))')
-        lines.append(f'    (scale (xyz 1 1 1))')
-        lines.append(f'    (rotate (xyz {_fmt(rx)} {_fmt(ry)} {_fmt(rz)}))')
-        lines.append(f'  )')
+        lines.append(f"    (offset (xyz {_fmt(ox)} {_fmt(oy)} {_fmt(oz)}))")
+        lines.append("    (scale (xyz 1 1 1))")
+        lines.append(f"    (rotate (xyz {_fmt(rx)} {_fmt(ry)} {_fmt(rz)}))")
+        lines.append("  )")
 
-    lines.append('  (embedded_fonts no)')
-    lines.append(')')
+    lines.append("  (embedded_fonts no)")
+    lines.append(")")
 
     return "\n".join(lines) + "\n"
 

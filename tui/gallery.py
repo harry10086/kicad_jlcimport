@@ -1,4 +1,5 @@
 """Full-screen gallery view for component images."""
+
 from __future__ import annotations
 
 from textual import work
@@ -7,11 +8,11 @@ from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical
 from textual.screen import Screen
 from textual.widgets import Button, Label
-
 from textual_image.widget import HalfcellImage
 
-from .helpers import TIImage, pil_from_bytes, make_skeleton_frame, make_no_image
 from kicad_jlcimport.api import fetch_product_image
+
+from .helpers import TIImage, make_no_image, make_skeleton_frame, pil_from_bytes
 
 
 class GalleryScreen(Screen):
@@ -87,9 +88,9 @@ class GalleryScreen(Screen):
     def compose(self) -> ComposeResult:
         with Vertical(id="gallery-container"):
             with Horizontal(id="gallery-nav"):
-                yield Button("\u25C0 Prev", id="gallery-prev", variant="default")
+                yield Button("\u25c0 Prev", id="gallery-prev", variant="default")
                 yield Button("Back", id="gallery-back", variant="primary")
-                yield Button("Next \u25B6", id="gallery-next", variant="default")
+                yield Button("Next \u25b6", id="gallery-next", variant="default")
             with Container(id="gallery-image-wrap"):
                 yield HalfcellImage(id="gallery-skeleton")
                 yield TIImage(id="gallery-image")
@@ -105,9 +106,11 @@ class GalleryScreen(Screen):
         r = self._results[self._index]
 
         # Update info
-        price_str = f"${r['price']:.4f}" if r['price'] else "N/A"
-        stock_str = f"{r['stock']:,}" if r['stock'] else "N/A"
-        info = f"{r['lcsc']}  |  {r['model']}  |  {r['brand']}  |  {r['package']}  |  {price_str}  |  Stock: {stock_str}"
+        price_str = f"${r['price']:.4f}" if r["price"] else "N/A"
+        stock_str = f"{r['stock']:,}" if r["stock"] else "N/A"
+        info = (
+            f"{r['lcsc']}  |  {r['model']}  |  {r['brand']}  |  {r['package']}  |  {price_str}  |  Stock: {stock_str}"
+        )
         self.query_one("#gallery-info", Label).update(info)
         self.query_one("#gallery-desc", Label).update(r.get("description", ""))
 

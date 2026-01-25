@@ -1,10 +1,9 @@
 """Library file management - create/append symbols, save footprints, update lib-tables."""
+
 import json
 import os
 import re
 import sys
-from typing import Optional
-
 
 _DEFAULT_CONFIG = {"lib_name": "JLCImport"}
 
@@ -20,7 +19,7 @@ def load_config() -> dict:
     path = _config_path()
     if os.path.exists(path):
         try:
-            with open(path, "r", encoding="utf-8") as f:
+            with open(path, encoding="utf-8") as f:
                 stored = json.load(f)
             if isinstance(stored, dict):
                 config.update(stored)
@@ -65,12 +64,7 @@ def add_symbol_to_lib(sym_path: str, name: str, content: str, overwrite: bool = 
     """
     if not os.path.exists(sym_path):
         # Create new library with this symbol
-        header = (
-            '(kicad_symbol_lib\n'
-            '  (version 20241209)\n'
-            '  (generator "JLCImport")\n'
-            '  (generator_version "1.0")\n'
-        )
+        header = '(kicad_symbol_lib\n  (version 20241209)\n  (generator "JLCImport")\n  (generator_version "1.0")\n'
         with open(sym_path, "w", encoding="utf-8") as f:
             f.write(header)
             f.write(content)
@@ -78,7 +72,7 @@ def add_symbol_to_lib(sym_path: str, name: str, content: str, overwrite: bool = 
         return True
 
     # Read existing library
-    with open(sym_path, "r", encoding="utf-8") as f:
+    with open(sym_path, encoding="utf-8") as f:
         lib_content = f.read()
 
     # Check if symbol already exists
@@ -114,15 +108,15 @@ def _remove_symbol(lib_content: str, name: str) -> str:
     in_symbol = False
     while i < len(lib_content):
         c = lib_content[i]
-        if c == '(':
+        if c == "(":
             depth += 1
             in_symbol = True
-        elif c == ')':
+        elif c == ")":
             depth -= 1
             if in_symbol and depth == 0:
                 # Found the end - include trailing newline
                 end = i + 1
-                while end < len(lib_content) and lib_content[end] in ('\n', '\r'):
+                while end < len(lib_content) and lib_content[end] in ("\n", "\r"):
                     end += 1
                 return lib_content[:start] + lib_content[end:]
         i += 1
@@ -151,14 +145,8 @@ def update_project_lib_tables(project_dir: str, lib_name: str = "JLCImport") -> 
     """
     sym_uri = f"${{KIPRJMOD}}/{lib_name}.kicad_sym"
     fp_uri = f"${{KIPRJMOD}}/{lib_name}.pretty"
-    new_sym = _update_lib_table(
-        os.path.join(project_dir, "sym-lib-table"),
-        "sym_lib_table", lib_name, "KiCad", sym_uri
-    )
-    new_fp = _update_lib_table(
-        os.path.join(project_dir, "fp-lib-table"),
-        "fp_lib_table", lib_name, "KiCad", fp_uri
-    )
+    new_sym = _update_lib_table(os.path.join(project_dir, "sym-lib-table"), "sym_lib_table", lib_name, "KiCad", sym_uri)
+    new_fp = _update_lib_table(os.path.join(project_dir, "fp-lib-table"), "fp_lib_table", lib_name, "KiCad", fp_uri)
     return new_sym or new_fp
 
 
@@ -167,6 +155,7 @@ def _detect_kicad_version() -> str:
     # Try pcbnew first (works inside KiCad)
     try:
         import pcbnew
+
         full = pcbnew.Version()
         # Version() returns e.g. "9.0.1" or "(9.0.1)"
         ver = full.strip("()")
@@ -236,18 +225,11 @@ def update_global_lib_tables(lib_dir: str, lib_name: str = "JLCImport") -> None:
     sym_uri = os.path.join(lib_dir, f"{lib_name}.kicad_sym")
     fp_uri = os.path.join(lib_dir, f"{lib_name}.pretty")
 
-    _update_lib_table(
-        os.path.join(config_dir, "sym-lib-table"),
-        "sym_lib_table", lib_name, "KiCad", sym_uri
-    )
-    _update_lib_table(
-        os.path.join(config_dir, "fp-lib-table"),
-        "fp_lib_table", lib_name, "KiCad", fp_uri
-    )
+    _update_lib_table(os.path.join(config_dir, "sym-lib-table"), "sym_lib_table", lib_name, "KiCad", sym_uri)
+    _update_lib_table(os.path.join(config_dir, "fp-lib-table"), "fp_lib_table", lib_name, "KiCad", fp_uri)
 
 
-def _update_lib_table(table_path: str, table_type: str, lib_name: str,
-                      lib_type: str, uri: str) -> bool:
+def _update_lib_table(table_path: str, table_type: str, lib_name: str, lib_type: str, uri: str) -> bool:
     """Add an entry to a lib-table file (global or project).
 
     Returns True if the file was newly created.
@@ -255,7 +237,7 @@ def _update_lib_table(table_path: str, table_type: str, lib_name: str,
     entry = f'  (lib (name "{lib_name}")(type "{lib_type}")(uri "{uri}")(options "")(descr ""))'
 
     if os.path.exists(table_path):
-        with open(table_path, "r", encoding="utf-8") as f:
+        with open(table_path, encoding="utf-8") as f:
             content = f.read()
         if f'(name "{lib_name}")' in content:
             return False
@@ -274,9 +256,7 @@ def _update_lib_table(table_path: str, table_type: str, lib_name: str,
         return True
 
 
-_WINDOWS_RESERVED = re.compile(
-    r'^(CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9])$', re.IGNORECASE
-)
+_WINDOWS_RESERVED = re.compile(r"^(CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9])$", re.IGNORECASE)
 
 
 def sanitize_name(title: str) -> str:
@@ -286,13 +266,13 @@ def sanitize_name(title: str) -> str:
     base filename. Rejects Windows reserved device names.
     """
     # Replace any character that isn't alphanumeric, hyphen, or underscore
-    name = re.sub(r'[^A-Za-z0-9_\-]', '_', title)
+    name = re.sub(r"[^A-Za-z0-9_\-]", "_", title)
     # Collapse multiple underscores
-    name = re.sub(r'_+', '_', name)
-    name = name.strip('_')
+    name = re.sub(r"_+", "_", name)
+    name = name.strip("_")
     # Reject Windows reserved device names
     if _WINDOWS_RESERVED.match(name):
-        name = '_' + name
+        name = "_" + name
     if not name:
-        name = 'unnamed'
+        name = "unnamed"
     return name

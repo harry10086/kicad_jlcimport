@@ -1,4 +1,5 @@
 """Main TUI application for JLCImport."""
+
 from __future__ import annotations
 
 import os
@@ -24,27 +25,26 @@ from textual.widgets import (
     RichLog,
     Select,
 )
-
 from textual_image.widget import HalfcellImage
 
-from .helpers import TIImage, pil_from_bytes, make_no_image, make_skeleton_frame
-from .gallery import GalleryScreen
-
-from kicad_jlcimport.categories import CATEGORIES
 from kicad_jlcimport.api import (
-    search_components,
+    APIError,
     fetch_product_image,
     filter_by_min_stock,
     filter_by_type,
-    APIError,
+    search_components,
     validate_lcsc_id,
 )
+from kicad_jlcimport.categories import CATEGORIES
+from kicad_jlcimport.importer import import_component
 from kicad_jlcimport.library import (
     get_global_lib_dir,
     load_config,
     save_config,
 )
-from kicad_jlcimport.importer import import_component
+
+from .gallery import GalleryScreen
+from .helpers import TIImage, make_no_image, make_skeleton_frame, pil_from_bytes
 
 
 class JLCImportTUI(App):
@@ -388,7 +388,7 @@ class JLCImportTUI(App):
             self._hide_suggestions()
             return
         # Match at word boundaries
-        pattern = re.compile(r'\b' + re.escape(text), re.IGNORECASE)
+        pattern = re.compile(r"\b" + re.escape(text), re.IGNORECASE)
         matches = [c for c in CATEGORIES if pattern.search(c)]
         if matches and len(matches) <= 20:
             if len(matches) == 1 and matches[0].lower() == text:
@@ -407,8 +407,6 @@ class JLCImportTUI(App):
             search_input = self.query_one("#search-input", Input)
             current = search_input.value.strip()
             category = str(event.option.prompt)
-            # Replace the current text with the category, or append if there's other text
-            words = current.lower().split()
             # Remove words that are part of the category match
             cat_lower = category.lower()
             remaining = [w for w in current.split() if w.lower() not in cat_lower.lower()]
@@ -425,6 +423,7 @@ class JLCImportTUI(App):
         """Move cursor to end without selection after a brief delay."""
         search_input = self.query_one("#search-input", Input)
         from textual.widgets._input import Selection
+
         search_input.selection = Selection(pos, pos)
         search_input.cursor_position = pos
 
@@ -551,7 +550,7 @@ class JLCImportTUI(App):
         if not keyword:
             return
 
-        self.app.call_from_thread(self._log, f"Searching for \"{keyword}\"...")
+        self.app.call_from_thread(self._log, f'Searching for "{keyword}"...')
         self.app.call_from_thread(self._start_search_pulse)
 
         try:
@@ -578,9 +577,7 @@ class JLCImportTUI(App):
         except APIError as e:
             self.app.call_from_thread(self._log, f"[red]Search error: {e}[/red]")
         except Exception as e:
-            self.app.call_from_thread(
-                self._log, f"[red]Error: {type(e).__name__}: {e}[/red]"
-            )
+            self.app.call_from_thread(self._log, f"[red]Error: {type(e).__name__}: {e}[/red]")
         finally:
             self.app.call_from_thread(self._stop_search_pulse)
 
@@ -609,10 +606,7 @@ class JLCImportTUI(App):
 
     def _populate_package_choices(self):
         """Populate the package dropdown from current raw results."""
-        packages = sorted(set(
-            r.get("package", "") for r in self._raw_search_results
-            if r.get("package")
-        ))
+        packages = sorted({r.get("package", "") for r in self._raw_search_results if r.get("package")})
         options = [("All", "")] + [(p, p) for p in packages]
         select = self.query_one("#package-select", Select)
         select.set_options(options)
@@ -657,10 +651,8 @@ class JLCImportTUI(App):
         for p in paths:
             try:
                 if os.path.exists(p):
-                    with open(p, "r", encoding="utf-8") as f:
-                        for match in _re.finditer(
-                            r'\(property "LCSC" "(C\d+)"', f.read()
-                        ):
+                    with open(p, encoding="utf-8") as f:
+                        for match in _re.finditer(r'\(property "LCSC" "(C\d+)"', f.read()):
                             self._imported_ids.add(match.group(1))
             except (PermissionError, OSError):
                 pass
@@ -759,9 +751,7 @@ class JLCImportTUI(App):
 
         # Update detail fields
         self.query_one("#detail-part", Label).update(f"Part [b]{r['model']}[/b]")
-        self.query_one("#detail-lcsc", Label).update(
-            f"LCSC [b]{r['lcsc']}[/b]  ({r['type']})"
-        )
+        self.query_one("#detail-lcsc", Label).update(f"LCSC [b]{r['lcsc']}[/b]  ({r['type']})")
         self.query_one("#detail-brand", Label).update(f"Brand [b]{r['brand']}[/b]")
         self.query_one("#detail-package", Label).update(f"Package [b]{r['package']}[/b]")
         price_str = f"${r['price']:.4f}" if r["price"] else "N/A"
@@ -833,9 +823,7 @@ class JLCImportTUI(App):
         else:
             lib_dir = self._project_dir
             if not lib_dir:
-                self._log(
-                    "[red]Error: No project directory. Use Global destination.[/red]"
-                )
+                self._log("[red]Error: No project directory. Use Global destination.[/red]")
                 return
 
         overwrite = self.query_one("#overwrite-cb", Checkbox).value
@@ -855,21 +843,23 @@ class JLCImportTUI(App):
             self.app.call_from_thread(self._log, f"[red]Error: {e}[/red]")
             self.app.call_from_thread(self._log, traceback.format_exc())
         finally:
-            self.app.call_from_thread(
-                self.query_one("#import-btn", Button).__setattr__, "disabled", False
-            )
-            self.app.call_from_thread(
-                self.query_one("#detail-import-btn", Button).__setattr__, "disabled", False
-            )
+            self.app.call_from_thread(self.query_one("#import-btn", Button).__setattr__, "disabled", False)
+            self.app.call_from_thread(self.query_one("#detail-import-btn", Button).__setattr__, "disabled", False)
 
     def _do_import(self, lcsc_id: str, lib_dir: str, overwrite: bool, use_global: bool):
         """Execute the import process."""
         lib_name = self._lib_name
-        log = lambda msg: self.app.call_from_thread(self._log, msg)
+
+        def log(msg):
+            self.app.call_from_thread(self._log, msg)
 
         result = import_component(
-            lcsc_id, lib_dir, lib_name,
-            overwrite=overwrite, use_global=use_global, log=log,
+            lcsc_id,
+            lib_dir,
+            lib_name,
+            overwrite=overwrite,
+            use_global=use_global,
+            log=log,
         )
 
         title = result["title"]

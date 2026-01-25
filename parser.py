@@ -1,14 +1,24 @@
 """EasyEDA shape string parser for footprints and symbols."""
+
 import json
 import math
 import re
 from typing import List, Tuple
 
 from .ee_types import (
-    EE3DModel, EEArc, EECircle, EEFootprint, EEHole, EEPad,
-    EEPin, EEPolyline, EERectangle, EESolidRegion, EESymbol, EETrack,
+    EE3DModel,
+    EEArc,
+    EECircle,
+    EEFootprint,
+    EEHole,
+    EEPad,
+    EEPin,
+    EEPolyline,
+    EERectangle,
+    EESolidRegion,
+    EESymbol,
+    EETrack,
 )
-
 
 # EasyEDA layer ID -> KiCad layer name
 LAYER_MAP = {
@@ -177,6 +187,7 @@ def parse_symbol_shapes(shapes: List[str], origin_x: float, origin_y: float) -> 
 
 # --- Footprint shape parsers ---
 
+
 def _parse_pad(parts: List[str]) -> EEPad:
     """Parse PAD shape string."""
     # PAD~shape~x~y~sx~sy~layer~<empty>~number~drill~polygon_nodes~rotation~id~...
@@ -195,11 +206,10 @@ def _parse_pad(parts: List[str]) -> EEPad:
     polygon_str = parts[10] if len(parts) > 10 else ""
     rotation = float(parts[11]) if len(parts) > 11 and parts[11] else 0.0
 
-    polygon_points = []
     if polygon_str and shape == "POLYGON":
         try:
             coords = polygon_str.strip().split(" ")
-            polygon_points = [float(c) for c in coords if c]
+            _ = [float(c) for c in coords if c]  # validate coords are numeric
         except ValueError:
             pass
 
@@ -484,6 +494,7 @@ def _parse_rect_as_tracks(parts: List[str]) -> List[EETrack]:
 
 # --- Symbol shape parsers ---
 
+
 def _parse_pin(shape_str: str, origin_x: float, origin_y: float) -> EEPin:
     """Parse pin shape string."""
     # Split on ^^ first to get sub-parts
@@ -673,8 +684,9 @@ def _parse_sym_arc(shape_str: str, origin_x: float, origin_y: float) -> EEArc:
     )
 
 
-def compute_arc_midpoint(start: Tuple[float, float], end: Tuple[float, float],
-                         rx: float, ry: float, large_arc: int, sweep: int) -> Tuple[float, float]:
+def compute_arc_midpoint(
+    start: Tuple[float, float], end: Tuple[float, float], rx: float, ry: float, large_arc: int, sweep: int
+) -> Tuple[float, float]:
     """Compute the midpoint on an SVG arc for KiCad's start/mid/end format."""
     sx, sy = start
     ex, ey = end
