@@ -18,6 +18,7 @@ A KiCad 9 Action Plugin that imports symbols, footprints, and 3D models directly
 - Append to existing KiCad libraries without conflict
 - Links to datasheets and LCSC product pages
 - CLI tool for scripted/batch imports
+- Standalone GUI for use outside KiCad
 
 ## Installation
 
@@ -69,13 +70,14 @@ cp -r /path/to/kicad_jlcimport <plugins-dir>/kicad_jlcimport
 
 ### Pre-built Binaries
 
-Standalone binaries for the CLI and TUI are available on the [Releases](https://github.com/jvanderberg/kicad_jlcimport/releases) page — no Python installation required.
+Standalone binaries for the CLI, TUI, and GUI are available on the [Releases](https://github.com/jvanderberg/kicad_jlcimport/releases) page — no Python installation required.
 
 **macOS:** After extracting, remove the quarantine attribute before running:
 
 ```bash
 xattr -cr jlcimport-cli/
 xattr -cr jlcimport-tui/
+xattr -cr jlcimport-gui.app/
 ```
 
 ### CLI
@@ -108,6 +110,26 @@ python3 cli.py import C427602 --global
 # Re-import a component, overwriting existing symbol/footprint/3D models
 python3 cli.py import C427602 -p /path/to/kicad/project --overwrite
 ```
+
+### Standalone GUI
+
+Run the wxPython GUI outside of KiCad — useful for importing parts before starting a project or when KiCad isn't available.
+
+```bash
+# Install GUI dependencies
+pip install wxPython
+
+# Run from the project directory
+python3 gui_entry.py
+
+# Or with a project directory
+python3 gui_entry.py -p /path/to/kicad/project
+
+# Global library only (skip directory picker)
+python3 gui_entry.py --global
+```
+
+When run without arguments, a directory picker dialog lets you select your KiCad project folder. Cancel to use the global library only.
 
 ### TUI
 
@@ -166,7 +188,7 @@ For a detailed look at the architecture, data flow, module responsibilities, and
 - Python 3 (bundled with KiCad)
 - Internet connection
 
-The plugin requires no additional Python packages — it uses only the standard library and `wx` (both bundled with KiCad). The TUI requires Python 3.10+ and additional packages (see [TUI](#tui) above).
+The plugin requires no additional Python packages — it uses only the standard library and `wx` (both bundled with KiCad). The standalone GUI requires wxPython (see [Standalone GUI](#standalone-gui) above). The TUI requires Python 3.10+ and additional packages (see [TUI](#tui) above).
 
 ## License
 

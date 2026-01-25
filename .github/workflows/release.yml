@@ -31,7 +31,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install pyinstaller textual "textual-image[textual]" Pillow
+          pip install pyinstaller textual "textual-image[textual]" Pillow wxPython
 
       - name: Build CLI
         run: |
@@ -41,11 +41,16 @@ jobs:
         run: |
           pyinstaller --onedir tui_entry.py --name jlcimport-tui --paths . --collect-all textual --collect-all textual_image --collect-all rich
 
+      - name: Build GUI
+        run: |
+          pyinstaller --onedir gui_entry.py --name jlcimport-gui --paths . --collect-all wx --windowed
+
       - name: Codesign (macOS)
         if: runner.os == 'macOS'
         run: |
           codesign --force --deep -s - dist/jlcimport-cli/jlcimport-cli
           codesign --force --deep -s - dist/jlcimport-tui/jlcimport-tui
+          codesign --force --deep -s - dist/jlcimport-gui/jlcimport-gui.app || codesign --force --deep -s - dist/jlcimport-gui/jlcimport-gui
 
       - name: Package (Unix)
         if: runner.os != 'Windows'
@@ -53,6 +58,7 @@ jobs:
           cd dist
           tar czf jlcimport-cli-${{ matrix.platform }}.tar.gz jlcimport-cli/
           tar czf jlcimport-tui-${{ matrix.platform }}.tar.gz jlcimport-tui/
+          tar czf jlcimport-gui-${{ matrix.platform }}.tar.gz jlcimport-gui/
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
@@ -61,6 +67,7 @@ jobs:
           cd dist
           Compress-Archive -Path jlcimport-cli -DestinationPath jlcimport-cli-${{ matrix.platform }}.zip
           Compress-Archive -Path jlcimport-tui -DestinationPath jlcimport-tui-${{ matrix.platform }}.zip
+          Compress-Archive -Path jlcimport-gui -DestinationPath jlcimport-gui-${{ matrix.platform }}.zip
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
