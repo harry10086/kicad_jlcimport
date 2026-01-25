@@ -1,11 +1,15 @@
 """Tests for library.py - file management and sanitization."""
+
 import os
 import tempfile
-import pytest
 
 from kicad_jlcimport.library import (
-    sanitize_name, ensure_lib_structure, add_symbol_to_lib,
-    save_footprint, _update_lib_table, _remove_symbol,
+    _remove_symbol,
+    _update_lib_table,
+    add_symbol_to_lib,
+    ensure_lib_structure,
+    sanitize_name,
+    save_footprint,
 )
 
 
@@ -62,7 +66,7 @@ class TestSanitizeName:
 
     def test_unicode_replaced(self):
         result = sanitize_name("Resistance\u00b5F")
-        assert all(c.isalnum() or c in ('_', '-') for c in result)
+        assert all(c.isalnum() or c in ("_", "-") for c in result)
 
     def test_hyphen_preserved(self):
         assert sanitize_name("ESP32-S3") == "ESP32-S3"
@@ -104,7 +108,7 @@ class TestAddSymbolToLib:
             with open(sym_path) as f:
                 text = f.read()
             assert '(symbol "R_100")' in text
-            assert '(kicad_symbol_lib' in text
+            assert "(kicad_symbol_lib" in text
 
     def test_appends_to_existing(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -128,9 +132,7 @@ class TestAddSymbolToLib:
         with tempfile.TemporaryDirectory() as tmpdir:
             sym_path = os.path.join(tmpdir, "test.kicad_sym")
             add_symbol_to_lib(sym_path, "R_100", '  (symbol "R_100"\n    (old)\n  )\n')
-            result = add_symbol_to_lib(sym_path, "R_100",
-                                       '  (symbol "R_100"\n    (new)\n  )\n',
-                                       overwrite=True)
+            result = add_symbol_to_lib(sym_path, "R_100", '  (symbol "R_100"\n    (new)\n  )\n', overwrite=True)
             assert result is True
             with open(sym_path) as f:
                 text = f.read()
@@ -170,8 +172,7 @@ class TestUpdateLibTable:
     def test_creates_new_table(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             table_path = os.path.join(tmpdir, "sym-lib-table")
-            result = _update_lib_table(table_path, "sym_lib_table",
-                                       "JLCImport", "KiCad", "/path/to/lib.kicad_sym")
+            result = _update_lib_table(table_path, "sym_lib_table", "JLCImport", "KiCad", "/path/to/lib.kicad_sym")
             assert result is True
             with open(table_path) as f:
                 text = f.read()
@@ -184,8 +185,7 @@ class TestUpdateLibTable:
             table_path = os.path.join(tmpdir, "sym-lib-table")
             with open(table_path, "w") as f:
                 f.write("(sym_lib_table\n  (version 7)\n)\n")
-            result = _update_lib_table(table_path, "sym_lib_table",
-                                       "JLCImport", "KiCad", "/path/to/lib")
+            result = _update_lib_table(table_path, "sym_lib_table", "JLCImport", "KiCad", "/path/to/lib")
             assert result is False
             with open(table_path) as f:
                 text = f.read()
@@ -194,14 +194,12 @@ class TestUpdateLibTable:
     def test_skip_if_already_present(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             table_path = os.path.join(tmpdir, "sym-lib-table")
-            _update_lib_table(table_path, "sym_lib_table",
-                             "JLCImport", "KiCad", "/path")
+            _update_lib_table(table_path, "sym_lib_table", "JLCImport", "KiCad", "/path")
             # Read content after first add
             with open(table_path) as f:
                 text1 = f.read()
             # Try adding again
-            _update_lib_table(table_path, "sym_lib_table",
-                             "JLCImport", "KiCad", "/path")
+            _update_lib_table(table_path, "sym_lib_table", "JLCImport", "KiCad", "/path")
             with open(table_path) as f:
                 text2 = f.read()
             assert text1 == text2  # No change
@@ -209,27 +207,14 @@ class TestUpdateLibTable:
 
 class TestRemoveSymbol:
     def test_removes_simple_symbol(self):
-        content = (
-            '(kicad_symbol_lib\n'
-            '  (symbol "R_100"\n'
-            '    (pin_names)\n'
-            '  )\n'
-            ')\n'
-        )
+        content = '(kicad_symbol_lib\n  (symbol "R_100"\n    (pin_names)\n  )\n)\n'
         result = _remove_symbol(content, "R_100")
         assert '(symbol "R_100"' not in result
         assert "(kicad_symbol_lib" in result
 
     def test_removes_one_of_many(self):
         content = (
-            '(kicad_symbol_lib\n'
-            '  (symbol "R_100"\n'
-            '    (pin_names)\n'
-            '  )\n'
-            '  (symbol "C_100"\n'
-            '    (pin_names)\n'
-            '  )\n'
-            ')\n'
+            '(kicad_symbol_lib\n  (symbol "R_100"\n    (pin_names)\n  )\n  (symbol "C_100"\n    (pin_names)\n  )\n)\n'
         )
         result = _remove_symbol(content, "R_100")
         assert '(symbol "R_100"' not in result

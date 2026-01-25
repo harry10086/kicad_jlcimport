@@ -1,4 +1,5 @@
 """Shared formatting utilities for KiCad file output."""
+
 import math
 import uuid as _uuid_mod
 

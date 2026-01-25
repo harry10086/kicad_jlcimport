@@ -1,17 +1,18 @@
 """3D model download and WRL conversion."""
+
 import os
 from typing import Optional, Tuple
 
 from .api import download_step, download_wrl_source
 from .ee_types import EE3DModel
 
-
 # EasyEDA 3D coordinates use 100 units per mm
 _EE_3D_UNITS_PER_MM = 100.0
 
 
-def compute_model_transform(model: EE3DModel, fp_origin_x: float, fp_origin_y: float
-                            ) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
+def compute_model_transform(
+    model: EE3DModel, fp_origin_x: float, fp_origin_y: float
+) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
     """Compute 3D model offset and rotation from footprint model data.
 
     Converts from EasyEDA coordinate units (100 units/mm) to KiCad mm.
@@ -95,8 +96,13 @@ def convert_to_vrml(obj_source: str) -> Optional[str]:
     while i < len(lines):
         line = lines[i].strip()
         if line.startswith("newmtl "):
-            current_mtl = {"name": line[7:].strip(), "Ka": (0.2, 0.2, 0.2),
-                          "Kd": (0.8, 0.8, 0.8), "Ks": (0, 0, 0), "d": 0}
+            current_mtl = {
+                "name": line[7:].strip(),
+                "Ka": (0.2, 0.2, 0.2),
+                "Kd": (0.8, 0.8, 0.8),
+                "Ks": (0, 0, 0),
+                "d": 0,
+            }
         elif line.startswith("Ka ") and current_mtl:
             parts = line.split()
             if len(parts) >= 4:
@@ -151,9 +157,7 @@ def convert_to_vrml(obj_source: str) -> Optional[str]:
         if not group["faces"]:
             continue
 
-        mtl = materials.get(group["material"], {
-            "Kd": (0.8, 0.8, 0.8), "Ks": (0, 0, 0), "d": 0
-        })
+        mtl = materials.get(group["material"], {"Kd": (0.8, 0.8, 0.8), "Ks": (0, 0, 0), "d": 0})
 
         # Collect unique vertex indices used by this group
         used_indices = set()
@@ -162,7 +166,7 @@ def convert_to_vrml(obj_source: str) -> Optional[str]:
 
         # Build local index mapping
         sorted_indices = sorted(used_indices)
-        global_to_local = {g: l for l, g in enumerate(sorted_indices)}
+        global_to_local = {g: local_idx for local_idx, g in enumerate(sorted_indices)}
 
         # Build point array
         points = []
@@ -190,9 +194,9 @@ def convert_to_vrml(obj_source: str) -> Optional[str]:
         vrml_lines.append("    material Material {")
         vrml_lines.append(f"      diffuseColor {kd[0]:.4f} {kd[1]:.4f} {kd[2]:.4f}")
         vrml_lines.append(f"      specularColor {ks[0]:.4f} {ks[1]:.4f} {ks[2]:.4f}")
-        vrml_lines.append(f"      ambientIntensity 0.2")
+        vrml_lines.append("      ambientIntensity 0.2")
         vrml_lines.append(f"      transparency {transparency:.4f}")
-        vrml_lines.append(f"      shininess 0.5")
+        vrml_lines.append("      shininess 0.5")
         vrml_lines.append("    }")
         vrml_lines.append("  }")
         vrml_lines.append("  geometry IndexedFaceSet {")

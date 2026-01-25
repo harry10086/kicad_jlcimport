@@ -1,4 +1,5 @@
 """KiCad ActionPlugin subclass for JLCImport."""
+
 import pcbnew
 
 from .dialog import JLCImportDialog

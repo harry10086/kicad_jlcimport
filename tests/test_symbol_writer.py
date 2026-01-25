@@ -1,21 +1,20 @@
 """Tests for symbol_writer.py - KiCad symbol generation."""
-import pytest
 
-from kicad_jlcimport.ee_types import EESymbol, EEPin, EERectangle, EECircle, EEPolyline
-from kicad_jlcimport.symbol_writer import write_symbol, _estimate_top, _estimate_bottom
+from kicad_jlcimport.ee_types import EECircle, EEPin, EEPolyline, EERectangle, EESymbol
+from kicad_jlcimport.symbol_writer import _estimate_bottom, _estimate_top, write_symbol
 
 
 def _make_symbol(**kwargs):
     """Create an EESymbol with optional components."""
     sym = EESymbol()
-    if 'pins' in kwargs:
-        sym.pins = kwargs['pins']
-    if 'rectangles' in kwargs:
-        sym.rectangles = kwargs['rectangles']
-    if 'circles' in kwargs:
-        sym.circles = kwargs['circles']
-    if 'polylines' in kwargs:
-        sym.polylines = kwargs['polylines']
+    if "pins" in kwargs:
+        sym.pins = kwargs["pins"]
+    if "rectangles" in kwargs:
+        sym.rectangles = kwargs["rectangles"]
+    if "circles" in kwargs:
+        sym.circles = kwargs["circles"]
+    if "polylines" in kwargs:
+        sym.polylines = kwargs["polylines"]
     return sym
 
 
@@ -54,15 +53,12 @@ class TestWriteSymbol:
 
     def test_manufacturer_properties(self):
         sym = _make_symbol()
-        result = write_symbol(sym, "Test",
-                              manufacturer="Acme Corp",
-                              manufacturer_part="ACM-001")
+        result = write_symbol(sym, "Test", manufacturer="Acme Corp", manufacturer_part="ACM-001")
         assert '(property "Manufacturer" "Acme Corp"' in result
         assert '(property "Manufacturer Part" "ACM-001"' in result
 
     def test_pin_generation(self):
-        pin = EEPin(number="1", name="VCC", x=0, y=0, rotation=0,
-                    length=2.54, electrical_type="power_in")
+        pin = EEPin(number="1", name="VCC", x=0, y=0, rotation=0, length=2.54, electrical_type="power_in")
         sym = _make_symbol(pins=[pin])
         result = write_symbol(sym, "Test")
         assert "(pin power_in line" in result
@@ -70,23 +66,23 @@ class TestWriteSymbol:
         assert '(number "1"' in result
 
     def test_pin_hidden_name(self):
-        pin = EEPin(number="1", name="VCC", x=0, y=0, rotation=0,
-                    length=2.54, electrical_type="power_in",
-                    name_visible=False)
+        pin = EEPin(
+            number="1", name="VCC", x=0, y=0, rotation=0, length=2.54, electrical_type="power_in", name_visible=False
+        )
         sym = _make_symbol(pins=[pin])
         result = write_symbol(sym, "Test")
         assert "(name" in result
         # The hide should be in the name effects
-        name_line = [l for l in result.split("\n") if '(name "VCC"' in l][0]
+        name_line = [line for line in result.split("\n") if '(name "VCC"' in line][0]
         assert "hide" in name_line
 
     def test_pin_hidden_number(self):
-        pin = EEPin(number="1", name="X", x=0, y=0, rotation=0,
-                    length=2.54, electrical_type="input",
-                    number_visible=False)
+        pin = EEPin(
+            number="1", name="X", x=0, y=0, rotation=0, length=2.54, electrical_type="input", number_visible=False
+        )
         sym = _make_symbol(pins=[pin])
         result = write_symbol(sym, "Test")
-        num_line = [l for l in result.split("\n") if '(number "1"' in l][0]
+        num_line = [line for line in result.split("\n") if '(number "1"' in line][0]
         assert "hide" in num_line
 
     def test_rectangle_generation(self):
@@ -122,8 +118,7 @@ class TestWriteSymbol:
 
     def test_special_chars_escaped(self):
         sym = _make_symbol()
-        result = write_symbol(sym, "Test",
-                              description='Has "quotes" and\nnewlines')
+        result = write_symbol(sym, "Test", description='Has "quotes" and\nnewlines')
         assert '\\"quotes\\"' in result
 
     def test_unit_sub_symbol_naming(self):
@@ -135,24 +130,19 @@ class TestWriteSymbol:
 
 class TestEstimateTopBottom:
     def test_top_from_rectangles(self):
-        sym = _make_symbol(rectangles=[
-            EERectangle(x=0, y=5, width=10, height=-10)
-        ])
+        sym = _make_symbol(rectangles=[EERectangle(x=0, y=5, width=10, height=-10)])
         top = _estimate_top(sym)
         assert top == 5  # max of y and y+height
 
     def test_bottom_from_rectangles(self):
-        sym = _make_symbol(rectangles=[
-            EERectangle(x=0, y=5, width=10, height=-10)
-        ])
+        sym = _make_symbol(rectangles=[EERectangle(x=0, y=5, width=10, height=-10)])
         bottom = _estimate_bottom(sym)
         assert bottom == -5  # min of y and y+height
 
     def test_top_from_pins(self):
-        sym = _make_symbol(pins=[
-            EEPin(number="1", name="A", x=0, y=10, rotation=0,
-                  length=2.54, electrical_type="input")
-        ])
+        sym = _make_symbol(
+            pins=[EEPin(number="1", name="A", x=0, y=10, rotation=0, length=2.54, electrical_type="input")]
+        )
         top = _estimate_top(sym)
         assert top == 10
 

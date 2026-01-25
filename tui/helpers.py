@@ -1,4 +1,5 @@
 """Image helpers and terminal detection for the TUI."""
+
 from __future__ import annotations
 
 import io
@@ -6,8 +7,10 @@ import os
 
 from PIL import Image as PILImage
 from textual_image.widget import (
-    Image as _AutoTIImage,
     HalfcellImage as _HalfcellTIImage,
+)
+from textual_image.widget import (
+    Image as _AutoTIImage,
 )
 
 # Warp and Rio have issues with native image protocols in Textual widgets,
@@ -32,6 +35,7 @@ def pil_from_bytes(data: bytes | None) -> PILImage.Image | None:
 def make_no_image(width: int, height: int) -> PILImage.Image:
     """Generate a 'no image' placeholder as a PIL Image."""
     from PIL import ImageDraw
+
     img = PILImage.new("RGB", (width, height), (20, 20, 20))
     draw = ImageDraw.Draw(img)
     # Draw an X to indicate no image
@@ -48,7 +52,9 @@ def make_skeleton_frame(width: int, height: int, phase: int) -> PILImage.Image:
     Draws a dark gray rectangle with a lighter band sweeping left to right.
     """
     import math
+
     from PIL import ImageDraw
+
     img = PILImage.new("RGB", (width, height), (30, 30, 30))
     draw = ImageDraw.Draw(img)
     band_center = int(phase * (width + width // 2) / 100) - width // 4
