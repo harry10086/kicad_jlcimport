@@ -192,6 +192,28 @@ class TestC2040:
         assert "(pin " in output
         assert 'property "LCSC" "C2040"' in output
 
+    def test_text_shapes_parsed(self, component):
+        """T~ text shapes must be parsed and written to output."""
+        shapes = component["sym_shapes"]
+        raw_text_count = sum(1 for s in shapes if s.startswith("T~"))
+        assert raw_text_count == 2, f"Expected 2 T~ text shapes, got {raw_text_count}"
+
+        sym = parse_symbol_shapes(shapes, component["sym_origin_x"], component["sym_origin_y"])
+        assert len(sym.texts) == raw_text_count, (
+            f"Expected {raw_text_count} texts parsed, got {len(sym.texts)}"
+        )
+
+        # Verify specific text content is present
+        text_contents = [t.text for t in sym.texts]
+        assert "RP2040" in text_contents
+        assert "Raspberry Pi" in text_contents
+
+        # Verify texts appear in output
+        output = write_symbol(sym, "RP2040_Test", prefix="U", lcsc_id="C2040")
+        assert output.count("(text ") == raw_text_count
+        assert '"RP2040"' in output
+        assert '"Raspberry Pi"' in output
+
 
 class TestC87097:
     """DIP-16 package - tests layer 101 filtering (Component Marking Layer)."""
@@ -347,3 +369,153 @@ class TestC5360901:
         # Check that pin names appear (name "1" for pin 1, etc)
         assert '(name "1"' in output
         assert '(name "9"' in output
+
+
+class TestC558421:
+    """TVS diode array (SOP-8) - tests PT path shapes (filled triangles).
+
+    This component has complex symbol graphics including:
+    - PL (polylines): cathode bars and bent Zener indicator lines
+    - PT (paths): filled triangular arrowheads for diode symbols
+    - P (pins): 8 pins
+    - R (rectangle): body outline
+
+    This is a regression test to ensure PT shapes are not silently dropped.
+    """
+
+    @pytest.fixture
+    def component(self):
+        fp_data, sym_data = load_component_data("C558421")
+        fp_result = fp_data["result"]["dataStr"]
+        sym_result = sym_data["result"]["dataStr"]
+        return {
+            "fp_shapes": fp_result["shape"],
+            "fp_origin_x": fp_result["head"]["x"],
+            "fp_origin_y": fp_result["head"]["y"],
+            "sym_shapes": sym_result["shape"],
+            "sym_origin_x": sym_result["head"]["x"],
+            "sym_origin_y": sym_result["head"]["y"],
+        }
+
+    def test_raw_shape_counts(self, component):
+        """Verify expected shape counts in raw data."""
+        shapes = component["sym_shapes"]
+        pl_count = sum(1 for s in shapes if s.startswith("PL~"))
+        pt_count = sum(1 for s in shapes if s.startswith("PT~"))
+        pin_count = sum(1 for s in shapes if s.startswith("P~"))
+        rect_count = sum(1 for s in shapes if s.startswith("R~"))
+
+        assert pl_count == 12, f"Expected 12 PL shapes, got {pl_count}"
+        assert pt_count == 8, f"Expected 8 PT shapes, got {pt_count}"
+        assert pin_count == 8, f"Expected 8 P shapes, got {pin_count}"
+        assert rect_count == 1, f"Expected 1 R shape, got {rect_count}"
+
+    def test_all_shapes_parsed(self, component):
+        """Every shape in raw data must be parsed - nothing silently dropped."""
+        shapes = component["sym_shapes"]
+        sym = parse_symbol_shapes(shapes, component["sym_origin_x"], component["sym_origin_y"])
+
+        # Count raw shapes
+        raw_pl = sum(1 for s in shapes if s.startswith("PL~"))
+        raw_pt = sum(1 for s in shapes if s.startswith("PT~"))
+        raw_pins = sum(1 for s in shapes if s.startswith("P~"))
+        raw_rects = sum(1 for s in shapes if s.startswith("R~"))
+
+        # Verify all are parsed
+        # PL and PT both become polylines
+        assert len(sym.polylines) == raw_pl + raw_pt, (
+            f"Expected {raw_pl + raw_pt} polylines (PL + PT), got {len(sym.polylines)}"
+        )
+        assert len(sym.pins) == raw_pins, f"Expected {raw_pins} pins, got {len(sym.pins)}"
+        assert len(sym.rectangles) == raw_rects, f"Expected {raw_rects} rectangles, got {len(sym.rectangles)}"
+
+    def test_pt_paths_are_filled(self, component):
+        """PT path shapes must be parsed as filled polylines."""
+        shapes = component["sym_shapes"]
+        sym = parse_symbol_shapes(shapes, component["sym_origin_x"], component["sym_origin_y"])
+
+        # Count filled polylines - should match PT count
+        raw_pt_count = sum(1 for s in shapes if s.startswith("PT~"))
+        filled_count = sum(1 for p in sym.polylines if p.fill)
+
+        assert filled_count == raw_pt_count, (
+            f"Expected {raw_pt_count} filled polylines from PT shapes, got {filled_count}"
+        )
+
+    def test_pt_paths_are_closed(self, component):
+        """PT path shapes must be parsed as closed polylines."""
+        shapes = component["sym_shapes"]
+        sym = parse_symbol_shapes(shapes, component["sym_origin_x"], component["sym_origin_y"])
+
+        raw_pt_count = sum(1 for s in shapes if s.startswith("PT~"))
+        closed_count = sum(1 for p in sym.polylines if p.closed)
+
+        assert closed_count == raw_pt_count, (
+            f"Expected {raw_pt_count} closed polylines from PT shapes, got {closed_count}"
+        )
+
+    def test_all_shapes_written_to_output(self, component):
+        """Every parsed shape must appear in the written output."""
+        shapes = component["sym_shapes"]
+        sym = parse_symbol_shapes(shapes, component["sym_origin_x"], component["sym_origin_y"])
+        output = write_symbol(sym, "C558421_Test", prefix="D", lcsc_id="C558421")
+
+        # Verify counts in output match parsed counts
+        assert output.count("(polyline") == len(sym.polylines), (
+            f"Output has {output.count('(polyline')} polylines, expected {len(sym.polylines)}"
+        )
+        assert output.count("(pin ") == len(sym.pins), (
+            f"Output has {output.count('(pin ')} pins, expected {len(sym.pins)}"
+        )
+        assert output.count("(rectangle") == len(sym.rectangles), (
+            f"Output has {output.count('(rectangle')} rectangles, expected {len(sym.rectangles)}"
+        )
+
+    def test_filled_polylines_use_outline_fill(self, component):
+        """Filled polylines must use 'fill (type outline)' not 'background'."""
+        shapes = component["sym_shapes"]
+        sym = parse_symbol_shapes(shapes, component["sym_origin_x"], component["sym_origin_y"])
+        output = write_symbol(sym, "C558421_Test", prefix="D", lcsc_id="C558421")
+
+        raw_pt_count = sum(1 for s in shapes if s.startswith("PT~"))
+        outline_fills = output.count("fill (type outline)")
+
+        assert outline_fills == raw_pt_count, (
+            f"Expected {raw_pt_count} 'fill (type outline)' for PT shapes, got {outline_fills}"
+        )
+
+    def test_closed_polylines_have_repeated_first_point(self, component):
+        """Closed polylines must repeat first point at end for proper rendering."""
+        shapes = component["sym_shapes"]
+        sym = parse_symbol_shapes(shapes, component["sym_origin_x"], component["sym_origin_y"])
+        output = write_symbol(sym, "C558421_Test", prefix="D", lcsc_id="C558421")
+
+        # Find all polylines with outline fill (the PT paths)
+        import re
+        polyline_pattern = r'\(polyline\s+\(pts ([^)]+)\)'
+        fill_pattern = r'\(fill \(type outline\)\)'
+
+        # Split output into polyline blocks and check closed ones
+        lines = output.split("(polyline")
+        for block in lines[1:]:  # Skip first split part (before any polyline)
+            if "fill (type outline)" in block:
+                # Extract points
+                pts_match = re.search(r'\(pts ([^)]+\))+', block)
+                if pts_match:
+                    pts_str = pts_match.group(0)
+                    # Extract all xy coordinates
+                    xy_matches = re.findall(r'\(xy ([\d.-]+) ([\d.-]+)\)', pts_str)
+                    if len(xy_matches) >= 2:
+                        first = xy_matches[0]
+                        last = xy_matches[-1]
+                        assert first == last, (
+                            f"Closed polyline doesn't repeat first point: first={first}, last={last}"
+                        )
+
+    def test_footprint_pad_count(self, component):
+        """Should have 8 pads for SOP-8."""
+        fp = parse_footprint_shapes(component["fp_shapes"], component["fp_origin_x"], component["fp_origin_y"])
+        assert len(fp.pads) == 8
+
+        output = write_footprint(fp, "SOP-8_Test", lcsc_id="C558421")
+        assert output.count("(pad ") == 8

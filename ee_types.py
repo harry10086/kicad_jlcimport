@@ -102,12 +102,22 @@ class EEPolyline:
 
 
 @dataclass
+class EEText:
+    text: str
+    x: float
+    y: float
+    rotation: float = 0.0
+    font_size: float = 1.27  # mm
+
+
+@dataclass
 class EESymbol:
     rectangles: List[EERectangle] = field(default_factory=list)
     circles: List[EECircle] = field(default_factory=list)
     pins: List[EEPin] = field(default_factory=list)
     polylines: List[EEPolyline] = field(default_factory=list)
     arcs: List[EEArc] = field(default_factory=list)
+    texts: List[EEText] = field(default_factory=list)
 
 
 @dataclass

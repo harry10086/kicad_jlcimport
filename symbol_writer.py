@@ -94,11 +94,15 @@ def write_symbol(
 
     # Polylines
     for poly in symbol.polylines:
-        pts_str = " ".join(f"(xy {_fmt(x)} {_fmt(y)})" for x, y in poly.points)
+        points = list(poly.points)
+        # Close the path by adding first point to end if marked closed
+        if poly.closed and len(points) >= 2 and points[0] != points[-1]:
+            points.append(points[0])
+        pts_str = " ".join(f"(xy {_fmt(x)} {_fmt(y)})" for x, y in points)
         lines.append("      (polyline")
         lines.append(f"        (pts {pts_str})")
         lines.append("        (stroke (width 0.254) (type solid))")
-        fill_type = "background" if poly.fill else "none"
+        fill_type = "outline" if poly.fill else "none"
         lines.append(f"        (fill (type {fill_type}))")
         lines.append("      )")
 
@@ -116,6 +120,14 @@ def write_symbol(
         )
         lines.append("        (stroke (width 0.254) (type solid))")
         lines.append("        (fill (type none))")
+        lines.append("      )")
+
+    # Texts
+    for text in symbol.texts:
+        lines.append(
+            f'      (text "{_escape(text.text)}" (at {_fmt(text.x)} {_fmt(text.y)} {_fmt(text.rotation)})'
+        )
+        lines.append(f"        (effects (font (size {_fmt(text.font_size)} {_fmt(text.font_size)})))")
         lines.append("      )")
 
     # Pins

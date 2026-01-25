@@ -114,7 +114,7 @@ class TestWriteSymbol:
         poly = EEPolyline(points=[(0, 0), (1, 1), (2, 0)], closed=True, fill=True)
         sym = _make_symbol(polylines=[poly])
         result = write_symbol(sym, "Test")
-        assert "(fill (type background))" in result
+        assert "(fill (type outline))" in result
 
     def test_special_chars_escaped(self):
         sym = _make_symbol()

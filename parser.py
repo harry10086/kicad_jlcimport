@@ -17,6 +17,7 @@ from .ee_types import (
     EERectangle,
     EESolidRegion,
     EESymbol,
+    EEText,
     EETrack,
 )
 
@@ -181,6 +182,19 @@ def parse_symbol_shapes(shapes: List[str], origin_x: float, origin_y: float) -> 
             arc = _parse_sym_arc(shape_str, origin_x, origin_y)
             if arc:
                 sym.arcs.append(arc)
+        elif shape_str.startswith("PT~"):
+            path = _parse_sym_path(shape_str, origin_x, origin_y)
+            if path:
+                sym.polylines.append(path)
+        elif shape_str.startswith("C~"):
+            # C~ is circle (different from E~ ellipse in some versions)
+            circle = _parse_sym_circle_c(shape_str, origin_x, origin_y)
+            if circle:
+                sym.circles.append(circle)
+        elif shape_str.startswith("T~"):
+            text = _parse_sym_text(shape_str, origin_x, origin_y)
+            if text:
+                sym.texts.append(text)
 
     return sym
 
@@ -543,8 +557,8 @@ def _parse_pin(shape_str: str, origin_x: float, origin_y: float) -> EEPin:
         if num_parts and num_parts[0] == "0":
             number_visible = False
 
-    # Convert rotation: EasyEDA points inward, KiCad points outward
-    kicad_rotation = (rotation + 180) % 360
+    # EasyEDA rotation indicates pin line direction, same as KiCad
+    kicad_rotation = rotation
 
     # Convert coordinates (symbol: origin-relative, Y-inverted)
     kicad_x = mil_to_mm(x - origin_x)
@@ -658,6 +672,132 @@ def _parse_sym_polyline(shape_str: str, origin_x: float, origin_y: float) -> EEP
     return EEPolyline(points=points, closed=is_polygon, fill=is_polygon)
 
 
+def _parse_sym_path(shape_str: str, origin_x: float, origin_y: float) -> EEPolyline:
+    """Parse symbol path (PT~) - SVG-style path shapes.
+
+    Format: PT~<svg_path>~<stroke_color>~<stroke_width>~<stroke_style>~<fill_color>~<id>~...
+    Example: PT~M 414 279 L 412 275 L 410 279 Z ~#880000~1~0~#880000~gge44~0~
+    """
+    parts = shape_str.split("~")
+    if len(parts) < 2:
+        return None
+
+    svg_path = parts[1].strip()
+    if not svg_path:
+        return None
+
+    # Parse SVG path to get points
+    raw_points = _parse_svg_polygon(svg_path)
+    if len(raw_points) < 2:
+        return None
+
+    # Transform points relative to origin
+    points = []
+    for x, y in raw_points:
+        # _parse_svg_polygon already converts to mm, so we need raw values
+        # Re-parse to get raw coordinates for origin adjustment
+        pass
+
+    # Re-parse manually to apply origin offset correctly
+    points = []
+    path = svg_path.replace("Z", "").replace("z", "").strip()
+    tokens = re.split(r"[ML]\s*", path)
+    for token in tokens:
+        token = token.strip()
+        if not token:
+            continue
+        coords = token.split()
+        if len(coords) >= 2:
+            try:
+                x = float(coords[0])
+                y = float(coords[1])
+                points.append((mil_to_mm(x - origin_x), -mil_to_mm(y - origin_y)))
+            except ValueError:
+                continue
+
+    if len(points) < 2:
+        return None
+
+    # Check if filled (fill color is not "none" and is specified)
+    filled = False
+    if len(parts) > 5:
+        fill_color = parts[5].strip().lower() if parts[5] else ""
+        filled = fill_color and fill_color != "none"
+
+    # Path with Z is closed
+    is_closed = "Z" in svg_path.upper()
+
+    return EEPolyline(points=points, closed=is_closed, fill=filled)
+
+
+def _parse_sym_circle_c(shape_str: str, origin_x: float, origin_y: float) -> EECircle:
+    """Parse symbol circle (C~ format).
+
+    Format: C~cx~cy~radius~stroke_color~stroke_width~fill_color~id~...
+    """
+    parts = shape_str.split("~")
+    try:
+        cx = float(parts[1])
+        cy = float(parts[2])
+        radius = float(parts[3])
+    except (ValueError, IndexError):
+        return None
+
+    # Check for fill color
+    filled = False
+    if len(parts) > 6:
+        fill_color = parts[6].strip().lower() if parts[6] else ""
+        if fill_color and fill_color.startswith("#") and fill_color != "none":
+            filled = True
+
+    return EECircle(
+        cx=mil_to_mm(cx - origin_x),
+        cy=-mil_to_mm(cy - origin_y),
+        radius=mil_to_mm(radius),
+        width=0.254,
+        layer="",
+        filled=filled,
+    )
+
+
+def _parse_sym_text(shape_str: str, origin_x: float, origin_y: float) -> EEText:
+    """Parse symbol text label (T~ format).
+
+    Format: T~type~x~y~rotation~color~font~size~?~?~anchor~?~text~...
+    Example: T~L~400~290~0~#0000FF~Tahoma~11.5pt~0.1~~middle~comment~RP2040~1~middle~gge860~0~pinpart
+    """
+    parts = shape_str.split("~")
+    try:
+        x = float(parts[2])
+        y = float(parts[3])
+        rotation = float(parts[4]) if parts[4] else 0.0
+        text = parts[12] if len(parts) > 12 else ""
+    except (ValueError, IndexError):
+        return None
+
+    if not text:
+        return None
+
+    # Parse font size (e.g., "11.5pt" -> 11.5 points -> ~4mm)
+    font_size = 1.27  # default
+    if len(parts) > 7:
+        size_str = parts[7]
+        if "pt" in size_str:
+            try:
+                pt_size = float(size_str.replace("pt", ""))
+                font_size = pt_size * 0.3528  # points to mm
+            except ValueError:
+                pass
+
+    return EEText(
+        text=text,
+        x=mil_to_mm(x - origin_x),
+        y=-mil_to_mm(y - origin_y),
+        rotation=rotation,
+        font_size=font_size,
+    )
+
+
 def _parse_sym_arc(shape_str: str, origin_x: float, origin_y: float) -> EEArc:
     """Parse symbol arc."""
     parts = shape_str.split("~")
@@ -670,6 +810,9 @@ def _parse_sym_arc(shape_str: str, origin_x: float, origin_y: float) -> EEArc:
         return None
     sx, sy, rx, ry, large_arc, sweep, ex, ey = parsed
 
+    # When Y is flipped (negated), arc sweep direction must also flip
+    flipped_sweep = 1 - sweep
+
     return EEArc(
         width=0.254,
         layer="",
@@ -678,7 +821,7 @@ def _parse_sym_arc(shape_str: str, origin_x: float, origin_y: float) -> EEArc:
         rx=mil_to_mm(rx),
         ry=mil_to_mm(ry),
         large_arc=large_arc,
-        sweep=sweep,
+        sweep=flipped_sweep,
     )
 
 

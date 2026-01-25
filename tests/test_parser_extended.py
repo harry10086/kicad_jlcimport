@@ -340,7 +340,7 @@ class TestParsePin:
         pin = _parse_pin(shape, 400, 300)
         assert pin.number == "2"
         assert pin.electrical_type == "input"
-        assert pin.rotation == 270  # (90 + 180) % 360
+        assert pin.rotation == 90  # EasyEDA rotation matches KiCad rotation
 
     def test_parse_pin_output_type(self):
         shape = "P~show~2~3~400~300~180~id1^^section1^^M400,300h-10^^1~0~0~0~OUT~start^^1~0~0~0~3~end"
