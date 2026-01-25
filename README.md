@@ -77,8 +77,10 @@ Standalone binaries for the CLI, TUI, and GUI are available on the [Releases](ht
 ```bash
 xattr -cr jlcimport-cli/
 xattr -cr jlcimport-tui/
-xattr -cr jlcimport-gui.app/
+xattr -cr jlcimport-gui/
 ```
+
+Without this, macOS Gatekeeper will block the unsigned binaries.
 
 ### CLI
 
