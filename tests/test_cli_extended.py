@@ -226,6 +226,7 @@ class TestCmdImport:
         cli.cmd_import(args)
         out = capsys.readouterr().out
         assert "Error" in out
+        assert "Invalid LCSC part number" in out
 
     def test_invalid_project_path(self, capsys, monkeypatch):
         monkeypatch.setattr(cli, "validate_lcsc_id", lambda x: "C123")
@@ -333,7 +334,7 @@ class TestCmdImport:
         assert "bytes" in out
         assert "Use --show" in out
 
-    def test_import_show_footprint(self, tmp_path, monkeypatch, capsys):
+    def test_import_show_footprint(self, monkeypatch, capsys):
         import kicad_jlcimport.importer as importer
 
         fake_comp = {
@@ -376,7 +377,7 @@ class TestCmdImport:
         out = capsys.readouterr().out
         assert "(footprint test)" in out
 
-    def test_import_show_symbol(self, tmp_path, monkeypatch, capsys):
+    def test_import_show_symbol(self, monkeypatch, capsys):
         import kicad_jlcimport.importer as importer
 
         fake_comp = {
@@ -425,7 +426,7 @@ class TestCmdImport:
         out = capsys.readouterr().out
         assert "(symbol test)" in out
 
-    def test_import_show_both(self, tmp_path, monkeypatch, capsys):
+    def test_import_show_both(self, monkeypatch, capsys):
         import kicad_jlcimport.importer as importer
 
         fake_comp = {
@@ -475,7 +476,7 @@ class TestCmdImport:
         assert "(footprint test)" in out
         assert "(symbol test)" in out
 
-    def test_import_show_symbol_no_symbol_data(self, tmp_path, monkeypatch, capsys):
+    def test_import_show_symbol_no_symbol_data(self, monkeypatch, capsys):
         import kicad_jlcimport.importer as importer
 
         fake_comp = {

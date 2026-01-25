@@ -434,19 +434,28 @@ class TestComputeArcMidpointExtended:
     def test_arc_with_sweep_zero(self):
         """Test arc with sweep=0 (counter-clockwise)."""
         mid = compute_arc_midpoint((0, 0), (2, 0), 2, 2, 0, 0)
-        # Midpoint should be below the chord for counter-clockwise
+        # Midpoint should be on the arc, not at the midpoint of the chord
         assert mid is not None
+        # x should be between the endpoints
+        assert 0 <= mid[0] <= 2
+        # Midpoint shouldn't be on the chord (y != 0)
+        assert mid[1] != 0
 
     def test_arc_large_arc_sweep_same(self):
         """Test when large_arc == sweep."""
         mid = compute_arc_midpoint((0, 0), (2, 0), 2, 2, 1, 1)
+        # Midpoint should be roughly in the middle (x around 1)
         assert mid is not None
+        assert 0 < mid[0] < 2  # x should be between endpoints
 
     def test_arc_small_radius_clamped(self):
         """Test when radius is smaller than half chord length."""
         # Chord from (0,0) to (10,0) = length 10, radius 3 < 5
+        # Radius gets clamped to chord/2 = 5
         mid = compute_arc_midpoint((0, 0), (10, 0), 3, 3, 0, 1)
         assert mid is not None
+        # Midpoint x should be between endpoints
+        assert 0 <= mid[0] <= 10
 
 
 class TestLayerMap:

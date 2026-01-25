@@ -82,18 +82,14 @@ class TestDetectKicadVersion:
     def test_detect_version_from_pcbnew(self, monkeypatch):
         mock_pcbnew = MagicMock()
         mock_pcbnew.Version.return_value = "(9.0.1)"
-        sys.modules["pcbnew"] = mock_pcbnew
+        monkeypatch.setitem(sys.modules, "pcbnew", mock_pcbnew)
 
-        try:
-            result = library._detect_kicad_version()
-            assert result == "9.0"
-        finally:
-            del sys.modules["pcbnew"]
+        result = library._detect_kicad_version()
+        assert result == "9.0"
 
     def test_detect_version_from_directory(self, tmp_path, monkeypatch):
-        # Remove pcbnew from sys.modules if present
-        if "pcbnew" in sys.modules:
-            del sys.modules["pcbnew"]
+        # Ensure pcbnew is not available
+        monkeypatch.delitem(sys.modules, "pcbnew", raising=False)
 
         # Create version directories
         (tmp_path / "8.0").mkdir()
@@ -105,8 +101,8 @@ class TestDetectKicadVersion:
         assert result == "9.0"  # Should pick newest
 
     def test_detect_version_default(self, tmp_path, monkeypatch):
-        if "pcbnew" in sys.modules:
-            del sys.modules["pcbnew"]
+        # Ensure pcbnew is not available
+        monkeypatch.delitem(sys.modules, "pcbnew", raising=False)
 
         # Empty directory
         monkeypatch.setattr(library, "_kicad_data_base", lambda: str(tmp_path))
@@ -115,8 +111,8 @@ class TestDetectKicadVersion:
         assert result == "9.0"  # Default
 
     def test_detect_version_ignores_non_numeric_dirs(self, tmp_path, monkeypatch):
-        if "pcbnew" in sys.modules:
-            del sys.modules["pcbnew"]
+        # Ensure pcbnew is not available
+        monkeypatch.delitem(sys.modules, "pcbnew", raising=False)
 
         (tmp_path / "7.0").mkdir()
         (tmp_path / "plugins").mkdir()
