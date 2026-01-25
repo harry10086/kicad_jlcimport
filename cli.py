@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """CLI tool for testing JLCImport search and import."""
+
 import argparse
 import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from kicad_jlcimport.api import search_components, filter_by_min_stock, filter_by_type, APIError, validate_lcsc_id
-from kicad_jlcimport.library import load_config, get_global_lib_dir
+from kicad_jlcimport.api import APIError, filter_by_min_stock, filter_by_type, search_components, validate_lcsc_id
 from kicad_jlcimport.importer import import_component
+from kicad_jlcimport.library import get_global_lib_dir, load_config
 
 
 def cmd_search(args):
@@ -27,26 +28,35 @@ def cmd_search(args):
     min_stock = args.min_stock
     results = filter_by_min_stock(results, min_stock)
 
-    results.sort(key=lambda r: r['stock'] or 0, reverse=True)
+    results.sort(key=lambda r: r["stock"] or 0, reverse=True)
 
     if not args.csv:
-        print(f"\n  {total} results for \"{args.keyword}\"", end="")
+        print(f'\n  {total} results for "{args.keyword}"', end="")
         if type_filter:
             print(f" ({type_filter} only)", end="")
         if min_stock > 0:
             print(f" (stock >= {min_stock})", end="")
-        print(f"\n")
+        print("\n")
 
     if args.csv:
         import csv
         import sys
+
         writer = csv.writer(sys.stdout)
         writer.writerow(["LCSC", "Type", "Price", "Stock", "Part", "Package", "Brand", "Description"])
         for r in results:
-            writer.writerow([
-                r['lcsc'], r['type'], r['price'] or "", r['stock'] or "",
-                r['model'], r['package'], r['brand'], r['description'],
-            ])
+            writer.writerow(
+                [
+                    r["lcsc"],
+                    r["type"],
+                    r["price"] or "",
+                    r["stock"] or "",
+                    r["model"],
+                    r["package"],
+                    r["brand"],
+                    r["description"],
+                ]
+            )
         return
 
     if not results:
@@ -55,11 +65,11 @@ def cmd_search(args):
 
     # Header
     print(f"  {'#':<3} {'LCSC':<12} {'Type':<8} {'Price':>7} {'Stock':>8}  {'Part'}")
-    print(f"  {'─'*3} {'─'*12} {'─'*8} {'─'*7} {'─'*8}  {'─'*30}")
+    print(f"  {'─' * 3} {'─' * 12} {'─' * 8} {'─' * 7} {'─' * 8}  {'─' * 30}")
 
     for i, r in enumerate(results, 1):
-        price_str = f"${r['price']:.4f}" if r['price'] else "  N/A  "
-        stock_str = f"{r['stock']:>8,}" if r['stock'] else "     N/A"
+        price_str = f"${r['price']:.4f}" if r["price"] else "  N/A  "
+        stock_str = f"{r['stock']:>8,}" if r["stock"] else "     N/A"
         print(f"  {i:<3} {r['lcsc']:<12} {r['type']:<8} {price_str:>7} {stock_str}  {r['model']}")
         print(f"      {r['description']}")
         print(f"      {r['package']}  {r['brand']}")
@@ -85,7 +95,9 @@ def cmd_import(args):
         return
 
     lib_name = args.lib_name
-    log = lambda msg: print(f"  {msg}")
+
+    def log(msg):
+        print(f"  {msg}")
 
     try:
         if getattr(args, "project", None):
@@ -94,27 +106,42 @@ def cmd_import(args):
                 print(f"  Error: project path does not exist or is not a directory: {args.project}")
                 return
             result = import_component(
-                lcsc_id, lib_dir, lib_name,
-                overwrite=args.overwrite, use_global=False, log=log,
+                lcsc_id,
+                lib_dir,
+                lib_name,
+                overwrite=args.overwrite,
+                use_global=False,
+                log=log,
             )
         elif getattr(args, "global_dest", False):
             lib_dir = get_global_lib_dir()
             result = import_component(
-                lcsc_id, lib_dir, lib_name,
-                overwrite=args.overwrite, use_global=True, log=log,
+                lcsc_id,
+                lib_dir,
+                lib_name,
+                overwrite=args.overwrite,
+                use_global=True,
+                log=log,
             )
         elif args.output:
             result = import_component(
-                lcsc_id, args.output, lib_name,
-                export_only=True, log=log,
+                lcsc_id,
+                args.output,
+                lib_name,
+                export_only=True,
+                log=log,
             )
         else:
             # No destination: fetch, parse, and show summary without writing
             import tempfile
+
             with tempfile.TemporaryDirectory() as tmp_dir:
                 result = import_component(
-                    lcsc_id, tmp_dir, lib_name,
-                    export_only=True, log=log,
+                    lcsc_id,
+                    tmp_dir,
+                    lib_name,
+                    export_only=True,
+                    log=log,
                 )
             if not args.show:
                 fp_content = result["fp_content"]
@@ -122,8 +149,8 @@ def cmd_import(args):
                 print(f"  Footprint: {len(fp_content)} bytes")
                 if sym_content:
                     print(f"  Symbol: {len(sym_content)} bytes")
-                print(f"\n  Use --show footprint|symbol|both to see output")
-                print(f"  Use -o <dir> to save files")
+                print("\n  Use --show footprint|symbol|both to see output")
+                print("  Use -o <dir> to save files")
                 return
     except APIError as e:
         print(f"  Error: {e}")
@@ -159,7 +186,8 @@ examples:
   %(prog)s import C427602 -o ./output
   %(prog)s import C427602 -p /path/to/project
   %(prog)s import C427602 --global
-""")
+""",
+    )
 
     sub = parser.add_subparsers(dest="command")
 
@@ -167,10 +195,12 @@ examples:
     sp = sub.add_parser("search", aliases=["s"], help="Search for components")
     sp.add_argument("keyword", help="Search term")
     sp.add_argument("-n", "--count", type=int, default=10, help="Number of results (default: 10)")
-    sp.add_argument("-t", "--type", choices=["basic", "extended", "both"], default="both",
-                    help="Part type filter (default: both)")
-    sp.add_argument("--min-stock", type=int, default=1, metavar="N",
-                    help="Minimum stock count filter (default: 1, use 0 for any)")
+    sp.add_argument(
+        "-t", "--type", choices=["basic", "extended", "both"], default="both", help="Part type filter (default: both)"
+    )
+    sp.add_argument(
+        "--min-stock", type=int, default=1, metavar="N", help="Minimum stock count filter (default: 1, use 0 for any)"
+    )
     sp.add_argument("--csv", action="store_true", help="Output results as CSV")
     sp.set_defaults(func=cmd_search)
 
@@ -181,12 +211,17 @@ examples:
     dest = ip.add_mutually_exclusive_group()
     dest.add_argument("-o", "--output", help="Directory to save output files (export-only)")
     dest.add_argument("-p", "--project", help="KiCad project directory (where .kicad_pro is)")
-    dest.add_argument("--global", dest="global_dest", action="store_true",
-                      help="Import into KiCad global 3rd-party library")
-    ip.add_argument("--overwrite", action="store_true",
-                    help="Overwrite existing symbol/footprint when importing to a library")
-    ip.add_argument("--lib-name", default=load_config().get("lib_name", "JLCImport"),
-                    help="Library name (default: from config or 'JLCImport')")
+    dest.add_argument(
+        "--global", dest="global_dest", action="store_true", help="Import into KiCad global 3rd-party library"
+    )
+    ip.add_argument(
+        "--overwrite", action="store_true", help="Overwrite existing symbol/footprint when importing to a library"
+    )
+    ip.add_argument(
+        "--lib-name",
+        default=load_config().get("lib_name", "JLCImport"),
+        help="Library name (default: from config or 'JLCImport')",
+    )
     ip.set_defaults(func=cmd_import)
 
     args = parser.parse_args()

@@ -1,9 +1,9 @@
 """EasyEDA/LCSC HTTP client using only urllib."""
+
 import json
 import re
 import ssl
 import urllib.request
-import warnings
 from typing import Any, Dict, List, Optional
 
 
@@ -35,7 +35,7 @@ def validate_lcsc_id(lcsc_id: str) -> str:
     lcsc_id = lcsc_id.strip().upper()
     if not lcsc_id.startswith("C"):
         lcsc_id = "C" + lcsc_id
-    if not re.match(r'^C\d{1,12}$', lcsc_id):
+    if not re.match(r"^C\d{1,12}$", lcsc_id):
         raise ValueError(f"Invalid LCSC part number: {lcsc_id}")
     return lcsc_id
 
@@ -52,6 +52,7 @@ _HEADERS = {
 
 class APIError(Exception):
     """Raised when an API call fails."""
+
     pass
 
 
@@ -68,8 +69,8 @@ def _urlopen(req, timeout=30):
             return urllib.request.urlopen(req, timeout=timeout, context=_SSL_VERIFIED)
         except (urllib.error.URLError, ssl.SSLError, OSError) as e:
             # Check if this is SSL-related
-            reason = getattr(e, 'reason', e)
-            if isinstance(reason, (ssl.SSLError, OSError)) or 'ssl' in str(e).lower():
+            reason = getattr(e, "reason", e)
+            if isinstance(reason, (ssl.SSLError, OSError)) or "ssl" in str(e).lower():
                 _ssl_use_unverified = True
             else:
                 raise
@@ -114,8 +115,9 @@ def fetch_component_data(uuid: str) -> Dict[str, Any]:
 JLCPCB_SEARCH_API = "https://jlcpcb.com/api/overseas-pcb-order/v1/shoppingCart/smtGood/selectSmtComponentList"
 
 
-def search_components(keyword: str, page: int = 1, page_size: int = 10,
-                      part_type: Optional[str] = None) -> Dict[str, Any]:
+def search_components(
+    keyword: str, page: int = 1, page_size: int = 10, part_type: Optional[str] = None
+) -> Dict[str, Any]:
     """Search JLCPCB parts library.
 
     Args:
@@ -136,10 +138,14 @@ def search_components(keyword: str, page: int = 1, page_size: int = 10,
         payload["componentLibraryType"] = part_type
 
     data = json.dumps(payload).encode()
-    req = urllib.request.Request(JLCPCB_SEARCH_API, data=data, headers={
-        "Content-Type": "application/json",
-        "User-Agent": _HEADERS["User-Agent"],
-    })
+    req = urllib.request.Request(
+        JLCPCB_SEARCH_API,
+        data=data,
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": _HEADERS["User-Agent"],
+        },
+    )
     try:
         with _urlopen(req, timeout=15) as resp:
             raw = json.loads(resp.read().decode("utf-8"))
@@ -155,20 +161,22 @@ def search_components(keyword: str, page: int = 1, page_size: int = 10,
     for item in items:
         prices = item.get("componentPrices", [])
         unit_price = prices[0]["productPrice"] if prices else None
-        results.append({
-            "lcsc": item.get("componentCode", ""),
-            "name": item.get("componentName", ""),
-            "model": item.get("componentModelEn", ""),
-            "brand": item.get("componentBrandEn", ""),
-            "package": item.get("componentSpecificationEn", ""),
-            "category": item.get("componentTypeEn", ""),
-            "stock": item.get("stockCount", 0),
-            "type": "Basic" if item.get("componentLibraryType") == "base" else "Extended",
-            "price": unit_price,
-            "description": item.get("describe", ""),
-            "url": item.get("lcscGoodsUrl", ""),
-            "datasheet": item.get("dataManualUrl", ""),
-        })
+        results.append(
+            {
+                "lcsc": item.get("componentCode", ""),
+                "name": item.get("componentName", ""),
+                "model": item.get("componentModelEn", ""),
+                "brand": item.get("componentBrandEn", ""),
+                "package": item.get("componentSpecificationEn", ""),
+                "category": item.get("componentTypeEn", ""),
+                "stock": item.get("stockCount", 0),
+                "type": "Basic" if item.get("componentLibraryType") == "base" else "Extended",
+                "price": unit_price,
+                "description": item.get("describe", ""),
+                "url": item.get("lcscGoodsUrl", ""),
+                "datasheet": item.get("dataManualUrl", ""),
+            }
+        )
 
     return {"total": total, "results": results}
 
@@ -184,7 +192,7 @@ def filter_by_min_stock(results: list, min_stock: int) -> list:
     """
     if min_stock <= 0:
         return list(results)
-    return [r for r in results if r.get('stock') and r['stock'] >= min_stock]
+    return [r for r in results if r.get("stock") and r["stock"] >= min_stock]
 
 
 def filter_by_type(results: list, part_type: str) -> list:
@@ -198,7 +206,7 @@ def filter_by_type(results: list, part_type: str) -> list:
     """
     if not part_type:
         return list(results)
-    return [r for r in results if r.get('type') == part_type]
+    return [r for r in results if r.get("type") == part_type]
 
 
 _ALLOWED_IMAGE_HOSTS = ("jlcpcb.com", "www.jlcpcb.com", "lcsc.com", "www.lcsc.com")
@@ -211,6 +219,7 @@ def fetch_product_image(lcsc_url: str) -> Optional[bytes]:
     # SSRF protection: only allow fetching from known LCSC/JLCPCB domains
     try:
         from urllib.parse import urlparse
+
         parsed = urlparse(lcsc_url)
         if parsed.hostname not in _ALLOWED_IMAGE_HOSTS:
             return None
@@ -219,9 +228,12 @@ def fetch_product_image(lcsc_url: str) -> Optional[bytes]:
     except Exception:
         return None
 
-    req = urllib.request.Request(lcsc_url, headers={
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-    })
+    req = urllib.request.Request(
+        lcsc_url,
+        headers={
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+        },
+    )
     try:
         with _urlopen(req, timeout=10) as resp:
             html = resp.read().decode("utf-8")

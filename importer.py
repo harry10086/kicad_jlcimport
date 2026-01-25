@@ -1,20 +1,21 @@
 """Shared import logic for CLI, TUI, and plugin."""
+
 import os
 from typing import Callable
 
 from .api import fetch_full_component
-from .parser import parse_footprint_shapes, parse_symbol_shapes
 from .footprint_writer import write_footprint
-from .symbol_writer import write_symbol
-from .model3d import compute_model_transform, download_and_save_models
 from .library import (
-    sanitize_name,
-    ensure_lib_structure,
     add_symbol_to_lib,
+    ensure_lib_structure,
+    sanitize_name,
     save_footprint,
-    update_project_lib_tables,
     update_global_lib_tables,
+    update_project_lib_tables,
 )
+from .model3d import compute_model_transform, download_and_save_models
+from .parser import parse_footprint_shapes, parse_symbol_shapes
+from .symbol_writer import write_symbol
 
 
 def import_component(
@@ -77,7 +78,9 @@ def import_component(
 
         footprint_ref = f"{lib_name}:{name}"
         sym_content = write_symbol(
-            symbol, name, prefix=comp["prefix"],
+            symbol,
+            name,
+            prefix=comp["prefix"],
             footprint_ref=footprint_ref,
             lcsc_id=lcsc_id,
             datasheet=comp.get("datasheet", ""),
@@ -90,22 +93,51 @@ def import_component(
 
     if export_only:
         return _export_only(
-            lib_dir, name, lcsc_id, comp, footprint,
-            uuid_3d, model_offset, model_rotation, lib_name,
-            sym_content, title, log,
+            lib_dir,
+            name,
+            lcsc_id,
+            comp,
+            footprint,
+            uuid_3d,
+            model_offset,
+            model_rotation,
+            lib_name,
+            sym_content,
+            title,
+            log,
         )
 
     return _import_to_library(
-        lib_dir, lib_name, name, lcsc_id, comp, footprint,
-        uuid_3d, model_offset, model_rotation,
-        use_global, overwrite, sym_content, title, log,
+        lib_dir,
+        lib_name,
+        name,
+        lcsc_id,
+        comp,
+        footprint,
+        uuid_3d,
+        model_offset,
+        model_rotation,
+        use_global,
+        overwrite,
+        sym_content,
+        title,
+        log,
     )
 
 
 def _export_only(
-    out_dir, name, lcsc_id, comp, footprint,
-    uuid_3d, model_offset, model_rotation, lib_name,
-    sym_content, title, log,
+    out_dir,
+    name,
+    lcsc_id,
+    comp,
+    footprint,
+    uuid_3d,
+    model_offset,
+    model_rotation,
+    lib_name,
+    sym_content,
+    title,
+    log,
 ):
     """Write raw .kicad_mod, .kicad_sym, and 3D models to a flat directory."""
     os.makedirs(out_dir, exist_ok=True)
@@ -114,7 +146,9 @@ def _export_only(
     model_path = f"3dmodels/{name}.step" if uuid_3d else ""
 
     fp_content = write_footprint(
-        footprint, name, lcsc_id=lcsc_id,
+        footprint,
+        name,
+        lcsc_id=lcsc_id,
         description=comp.get("description", ""),
         datasheet=comp.get("datasheet", ""),
         model_path=model_path,
@@ -130,12 +164,10 @@ def _export_only(
     if sym_content:
         sym_path = os.path.join(out_dir, f"{name}.kicad_sym")
         sym_lib = (
-            '(kicad_symbol_lib\n'
-            '  (version 20241209)\n'
+            "(kicad_symbol_lib\n"
+            "  (version 20241209)\n"
             '  (generator "JLCImport")\n'
-            '  (generator_version "1.0")\n'
-            + sym_content +
-            ')\n'
+            '  (generator_version "1.0")\n' + sym_content + ")\n"
         )
         with open(sym_path, "w") as f:
             f.write(sym_lib)
@@ -143,9 +175,7 @@ def _export_only(
 
     if uuid_3d:
         models_dir = os.path.join(out_dir, "3dmodels")
-        step_path, wrl_path = download_and_save_models(
-            uuid_3d, models_dir, name, overwrite=True
-        )
+        step_path, wrl_path = download_and_save_models(uuid_3d, models_dir, name, overwrite=True)
         if step_path:
             log(f"  Saved: {step_path}")
         if wrl_path:
@@ -155,9 +185,20 @@ def _export_only(
 
 
 def _import_to_library(
-    lib_dir, lib_name, name, lcsc_id, comp, footprint,
-    uuid_3d, model_offset, model_rotation,
-    use_global, overwrite, sym_content, title, log,
+    lib_dir,
+    lib_name,
+    name,
+    lcsc_id,
+    comp,
+    footprint,
+    uuid_3d,
+    model_offset,
+    model_rotation,
+    use_global,
+    overwrite,
+    sym_content,
+    title,
+    log,
 ):
     """Import into KiCad library structure with lib-table updates."""
     log(f"Destination: {lib_dir}")
@@ -173,9 +214,7 @@ def _import_to_library(
         wrl_existed = os.path.exists(wrl_dest)
 
         log("Downloading 3D model...")
-        step_path, wrl_path = download_and_save_models(
-            uuid_3d, paths["models_dir"], name, overwrite=overwrite
-        )
+        step_path, wrl_path = download_and_save_models(uuid_3d, paths["models_dir"], name, overwrite=overwrite)
         if step_path:
             if use_global:
                 model_path = os.path.join(paths["models_dir"], f"{name}.step")
@@ -196,7 +235,9 @@ def _import_to_library(
     # Write footprint
     log("Writing footprint...")
     fp_content = write_footprint(
-        footprint, name, lcsc_id=lcsc_id,
+        footprint,
+        name,
+        lcsc_id=lcsc_id,
         description=comp.get("description", ""),
         datasheet=comp.get("datasheet", ""),
         model_path=model_path,

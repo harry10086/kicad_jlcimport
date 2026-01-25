@@ -1,7 +1,8 @@
 """Tests for api.py - validation and response parsing."""
+
 import pytest
 
-from kicad_jlcimport.api import validate_lcsc_id, fetch_product_image, filter_by_min_stock, filter_by_type
+from kicad_jlcimport.api import fetch_product_image, filter_by_min_stock, filter_by_type, validate_lcsc_id
 
 
 class TestValidateLcscId:
