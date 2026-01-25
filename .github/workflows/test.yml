@@ -46,4 +46,4 @@ jobs:
           python-version: "3.12"
       - run: pip install pytest pytest-cov
       - name: Check coverage threshold
-        run: pytest tests/ --cov=. --cov-report=term-missing --cov-fail-under=40
+        run: pytest tests/ --cov=. --cov-report=term-missing --cov-fail-under=80
