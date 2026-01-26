@@ -258,7 +258,7 @@ class JLCImportTUI(App):
         self._project_dir = project_dir
         self._kicad_version = kicad_version or DEFAULT_KICAD_VERSION
         self._lib_name = load_config().get("lib_name", "JLCImport")
-        self._global_lib_dir = get_global_lib_dir()
+        self._global_lib_dir = get_global_lib_dir(self._kicad_version)
         self._search_results: list = []
         self._raw_search_results: list = []
         self._sort_col: int = -1
@@ -630,11 +630,15 @@ class JLCImportTUI(App):
         self._search_results = filtered
 
     def on_select_changed(self, event: Select.Changed):
-        """Re-filter when min-stock or package selection changes."""
+        """Re-filter when min-stock or package selection changes, update path on version change."""
         if event.select.id in ("min-stock-select", "package-select"):
             if self._raw_search_results:
                 self._apply_filters()
                 self._repopulate_results()
+        elif event.select.id == "kicad-version-select":
+            version = self._get_kicad_version()
+            self._global_lib_dir = get_global_lib_dir(version)
+            self.query_one("#dest-global", RadioButton).label = f"Global [b]{self._global_lib_dir}[/b]"
 
     def on_radio_set_changed(self, event: RadioSet.Changed):
         """Re-filter when type filter changes."""
@@ -653,7 +657,7 @@ class JLCImportTUI(App):
         if self._project_dir:
             paths.append(os.path.join(self._project_dir, f"{lib_name}.kicad_sym"))
         try:
-            global_dir = get_global_lib_dir()
+            global_dir = get_global_lib_dir(self._get_kicad_version())
             paths.append(os.path.join(global_dir, f"{lib_name}.kicad_sym"))
         except Exception:
             pass
@@ -826,9 +830,10 @@ class JLCImportTUI(App):
 
         dest_selector = self.query_one("#dest-selector", RadioSet)
         use_global = dest_selector.pressed_index == 1
+        kicad_version = self._get_kicad_version()
 
         if use_global:
-            lib_dir = get_global_lib_dir()
+            lib_dir = get_global_lib_dir(kicad_version)
         else:
             lib_dir = self._project_dir
             if not lib_dir:
@@ -836,7 +841,6 @@ class JLCImportTUI(App):
                 return
 
         overwrite = self.query_one("#overwrite-cb", Checkbox).value
-        kicad_version = self._get_kicad_version()
 
         self.query_one("#import-btn", Button).disabled = True
         self.query_one("#detail-import-btn", Button).disabled = True

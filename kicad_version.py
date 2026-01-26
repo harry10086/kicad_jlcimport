@@ -52,6 +52,18 @@ def has_embedded_fonts(kicad_version: int = DEFAULT_KICAD_VERSION) -> bool:
     return kicad_version >= KICAD_V9
 
 
+# Directory version strings used in KiCad's data/config paths
+_DIR_VERSION_NAMES = {
+    KICAD_V8: "8.0",
+    KICAD_V9: "9.0",
+}
+
+
+def version_dir_name(kicad_version: int = DEFAULT_KICAD_VERSION) -> str:
+    """Return the directory version string (e.g. '8.0', '9.0') for path construction."""
+    return _DIR_VERSION_NAMES[kicad_version]
+
+
 def detect_kicad_version_from_pcbnew() -> int:
     """Try to detect the KiCad major version from the pcbnew module.
 

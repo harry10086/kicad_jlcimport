@@ -185,7 +185,7 @@ class JLCImportDialog(wx.Dialog):
         # Left side: destination + library name
         dest_sizer = wx.BoxSizer(wx.VERTICAL)
         project_dir = self._get_project_dir()
-        global_dir = get_global_lib_dir()
+        global_dir = get_global_lib_dir(self._kicad_version)
         bold_font = panel.GetFont().Bold()
 
         proj_row = wx.BoxSizer(wx.HORIZONTAL)
@@ -198,9 +198,9 @@ class JLCImportDialog(wx.Dialog):
         global_row = wx.BoxSizer(wx.HORIZONTAL)
         self.dest_global = wx.RadioButton(panel, label="Global")
         global_row.Add(self.dest_global, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
-        global_path_label = wx.StaticText(panel, label=global_dir)
-        global_path_label.SetFont(bold_font)
-        global_row.Add(global_path_label, 0, wx.ALIGN_CENTER_VERTICAL)
+        self._global_path_label = wx.StaticText(panel, label=global_dir)
+        self._global_path_label.SetFont(bold_font)
+        global_row.Add(self._global_path_label, 0, wx.ALIGN_CENTER_VERTICAL)
 
         self.dest_project.SetValue(True)
         if not project_dir:
@@ -221,6 +221,7 @@ class JLCImportDialog(wx.Dialog):
         self.version_choice = wx.Choice(panel, choices=self._version_labels)
         default_idx = self._version_labels.index(str(self._kicad_version))
         self.version_choice.SetSelection(default_idx)
+        self.version_choice.Bind(wx.EVT_CHOICE, self._on_version_change)
         lib_name_sizer.Add(self.version_choice, 0, wx.ALIGN_CENTER_VERTICAL)
 
         dest_sizer.Add(lib_name_sizer, 0, wx.TOP, 2)
@@ -319,6 +320,12 @@ class JLCImportDialog(wx.Dialog):
             save_config(config)
         elif not new_name:
             self.lib_name_input.SetValue(self._lib_name)
+        event.Skip()
+
+    def _on_version_change(self, event):
+        """Update global path label when KiCad version changes."""
+        self._global_path_label.SetLabel(get_global_lib_dir(self._get_kicad_version()))
+        self._global_path_label.GetParent().Layout()
         event.Skip()
 
     def _log(self, msg: str):
@@ -486,7 +493,7 @@ class JLCImportDialog(wx.Dialog):
         project_dir = self._get_project_dir()
         if project_dir:
             paths.append(os.path.join(project_dir, f"{lib_name}.kicad_sym"))
-        global_dir = get_global_lib_dir()
+        global_dir = get_global_lib_dir(self._get_kicad_version())
         paths.append(os.path.join(global_dir, f"{lib_name}.kicad_sym"))
         for p in paths:
             if os.path.exists(p):
@@ -947,7 +954,7 @@ class JLCImportDialog(wx.Dialog):
 
         use_global = self.dest_global.GetValue()
         if use_global:
-            lib_dir = get_global_lib_dir()
+            lib_dir = get_global_lib_dir(self._get_kicad_version())
         else:
             lib_dir = self._get_project_dir()
             if not lib_dir:

@@ -117,7 +117,7 @@ def cmd_import(args):
                 kicad_version=kicad_version,
             )
         elif getattr(args, "global_dest", False):
-            lib_dir = get_global_lib_dir()
+            lib_dir = get_global_lib_dir(kicad_version)
             result = import_component(
                 lcsc_id,
                 lib_dir,

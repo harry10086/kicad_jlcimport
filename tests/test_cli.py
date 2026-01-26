@@ -88,7 +88,7 @@ def test_cli_import_global_does_not_require_project_dir(tmp_path, monkeypatch, c
     monkeypatch.setattr(importer, "fetch_full_component", lambda _lcsc: fake_comp)
     monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *_a, **_k: _Footprint())
     monkeypatch.setattr(importer, "write_footprint", lambda *_a, **_k: "fp\n")
-    monkeypatch.setattr(cli, "get_global_lib_dir", lambda: str(tmp_path))
+    monkeypatch.setattr(cli, "get_global_lib_dir", lambda _v=9: str(tmp_path))
     monkeypatch.setattr(importer, "update_global_lib_tables", lambda *_a, **_k: None)
 
     args = SimpleNamespace(

@@ -270,7 +270,7 @@ def _import_to_library(
 
     # Update lib tables
     if use_global:
-        update_global_lib_tables(lib_dir, lib_name)
+        update_global_lib_tables(lib_dir, lib_name, kicad_version=kicad_version)
         log("Global library tables updated.")
     else:
         newly_created = update_project_lib_tables(lib_dir, lib_name)

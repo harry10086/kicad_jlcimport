@@ -5,7 +5,7 @@ import os
 import re
 import sys
 
-from .kicad_version import DEFAULT_KICAD_VERSION, has_generator_version, symbol_format_version
+from .kicad_version import DEFAULT_KICAD_VERSION, has_generator_version, symbol_format_version, version_dir_name
 
 _DEFAULT_CONFIG = {"lib_name": "JLCImport"}
 
@@ -216,21 +216,23 @@ def _kicad_config_base() -> str:
         return os.path.expanduser("~/.config/kicad")
 
 
-def get_global_lib_dir() -> str:
-    """Get the global KiCad 3rd-party library directory."""
-    ver = _detect_kicad_version()
+def get_global_lib_dir(kicad_version: int = DEFAULT_KICAD_VERSION) -> str:
+    """Get the global KiCad 3rd-party library directory for a specific version."""
+    ver = version_dir_name(kicad_version)
     return os.path.join(_kicad_data_base(), ver, "3rdparty")
 
 
-def get_global_config_dir() -> str:
+def get_global_config_dir(kicad_version: int = DEFAULT_KICAD_VERSION) -> str:
     """Get the global KiCad config directory (where global lib-tables live)."""
-    ver = _detect_kicad_version()
+    ver = version_dir_name(kicad_version)
     return os.path.join(_kicad_config_base(), ver)
 
 
-def update_global_lib_tables(lib_dir: str, lib_name: str = "JLCImport") -> None:
+def update_global_lib_tables(
+    lib_dir: str, lib_name: str = "JLCImport", kicad_version: int = DEFAULT_KICAD_VERSION
+) -> None:
     """Add library entries to the global sym-lib-table and fp-lib-table."""
-    config_dir = get_global_config_dir()
+    config_dir = get_global_config_dir(kicad_version)
     if not os.path.isdir(config_dir):
         os.makedirs(config_dir, exist_ok=True)
 
