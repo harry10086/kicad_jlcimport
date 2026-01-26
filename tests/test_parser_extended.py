@@ -89,6 +89,18 @@ class TestParseTrack:
         track = _parse_track(parts)
         assert track is None
 
+    def test_parse_track_layer_mapping(self):
+        """Verify that EasyEDA layer IDs are correctly mapped to KiCad layer names."""
+        # Layer "1" should map to F.Cu, not the default F.SilkS
+        parts = ["TRACK", "2", "1", "100 100 200 200"]
+        track = _parse_track(parts)
+        assert track.layer == "F.Cu"
+
+        # Layer "10" should map to Edge.Cuts
+        parts = ["TRACK", "2", "10", "100 100 200 200"]
+        track = _parse_track(parts)
+        assert track.layer == "Edge.Cuts"
+
 
 class TestParseFpArc:
     """Tests for _parse_fp_arc function."""
@@ -323,6 +335,18 @@ class TestParseSymArc:
         arc = _parse_sym_arc(shape, 0, 0)
         assert arc is None
 
+    def test_parse_arc_sweep_flipped(self):
+        """Symbol arcs must flip sweep direction because Y-axis is inverted."""
+        # SVG arc with sweep=1 should become sweep=0 in KiCad (Y-inverted)
+        shape = "A~0~0~M 100 200 A 50 50 0 0 1 150 250"
+        arc = _parse_sym_arc(shape, 0, 0)
+        assert arc.sweep == 0  # flipped from SVG sweep=1
+
+        # SVG arc with sweep=0 should become sweep=1 in KiCad
+        shape = "A~0~0~M 100 200 A 50 50 0 0 0 150 250"
+        arc = _parse_sym_arc(shape, 0, 0)
+        assert arc.sweep == 1  # flipped from SVG sweep=0
+
 
 class TestParsePin:
     """Tests for _parse_pin function."""
@@ -366,6 +390,14 @@ class TestParsePin:
         shape = "P~show~0~1~400~300~0~id1^^section1^^M400,300h10^^1~0~0~0~Name~start^^0~0~0~0~1~end"
         pin = _parse_pin(shape, 400, 300)
         assert pin.number_visible is False
+
+    def test_parse_pin_y_inversion(self):
+        """Pin Y coordinates must be negated (Y-axis inversion from EasyEDA to KiCad)."""
+        # Pin at y=350, origin at y=300 → kicad_y should be -mil_to_mm(50) (negative)
+        shape = "P~show~0~1~400~350~0~id1^^section1^^M400,350h10^^1~0~0~0~TestPin~start^^1~0~0~0~1~end"
+        pin = _parse_pin(shape, 400, 300)
+        assert pin.y < 0  # Y must be negated: -(350-300) mapped to mm is negative
+        assert pin.y == -mil_to_mm(50)
 
     def test_parse_pin_invalid(self):
         shape = "P~invalid"
