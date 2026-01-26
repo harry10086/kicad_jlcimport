@@ -460,6 +460,13 @@ class TestParseSymbolShapesExtended:
         sym = parse_symbol_shapes(shapes, 0, 0)
         assert len(sym.arcs) == 1
 
+    def test_parse_c_circle(self):
+        """Verify C~ circle shapes are parsed through parse_symbol_shapes."""
+        shapes = ["C~200~300~50~#880000~2~#880000~gge1~0~"]
+        sym = parse_symbol_shapes(shapes, 0, 0)
+        assert len(sym.circles) == 1
+        assert sym.circles[0].radius == mil_to_mm(50)
+
 
 class TestComputeArcMidpointExtended:
     """Extended tests for compute_arc_midpoint."""
