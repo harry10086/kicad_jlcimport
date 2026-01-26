@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import os
 import re
+import threading
 import traceback
 import webbrowser
 
 from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, Horizontal, Vertical, VerticalScroll
+from textual.containers import Center, Container, Horizontal, Vertical, VerticalScroll
+from textual.screen import Screen
 from textual.widgets import (
     Button,
     Checkbox,
@@ -24,11 +26,14 @@ from textual.widgets import (
     RadioSet,
     RichLog,
     Select,
+    Static,
 )
 from textual_image.widget import HalfcellImage
 
+from kicad_jlcimport import api
 from kicad_jlcimport.api import (
     APIError,
+    SSLCertError,
     fetch_product_image,
     filter_by_min_stock,
     filter_by_type,
@@ -46,6 +51,64 @@ from kicad_jlcimport.library import (
 
 from .gallery import GalleryScreen
 from .helpers import TIImage, make_no_image, make_skeleton_frame, pil_from_bytes
+
+
+class SSLWarningScreen(Screen):
+    """Modal warning shown when TLS certificate verification fails."""
+
+    BINDINGS = [
+        Binding("escape", "dismiss_screen", "Dismiss"),
+    ]
+
+    CSS = """
+    SSLWarningScreen {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.85);
+    }
+    #ssl-dialog {
+        width: 60;
+        height: auto;
+        max-height: 16;
+        background: #1a1a1a;
+        border: solid #ff6600;
+        padding: 1 2;
+    }
+    #ssl-title {
+        text-style: bold;
+        color: #ff6600;
+        width: 100%;
+        content-align: center middle;
+    }
+    #ssl-message {
+        color: #cccccc;
+        margin: 1 0;
+    }
+    #ssl-ok {
+        margin-top: 1;
+        width: 100%;
+    }
+    """
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="ssl-dialog"):
+            yield Static("!! TLS Certificate Warning", id="ssl-title")
+            yield Static(
+                "Certificate verification failed. A proxy or firewall may be "
+                "intercepting HTTPS traffic.\n\n"
+                "The session will continue without certificate verification. "
+                "Consider downloading the latest version of this plugin which "
+                "may include updated CA certificates.",
+                id="ssl-message",
+            )
+            with Center():
+                yield Button("OK", id="ssl-ok", variant="warning")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "ssl-ok":
+            self.dismiss(True)
+
+    def action_dismiss_screen(self) -> None:
+        self.dismiss(True)
 
 
 class JLCImportTUI(App):
@@ -272,6 +335,7 @@ class JLCImportTUI(App):
         self._lcsc_page_url: str = ""
         self._pulse_timer = None
         self._pulse_phase: int = 0
+        self._ssl_warning_shown: bool = False
         self._col_names = ["LCSC", "Type", "Price", "Stock", "Part", "Package", "Description"]
 
     def compose(self) -> ComposeResult:
@@ -371,6 +435,28 @@ class JLCImportTUI(App):
         """Write a message to the status log."""
         log = self.query_one("#status-log", RichLog)
         log.write(msg)
+
+    def _handle_ssl_cert_error(self):
+        """Handle an SSLCertError from a worker thread.
+
+        On first call, pushes a modal warning screen and blocks the worker
+        until the user dismisses it.  On subsequent calls, silently enables
+        unverified SSL (the user has already been warned).
+        """
+        if not self._ssl_warning_shown:
+            self._ssl_warning_shown = True
+            event = threading.Event()
+
+            def _on_dismiss(result):
+                event.set()
+
+            self.app.call_from_thread(self.push_screen, SSLWarningScreen(), _on_dismiss)
+            event.wait()
+            self.app.call_from_thread(
+                self._log,
+                "[yellow]TLS certificate verification disabled for this session.[/yellow]",
+            )
+        api.allow_unverified_ssl()
 
     # --- Search ---
 
@@ -563,7 +649,12 @@ class JLCImportTUI(App):
         self.app.call_from_thread(self._start_search_pulse)
 
         try:
-            result = search_components(keyword, page_size=500)
+            try:
+                result = search_components(keyword, page_size=500)
+            except SSLCertError:
+                self._handle_ssl_cert_error()
+                result = search_components(keyword, page_size=500)
+
             results = result["results"]
 
             results.sort(key=lambda r: r["stock"] or 0, reverse=True)
@@ -796,7 +887,11 @@ class JLCImportTUI(App):
         """Fetch product image in background."""
         img_data = None
         try:
-            img_data = fetch_product_image(lcsc_url)
+            try:
+                img_data = fetch_product_image(lcsc_url)
+            except SSLCertError:
+                self._handle_ssl_cert_error()
+                img_data = fetch_product_image(lcsc_url)
         except Exception:
             pass
         self.call_from_thread(self._set_detail_image, img_data, request_id)
@@ -856,7 +951,11 @@ class JLCImportTUI(App):
     def _run_import(self, lcsc_id: str, lib_dir: str, overwrite: bool, use_global: bool, kicad_version: int):
         """Run the import in a background thread."""
         try:
-            self._do_import(lcsc_id, lib_dir, overwrite, use_global, kicad_version)
+            try:
+                self._do_import(lcsc_id, lib_dir, overwrite, use_global, kicad_version)
+            except SSLCertError:
+                self._handle_ssl_cert_error()
+                self._do_import(lcsc_id, lib_dir, overwrite, use_global, kicad_version)
         except APIError as e:
             self.app.call_from_thread(self._log, f"[red]API Error: {e}[/red]")
         except Exception as e:

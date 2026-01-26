@@ -10,7 +10,7 @@ from textual.screen import Screen
 from textual.widgets import Button, Label
 from textual_image.widget import HalfcellImage
 
-from kicad_jlcimport.api import fetch_product_image
+from kicad_jlcimport.api import SSLCertError, allow_unverified_ssl, fetch_product_image
 
 from .helpers import TIImage, make_no_image, make_skeleton_frame, pil_from_bytes
 
@@ -138,7 +138,11 @@ class GalleryScreen(Screen):
         img_data = None
         if lcsc_url:
             try:
-                img_data = fetch_product_image(lcsc_url)
+                try:
+                    img_data = fetch_product_image(lcsc_url)
+                except SSLCertError:
+                    allow_unverified_ssl()
+                    img_data = fetch_product_image(lcsc_url)
             except Exception:
                 pass
         self._image_cache[index] = img_data

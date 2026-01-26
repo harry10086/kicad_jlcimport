@@ -4,12 +4,98 @@ import json
 import logging
 import os
 import re
+import socket
 import ssl
+import sys
 import urllib.request
 import warnings
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# DNS cache — avoids repeated lookups that can trigger CDN rate-limiting.
+# Transparent to urllib: SNI, Host headers, and cert verification all still
+# use the original hostname.
+#
+# Two layers:
+#   1. In-memory dict — avoids re-resolving within a single session.
+#   2. Persistent JSON file — falls back to last known good IPs when DNS
+#      fails entirely (e.g. CDN blocking automated lookups).
+# ---------------------------------------------------------------------------
+_dns_cache: Dict[tuple, list] = {}
+_original_getaddrinfo = socket.getaddrinfo
+
+
+def _dns_cache_path() -> str:
+    """Path to the persistent DNS cache file."""
+    if sys.platform == "darwin":
+        base = os.path.expanduser("~/Library/Preferences/kicad")
+    elif sys.platform == "win32":
+        base = os.path.join(os.environ.get("APPDATA", ""), "kicad")
+    else:
+        base = os.path.expanduser("~/.config/kicad")
+    return os.path.join(base, "jlcimport_dns_cache.json")
+
+
+def _load_dns_cache() -> dict:
+    """Load the persistent DNS cache from disk."""
+    try:
+        with open(_dns_cache_path(), encoding="utf-8") as f:
+            return json.loads(f.read())
+    except (OSError, ValueError):
+        return {}
+
+
+def _save_dns_cache(cache: dict) -> None:
+    """Persist the DNS cache to disk."""
+    path = _dns_cache_path()
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(cache, f)
+    except OSError:
+        pass  # non-fatal — cache is best-effort
+
+
+def _result_to_json(result: list) -> list:
+    """Convert getaddrinfo result (list of tuples) to JSON-safe lists."""
+    return [[fam, typ, proto, canon, list(addr)] for fam, typ, proto, canon, addr in result]
+
+
+def _result_from_json(data: list) -> list:
+    """Convert JSON lists back to getaddrinfo-style tuples."""
+    return [(fam, typ, proto, canon, tuple(addr)) for fam, typ, proto, canon, addr in data]
+
+
+def _cached_getaddrinfo(*args, **kwargs):
+    key = (args, tuple(sorted(kwargs.items())))
+    if key in _dns_cache:
+        return _dns_cache[key]
+
+    host = args[0] if args else ""
+    try:
+        result = _original_getaddrinfo(*args, **kwargs)
+        _dns_cache[key] = result
+        # Persist successful lookups keyed by hostname
+        if host:
+            disk = _load_dns_cache()
+            disk[host] = _result_to_json(result)
+            _save_dns_cache(disk)
+        return result
+    except socket.gaierror:
+        # DNS failed — try the persistent cache
+        if host:
+            disk = _load_dns_cache()
+            if host in disk:
+                logger.debug("DNS lookup failed for %s, using cached address", host)
+                result = _result_from_json(disk[host])
+                _dns_cache[key] = result
+                return result
+        raise
+
+
+socket.getaddrinfo = _cached_getaddrinfo
 
 _CACERTS_PEM = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cacerts.pem")
 
@@ -78,9 +164,15 @@ EASYEDA_API = "https://easyeda.com/api"
 EASYEDA_3D_BUCKET = "https://modules.easyeda.com/qAxj6KHrDKw4blvCG8QJPs7Y"
 EASYEDA_3D_API = "https://easyeda.com/analyzer/api/3dmodel"
 
+_UA = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+)
+
 _HEADERS = {
-    "User-Agent": "Mozilla/5.0 (compatible; JLCImport/1.0)",
-    "Accept": "application/json",
+    "User-Agent": _UA,
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9",
 }
 
 
@@ -90,15 +182,59 @@ class APIError(Exception):
     pass
 
 
+class SSLCertError(APIError):
+    """Raised when TLS certificate verification fails.
+
+    This is a subclass of APIError so existing ``except APIError`` handlers
+    still work as a fallback.  UIs can catch ``SSLCertError`` first to show
+    a targeted warning and offer an ``--insecure`` override.
+    """
+
+    pass
+
+
+_allow_unverified = False
+
+
+def allow_unverified_ssl():
+    """Enable unverified HTTPS for the remainder of this process.
+
+    Once called, ``_urlopen`` will skip certificate verification.  The flag
+    is write-once (False → True) and never reset, so it is safe under the
+    GIL without additional locking.
+    """
+    global _allow_unverified
+    _allow_unverified = True
+
+
 def _urlopen(req, timeout=30):
     """Open a URL with certificate verification.
 
     Uses the best available verified SSL context (bundled CAs → certifi →
     system store).  Falls back to unverified HTTPS **only** when no CA source
     could be loaded at all, and emits a warning each time this happens.
+
+    When a verified context *is* available but the remote certificate cannot
+    be validated, raises ``SSLCertError`` so the UI layer can decide how to
+    handle it (e.g. prompt the user or accept ``--insecure``).
+
+    If ``allow_unverified_ssl()`` has been called, all requests use an
+    unverified context regardless of ``_SSL_CTX``.
     """
+    if _allow_unverified:
+        return urllib.request.urlopen(req, timeout=timeout, context=ssl._create_unverified_context())
+
     if _SSL_CTX is not None:
-        return urllib.request.urlopen(req, timeout=timeout, context=_SSL_CTX)
+        try:
+            return urllib.request.urlopen(req, timeout=timeout, context=_SSL_CTX)
+        except urllib.error.URLError as e:
+            if isinstance(e.reason, ssl.SSLCertVerificationError):
+                raise SSLCertError(
+                    f"TLS certificate verification failed: {e.reason}. "
+                    "A proxy or firewall may be intercepting HTTPS traffic. "
+                    "Use --insecure to bypass certificate checks."
+                ) from e
+            raise
 
     warnings.warn(
         "No TLS certificate source available — using unverified HTTPS. "
@@ -173,8 +309,10 @@ def search_components(
         JLCPCB_SEARCH_API,
         data=data,
         headers={
+            **_HEADERS,
             "Content-Type": "application/json",
-            "User-Agent": _HEADERS["User-Agent"],
+            "Origin": "https://jlcpcb.com",
+            "Referer": "https://jlcpcb.com/parts",
         },
     )
     try:
@@ -262,7 +400,9 @@ def fetch_product_image(lcsc_url: str) -> Optional[bytes]:
     req = urllib.request.Request(
         lcsc_url,
         headers={
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+            "User-Agent": _UA,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
         },
     )
     try:
@@ -279,7 +419,15 @@ def fetch_product_image(lcsc_url: str) -> Optional[bytes]:
     img_url = match.group(0)
     if not img_url.startswith("https://assets.lcsc.com/"):
         return None
-    req2 = urllib.request.Request(img_url, headers=_HEADERS)
+    req2 = urllib.request.Request(
+        img_url,
+        headers={
+            "User-Agent": _UA,
+            "Accept": "image/webp,image/apng,image/*,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": lcsc_url,
+        },
+    )
     try:
         with _urlopen(req2, timeout=10) as resp:
             return resp.read()

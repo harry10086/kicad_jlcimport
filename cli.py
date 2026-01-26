@@ -7,7 +7,15 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from kicad_jlcimport.api import APIError, filter_by_min_stock, filter_by_type, search_components, validate_lcsc_id
+from kicad_jlcimport import api
+from kicad_jlcimport.api import (
+    APIError,
+    SSLCertError,
+    filter_by_min_stock,
+    filter_by_type,
+    search_components,
+    validate_lcsc_id,
+)
 from kicad_jlcimport.importer import import_component
 from kicad_jlcimport.kicad_version import DEFAULT_KICAD_VERSION, SUPPORTED_VERSIONS
 from kicad_jlcimport.library import get_global_lib_dir, load_config
@@ -21,7 +29,13 @@ def cmd_search(args):
     elif args.type == "extended":
         type_filter = "Extended"
 
-    result = search_components(args.keyword, page_size=args.count)
+    try:
+        result = search_components(args.keyword, page_size=args.count)
+    except SSLCertError as e:
+        print(f"  Error: {e}")
+        print("  Use --insecure to bypass certificate verification.")
+        sys.exit(1)
+
     total = result["total"]
     results = result["results"]
 
@@ -41,7 +55,6 @@ def cmd_search(args):
 
     if args.csv:
         import csv
-        import sys
 
         writer = csv.writer(sys.stdout)
         writer.writerow(["LCSC", "Type", "Price", "Stock", "Part", "Package", "Brand", "Description"])
@@ -158,6 +171,10 @@ def cmd_import(args):
                 print("\n  Use --show footprint|symbol|both to see output")
                 print("  Use -o <dir> to save files")
                 return
+    except SSLCertError as e:
+        print(f"  Error: {e}")
+        print("  Use --insecure to bypass certificate verification.")
+        sys.exit(1)
     except APIError as e:
         print(f"  Error: {e}")
         return
@@ -194,6 +211,12 @@ examples:
   %(prog)s import C427602 --global
   %(prog)s import C427602 -o ./output --kicad-version 8
 """,
+    )
+
+    parser.add_argument(
+        "--insecure",
+        action="store_true",
+        help="Skip TLS certificate verification (use when behind an intercepting proxy)",
     )
 
     sub = parser.add_subparsers(dest="command")
@@ -239,6 +262,8 @@ examples:
     ip.set_defaults(func=cmd_import)
 
     args = parser.parse_args()
+    if args.insecure:
+        api.allow_unverified_ssl()
     if not args.command:
         parser.print_help()
         return

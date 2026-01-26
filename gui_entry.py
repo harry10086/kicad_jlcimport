@@ -55,7 +55,17 @@ Examples:
         default=None,
         help="Target KiCad version (default: 9)",
     )
+    parser.add_argument(
+        "--insecure",
+        action="store_true",
+        help="Skip TLS certificate verification (use when behind an intercepting proxy)",
+    )
     args = parser.parse_args()
+
+    if args.insecure:
+        from kicad_jlcimport import api
+
+        api.allow_unverified_ssl()
 
     # Import wx after argument parsing to show help even without wx installed
     try:

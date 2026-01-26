@@ -35,7 +35,17 @@ Examples:
         action="store_true",
         help="Use global library only (skip directory picker)",
     )
+    parser.add_argument(
+        "--insecure",
+        action="store_true",
+        help="Skip TLS certificate verification (use when behind an intercepting proxy)",
+    )
     args = parser.parse_args()
+
+    if args.insecure:
+        from .. import api
+
+        api.allow_unverified_ssl()
 
     # Import wx after argument parsing to show help even without wx installed
     try:
