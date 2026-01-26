@@ -492,8 +492,6 @@ class TestC558421:
 
         # Find all polylines with outline fill (the PT paths)
         import re
-        polyline_pattern = r'\(polyline\s+\(pts ([^)]+)\)'
-        fill_pattern = r'\(fill \(type outline\)\)'
 
         # Split output into polyline blocks and check closed ones
         lines = output.split("(polyline")

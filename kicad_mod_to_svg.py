@@ -36,7 +36,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-
 # Display settings
 DEFAULT_SCALE = 40  # Pixels per mm (footprints are often small)
 DEFAULT_PADDING = 30  # Padding around content in pixels
@@ -575,7 +574,7 @@ def render_svg(
     def should_render(layer: str) -> bool:
         if show_layers is None:
             return True
-        return any(l in layer for l in show_layers)
+        return any(lyr in layer for lyr in show_layers)
 
     # --- Render polygons (background) ---
     for poly in fp.polys:

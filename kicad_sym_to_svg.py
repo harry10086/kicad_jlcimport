@@ -26,7 +26,6 @@ import re
 import sys
 from pathlib import Path
 
-
 # Display settings
 DEFAULT_SCALE = 20      # Pixels per mm (KiCad uses mm)
 DEFAULT_PADDING = 40    # Padding around content in pixels
