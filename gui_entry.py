@@ -48,6 +48,13 @@ Examples:
         action="store_true",
         help="Use global library only (skip directory picker)",
     )
+    parser.add_argument(
+        "--kicad-version",
+        type=int,
+        choices=[8, 9],
+        default=None,
+        help="Target KiCad version (default: 9)",
+    )
     args = parser.parse_args()
 
     # Import wx after argument parsing to show help even without wx installed
@@ -87,7 +94,7 @@ Examples:
         dlg.Destroy()
 
     # Create and show main dialog
-    main_dlg = JLCImportDialog(None, board=None, project_dir=project_dir)
+    main_dlg = JLCImportDialog(None, board=None, project_dir=project_dir, kicad_version=args.kicad_version)
     main_dlg.ShowModal()
     main_dlg.Destroy()
 

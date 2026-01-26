@@ -1,7 +1,8 @@
 """Tests for symbol_writer.py - KiCad symbol generation."""
 
 from kicad_jlcimport.ee_types import EECircle, EEPin, EEPolyline, EERectangle, EESymbol
-from kicad_jlcimport.symbol_writer import _estimate_bottom, _estimate_top, write_symbol
+from kicad_jlcimport.kicad_version import KICAD_V8, KICAD_V9
+from kicad_jlcimport.symbol_writer import _estimate_bottom, _estimate_top, write_symbol, write_symbol_library
 
 
 def _make_symbol(**kwargs):
@@ -150,3 +151,23 @@ class TestEstimateTopBottom:
         sym = _make_symbol()
         assert _estimate_top(sym) == 5.0
         assert _estimate_bottom(sym) == -5.0
+
+
+class TestWriteSymbolLibraryVersions:
+    def test_v9_library_has_generator_version(self):
+        result = write_symbol_library([], kicad_version=KICAD_V9)
+        assert "(version 20241209)" in result
+        assert '(generator_version "1.0")' in result
+
+    def test_v8_library_no_generator_version(self):
+        result = write_symbol_library([], kicad_version=KICAD_V8)
+        assert "(version 20231120)" in result
+        assert "generator_version" not in result
+
+    def test_v8_library_has_generator(self):
+        result = write_symbol_library([], kicad_version=KICAD_V8)
+        assert '(generator "JLCImport")' in result
+
+    def test_default_is_v9(self):
+        result = write_symbol_library([])
+        assert "(version 20241209)" in result

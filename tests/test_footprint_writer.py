@@ -2,6 +2,7 @@
 
 from kicad_jlcimport.ee_types import EECircle, EEFootprint, EEHole, EEPad, EETrack
 from kicad_jlcimport.footprint_writer import write_footprint
+from kicad_jlcimport.kicad_version import KICAD_V8, KICAD_V9
 
 
 def _make_footprint(**kwargs):
@@ -132,3 +133,41 @@ class TestWriteFootprint:
         assert '"B.Cu"' in result
         assert '"B.Mask"' in result
         assert '"B.Paste"' in result
+
+
+class TestWriteFootprintVersions:
+    def test_v9_footprint(self):
+        fp = _make_footprint()
+        result = write_footprint(fp, "Test", kicad_version=KICAD_V9)
+        assert "(version 20241229)" in result
+        assert '(generator_version "1.0")' in result
+        assert "(embedded_fonts no)" in result
+
+    def test_v8_footprint_version(self):
+        fp = _make_footprint()
+        result = write_footprint(fp, "Test", kicad_version=KICAD_V8)
+        assert "(version 20240108)" in result
+
+    def test_v8_footprint_no_generator_version(self):
+        fp = _make_footprint()
+        result = write_footprint(fp, "Test", kicad_version=KICAD_V8)
+        assert "generator_version" not in result
+
+    def test_v8_footprint_no_embedded_fonts(self):
+        fp = _make_footprint()
+        result = write_footprint(fp, "Test", kicad_version=KICAD_V8)
+        assert "embedded_fonts" not in result
+
+    def test_v8_footprint_has_generator(self):
+        fp = _make_footprint()
+        result = write_footprint(fp, "Test", kicad_version=KICAD_V8)
+        assert '(generator "JLCImport")' in result
+
+    def test_v8_footprint_still_valid(self):
+        """Verify v8 footprint has basic structure."""
+        pad = EEPad(shape="RECT", x=0, y=0, width=1, height=1, layer="1", number="1", drill=0)
+        fp = _make_footprint(pads=[pad])
+        result = write_footprint(fp, "Test", kicad_version=KICAD_V8)
+        assert '(footprint "Test"' in result
+        assert '(pad "1" smd rect' in result
+        assert result.endswith(")\n")

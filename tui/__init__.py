@@ -25,11 +25,18 @@ def main():
         help="KiCad project directory (where .kicad_pro file is)",
         default="",
     )
+    parser.add_argument(
+        "--kicad-version",
+        type=int,
+        choices=[8, 9],
+        default=None,
+        help="Target KiCad version (default: 9)",
+    )
     args = parser.parse_args()
 
     project_dir = args.project
     if project_dir:
         project_dir = os.path.abspath(project_dir)
 
-    app = JLCImportTUI(project_dir=project_dir)
+    app = JLCImportTUI(project_dir=project_dir, kicad_version=args.kicad_version)
     app.run()

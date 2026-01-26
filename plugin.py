@@ -3,6 +3,7 @@
 import pcbnew
 
 from .dialog import JLCImportDialog
+from .kicad_version import detect_kicad_version_from_pcbnew
 
 
 class JLCImportPlugin(pcbnew.ActionPlugin):
@@ -15,6 +16,7 @@ class JLCImportPlugin(pcbnew.ActionPlugin):
 
     def Run(self):
         board = pcbnew.GetBoard()
-        dlg = JLCImportDialog(None, board)
+        kicad_version = detect_kicad_version_from_pcbnew()
+        dlg = JLCImportDialog(None, board, kicad_version=kicad_version)
         dlg.ShowModal()
         dlg.Destroy()

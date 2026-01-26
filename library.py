@@ -5,6 +5,8 @@ import os
 import re
 import sys
 
+from .kicad_version import DEFAULT_KICAD_VERSION, has_generator_version, symbol_format_version
+
 _DEFAULT_CONFIG = {"lib_name": "JLCImport"}
 
 
@@ -56,7 +58,13 @@ def ensure_lib_structure(base_path: str, lib_name: str = "JLCImport") -> dict:
     }
 
 
-def add_symbol_to_lib(sym_path: str, name: str, content: str, overwrite: bool = False) -> bool:
+def add_symbol_to_lib(
+    sym_path: str,
+    name: str,
+    content: str,
+    overwrite: bool = False,
+    kicad_version: int = DEFAULT_KICAD_VERSION,
+) -> bool:
     """Add a symbol to the .kicad_sym library file.
 
     Creates the library file if it doesn't exist.
@@ -64,7 +72,11 @@ def add_symbol_to_lib(sym_path: str, name: str, content: str, overwrite: bool = 
     """
     if not os.path.exists(sym_path):
         # Create new library with this symbol
-        header = '(kicad_symbol_lib\n  (version 20241209)\n  (generator "JLCImport")\n  (generator_version "1.0")\n'
+        header = "(kicad_symbol_lib\n"
+        header += f"  (version {symbol_format_version(kicad_version)})\n"
+        header += '  (generator "JLCImport")\n'
+        if has_generator_version(kicad_version):
+            header += '  (generator_version "1.0")\n'
         with open(sym_path, "w", encoding="utf-8") as f:
             f.write(header)
             f.write(content)

@@ -224,3 +224,24 @@ class TestRemoveSymbol:
         content = '(kicad_symbol_lib\n  (symbol "R_100")\n)\n'
         result = _remove_symbol(content, "X_999")
         assert result == content
+
+
+class TestAddSymbolToLibVersions:
+    def test_new_library_v9_has_generator_version(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sym_path = os.path.join(tmpdir, "test.kicad_sym")
+            add_symbol_to_lib(sym_path, "R_100", '  (symbol "R_100")\n', kicad_version=9)
+            with open(sym_path) as f:
+                text = f.read()
+            assert "(version 20241209)" in text
+            assert '(generator_version "1.0")' in text
+
+    def test_new_library_v8_no_generator_version(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sym_path = os.path.join(tmpdir, "test.kicad_sym")
+            add_symbol_to_lib(sym_path, "R_100", '  (symbol "R_100")\n', kicad_version=8)
+            with open(sym_path) as f:
+                text = f.read()
+            assert "(version 20231120)" in text
+            assert "generator_version" not in text
+            assert '(generator "JLCImport")' in text
