@@ -124,9 +124,7 @@ def write_symbol(
 
     # Texts
     for text in symbol.texts:
-        lines.append(
-            f'      (text "{_escape(text.text)}" (at {_fmt(text.x)} {_fmt(text.y)} {_fmt(text.rotation)})'
-        )
+        lines.append(f'      (text "{_escape(text.text)}" (at {_fmt(text.x)} {_fmt(text.y)} {_fmt(text.rotation)})')
         lines.append(f"        (effects (font (size {_fmt(text.font_size)} {_fmt(text.font_size)})))")
         lines.append("      )")
 

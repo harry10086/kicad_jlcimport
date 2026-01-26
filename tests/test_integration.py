@@ -199,9 +199,7 @@ class TestC2040:
         assert raw_text_count == 2, f"Expected 2 T~ text shapes, got {raw_text_count}"
 
         sym = parse_symbol_shapes(shapes, component["sym_origin_x"], component["sym_origin_y"])
-        assert len(sym.texts) == raw_text_count, (
-            f"Expected {raw_text_count} texts parsed, got {len(sym.texts)}"
-        )
+        assert len(sym.texts) == raw_text_count, f"Expected {raw_text_count} texts parsed, got {len(sym.texts)}"
 
         # Verify specific text content is present
         text_contents = [t.text for t in sym.texts]
@@ -498,17 +496,15 @@ class TestC558421:
         for block in lines[1:]:  # Skip first split part (before any polyline)
             if "fill (type outline)" in block:
                 # Extract points
-                pts_match = re.search(r'\(pts ([^)]+\))+', block)
+                pts_match = re.search(r"\(pts ([^)]+\))+", block)
                 if pts_match:
                     pts_str = pts_match.group(0)
                     # Extract all xy coordinates
-                    xy_matches = re.findall(r'\(xy ([\d.-]+) ([\d.-]+)\)', pts_str)
+                    xy_matches = re.findall(r"\(xy ([\d.-]+) ([\d.-]+)\)", pts_str)
                     if len(xy_matches) >= 2:
                         first = xy_matches[0]
                         last = xy_matches[-1]
-                        assert first == last, (
-                            f"Closed polyline doesn't repeat first point: first={first}, last={last}"
-                        )
+                        assert first == last, f"Closed polyline doesn't repeat first point: first={first}, last={last}"
 
     def test_footprint_pad_count(self, component):
         """Should have 8 pads for SOP-8."""

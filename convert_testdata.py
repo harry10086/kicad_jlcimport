@@ -44,13 +44,14 @@ def convert_component(part_id: str, testdata_dir: Path, output_dir: Path):
         kicad_sym.write_text(sym_lib)
 
         svg_path = output_dir / f"{part_id}_symbol.svg"
-        subprocess.run([
-            sys.executable, "kicad_sym_to_svg.py",
-            str(kicad_sym), str(svg_path)
-        ], check=True, capture_output=True)
+        subprocess.run(
+            [sys.executable, "kicad_sym_to_svg.py", str(kicad_sym), str(svg_path)], check=True, capture_output=True
+        )
         results["symbol_svg"] = svg_path
-        print(f"  Symbol: {len(symbol.pins)} pins, {len(symbol.rectangles)} rects, "
-              f"{len(symbol.arcs)} arcs, {len(symbol.circles)} circles")
+        print(
+            f"  Symbol: {len(symbol.pins)} pins, {len(symbol.rectangles)} rects, "
+            f"{len(symbol.arcs)} arcs, {len(symbol.circles)} circles"
+        )
 
     # Convert footprint if exists
     if fp_json.exists():
@@ -72,13 +73,14 @@ def convert_component(part_id: str, testdata_dir: Path, output_dir: Path):
         kicad_mod.write_text(fp_content)
 
         svg_path = output_dir / f"{part_id}_footprint.svg"
-        subprocess.run([
-            sys.executable, "kicad_mod_to_svg.py",
-            str(kicad_mod), str(svg_path)
-        ], check=True, capture_output=True)
+        subprocess.run(
+            [sys.executable, "kicad_mod_to_svg.py", str(kicad_mod), str(svg_path)], check=True, capture_output=True
+        )
         results["footprint_svg"] = svg_path
-        print(f"  Footprint: {len(footprint.pads)} pads, {len(footprint.tracks)} tracks, "
-              f"{len(footprint.circles)} circles, {len(footprint.arcs)} arcs")
+        print(
+            f"  Footprint: {len(footprint.pads)} pads, {len(footprint.tracks)} tracks, "
+            f"{len(footprint.circles)} circles, {len(footprint.arcs)} arcs"
+        )
 
     return results
 

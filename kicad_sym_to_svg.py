@@ -27,14 +27,14 @@ import sys
 from pathlib import Path
 
 # Display settings
-DEFAULT_SCALE = 20      # Pixels per mm (KiCad uses mm)
-DEFAULT_PADDING = 40    # Padding around content in pixels
+DEFAULT_SCALE = 20  # Pixels per mm (KiCad uses mm)
+DEFAULT_PADDING = 40  # Padding around content in pixels
 
 
 def _compute_bounding_box(content, scale):
     """Compute bounding box of all elements in KiCad coordinates."""
-    min_x = min_y = float('inf')
-    max_x = max_y = float('-inf')
+    min_x = min_y = float("inf")
+    max_x = max_y = float("-inf")
 
     def extend(x, y):
         nonlocal min_x, min_y, max_x, max_y
@@ -44,34 +44,30 @@ def _compute_bounding_box(content, scale):
         max_y = max(max_y, y)
 
     # Rectangles
-    for m in re.finditer(r'\(rectangle \(start ([\d.-]+) ([\d.-]+)\) \(end ([\d.-]+) ([\d.-]+)\)', content):
+    for m in re.finditer(r"\(rectangle \(start ([\d.-]+) ([\d.-]+)\) \(end ([\d.-]+) ([\d.-]+)\)", content):
         extend(float(m.group(1)), float(m.group(2)))
         extend(float(m.group(3)), float(m.group(4)))
 
     # Polylines
-    for m in re.finditer(r'\(polyline\s+\(pts\s+((?:\(xy[\s\d.-]+\)\s*)+)\)', content):
-        for px, py in re.findall(r'\(xy ([\d.-]+) ([\d.-]+)\)', m.group(1)):
+    for m in re.finditer(r"\(polyline\s+\(pts\s+((?:\(xy[\s\d.-]+\)\s*)+)\)", content):
+        for px, py in re.findall(r"\(xy ([\d.-]+) ([\d.-]+)\)", m.group(1)):
             extend(float(px), float(py))
 
     # Arcs
     for m in re.finditer(
-        r'\(arc \(start ([\d.-]+) ([\d.-]+)\) \(mid ([\d.-]+) ([\d.-]+)\) \(end ([\d.-]+) ([\d.-]+)\)',
-        content
+        r"\(arc \(start ([\d.-]+) ([\d.-]+)\) \(mid ([\d.-]+) ([\d.-]+)\) \(end ([\d.-]+) ([\d.-]+)\)", content
     ):
         for i in range(0, 6, 2):
             extend(float(m.group(i + 1)), float(m.group(i + 2)))
 
     # Circles
-    for m in re.finditer(r'\(circle \(center ([\d.-]+) ([\d.-]+)\) \(radius ([\d.-]+)\)', content):
+    for m in re.finditer(r"\(circle \(center ([\d.-]+) ([\d.-]+)\) \(radius ([\d.-]+)\)", content):
         cx, cy, r = float(m.group(1)), float(m.group(2)), float(m.group(3))
         extend(cx - r, cy - r)
         extend(cx + r, cy + r)
 
     # Pins
-    for m in re.finditer(
-        r'\(pin \w+ line \(at ([\d.-]+) ([\d.-]+) ([\d.-]+)\) \(length ([\d.-]+)\)',
-        content
-    ):
+    for m in re.finditer(r"\(pin \w+ line \(at ([\d.-]+) ([\d.-]+) ([\d.-]+)\) \(length ([\d.-]+)\)", content):
         px, py = float(m.group(1)), float(m.group(2))
         rotation = float(m.group(3))
         length = float(m.group(4))
@@ -79,7 +75,7 @@ def _compute_bounding_box(content, scale):
         rad = math.radians(rotation)
         extend(px + length * math.cos(rad), py + length * math.sin(rad))
 
-    if min_x == float('inf'):
+    if min_x == float("inf"):
         return 0, 0, 300, 200  # Fallback
 
     return min_x, min_y, max_x, max_y
@@ -124,7 +120,7 @@ def parse_kicad_sym_to_svg(filepath, scale=DEFAULT_SCALE, width=None, height=Non
 
     # --- Parse rectangles ---
     # Format: (rectangle (start X1 Y1) (end X2 Y2) ...)
-    for m in re.finditer(r'\(rectangle \(start ([\d.-]+) ([\d.-]+)\) \(end ([\d.-]+) ([\d.-]+)\)', content):
+    for m in re.finditer(r"\(rectangle \(start ([\d.-]+) ([\d.-]+)\) \(end ([\d.-]+) ([\d.-]+)\)", content):
         x1, y1, x2, y2 = float(m.group(1)), float(m.group(2)), float(m.group(3)), float(m.group(4))
         # Convert to SVG coordinates (Y is flipped: KiCad Y+ is up, SVG Y+ is down)
         x1_svg = x1 * scale + offset_x
@@ -140,16 +136,16 @@ def parse_kicad_sym_to_svg(filepath, scale=DEFAULT_SCALE, width=None, height=Non
 
     # --- Parse polylines ---
     # Format: (polyline (pts ...) (stroke ...) (fill (type TYPE)))
-    for m in re.finditer(r'\(polyline\s+(.*?)\n\s*\)', content, re.DOTALL):
+    for m in re.finditer(r"\(polyline\s+(.*?)\n\s*\)", content, re.DOTALL):
         block = m.group(1)
-        pts_match = re.search(r'\(pts\s+((?:\(xy[\s\d.-]+\)\s*)+)\)', block)
+        pts_match = re.search(r"\(pts\s+((?:\(xy[\s\d.-]+\)\s*)+)\)", block)
         if not pts_match:
             continue
-        points = re.findall(r'\(xy ([\d.-]+) ([\d.-]+)\)', pts_match.group(1))
+        points = re.findall(r"\(xy ([\d.-]+) ([\d.-]+)\)", pts_match.group(1))
         if not points:
             continue
         # Check fill type
-        fill_match = re.search(r'\(fill \(type (\w+)\)\)', block)
+        fill_match = re.search(r"\(fill \(type (\w+)\)\)", block)
         fill_type = fill_match.group(1) if fill_match else "none"
         # Build SVG path
         path_parts = []
@@ -161,16 +157,13 @@ def parse_kicad_sym_to_svg(filepath, scale=DEFAULT_SCALE, width=None, height=Non
         path_d = " ".join(path_parts)
         # Fill with stroke color if fill type is "outline" or "background"
         fill_attr = "darkgreen" if fill_type in ("outline", "background") else "none"
-        svg_elements.append(
-            f'<path d="{path_d}" fill="{fill_attr}" stroke="darkgreen" stroke-width="2"/>'
-        )
+        svg_elements.append(f'<path d="{path_d}" fill="{fill_attr}" stroke="darkgreen" stroke-width="2"/>')
 
     # --- Parse arcs ---
     # Format: (arc (start SX SY) (mid MX MY) (end EX EY) ...)
     # KiCad uses start/mid/end points; we use quadratic bezier with computed control point
     for m in re.finditer(
-        r'\(arc \(start ([\d.-]+) ([\d.-]+)\) \(mid ([\d.-]+) ([\d.-]+)\) \(end ([\d.-]+) ([\d.-]+)\)',
-        content
+        r"\(arc \(start ([\d.-]+) ([\d.-]+)\) \(mid ([\d.-]+) ([\d.-]+)\) \(end ([\d.-]+) ([\d.-]+)\)", content
     ):
         sx, sy, mx, my, ex, ey = [float(g) for g in m.groups()]
 
@@ -194,22 +187,18 @@ def parse_kicad_sym_to_svg(filepath, scale=DEFAULT_SCALE, width=None, height=Non
 
     # --- Parse circles ---
     # Format: (circle (center CX CY) (radius R) ...)
-    for m in re.finditer(r'\(circle \(center ([\d.-]+) ([\d.-]+)\) \(radius ([\d.-]+)\)', content):
+    for m in re.finditer(r"\(circle \(center ([\d.-]+) ([\d.-]+)\) \(radius ([\d.-]+)\)", content):
         cx, cy, r = float(m.group(1)), float(m.group(2)), float(m.group(3))
         cx_svg = cx * scale + offset_x
         cy_svg = -cy * scale + offset_y
         r_svg = r * scale
         svg_elements.append(
-            f'<circle cx="{cx_svg}" cy="{cy_svg}" r="{r_svg}" '
-            f'fill="none" stroke="darkgreen" stroke-width="2"/>'
+            f'<circle cx="{cx_svg}" cy="{cy_svg}" r="{r_svg}" fill="none" stroke="darkgreen" stroke-width="2"/>'
         )
 
     # --- Parse pins ---
     # Format: (pin TYPE STYLE (at X Y ROTATION) (length LEN) ... (number "N") ...)
-    for m in re.finditer(
-        r'\(pin \w+ line \(at ([\d.-]+) ([\d.-]+) ([\d.-]+)\) \(length ([\d.-]+)\)',
-        content
-    ):
+    for m in re.finditer(r"\(pin \w+ line \(at ([\d.-]+) ([\d.-]+) ([\d.-]+)\) \(length ([\d.-]+)\)", content):
         px, py = float(m.group(1)), float(m.group(2))
         rotation = float(m.group(3))  # Degrees
         length = float(m.group(4))
@@ -228,8 +217,7 @@ def parse_kicad_sym_to_svg(filepath, scale=DEFAULT_SCALE, width=None, height=Non
 
         # Draw pin line
         svg_elements.append(
-            f'<line x1="{px_svg}" y1="{py_svg}" x2="{end_x_svg}" y2="{end_y_svg}" '
-            f'stroke="red" stroke-width="2"/>'
+            f'<line x1="{px_svg}" y1="{py_svg}" x2="{end_x_svg}" y2="{end_y_svg}" stroke="red" stroke-width="2"/>'
         )
         # Draw connection point (circle at pin origin)
         svg_elements.append(f'<circle cx="{px_svg}" cy="{py_svg}" r="4" fill="red"/>')
@@ -237,10 +225,10 @@ def parse_kicad_sym_to_svg(filepath, scale=DEFAULT_SCALE, width=None, height=Non
         # Find pin number and name
         # Look for (name "N") and (number "N") after this pin's (at ...) clause
         pin_match = re.search(
-            rf'\(pin \w+ line \(at {re.escape(m.group(1))} {re.escape(m.group(2))} '
+            rf"\(pin \w+ line \(at {re.escape(m.group(1))} {re.escape(m.group(2))} "
             rf'{re.escape(m.group(3))}\).*?\(name "([^"]+)".*?\(number "([^"]+)"',
             content,
-            re.DOTALL
+            re.DOTALL,
         )
         if pin_match:
             pin_name = pin_match.group(1)
@@ -274,24 +262,19 @@ def parse_kicad_sym_to_svg(filepath, scale=DEFAULT_SCALE, width=None, height=Non
     svg = f'''<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">
   <rect width="100%" height="100%" fill="white"/>
-  <text x="{width/2}" y="15" text-anchor="middle" font-size="10" fill="black">{symbol_name}</text>
+  <text x="{width / 2}" y="15" text-anchor="middle" font-size="10" fill="black">{symbol_name}</text>
   {chr(10).join(svg_elements)}
 </svg>'''
     return svg
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Convert KiCad symbol (.kicad_sym) to SVG for debugging"
-    )
+    parser = argparse.ArgumentParser(description="Convert KiCad symbol (.kicad_sym) to SVG for debugging")
     parser.add_argument("input", help="Input .kicad_sym file")
     parser.add_argument("output", nargs="?", help="Output .svg file (default: stdout)")
-    parser.add_argument("--scale", type=float, default=DEFAULT_SCALE,
-                        help=f"Pixels per mm (default: {DEFAULT_SCALE})")
-    parser.add_argument("--width", type=int, default=None,
-                        help="SVG width in pixels (default: auto-fit)")
-    parser.add_argument("--height", type=int, default=None,
-                        help="SVG height in pixels (default: auto-fit)")
+    parser.add_argument("--scale", type=float, default=DEFAULT_SCALE, help=f"Pixels per mm (default: {DEFAULT_SCALE})")
+    parser.add_argument("--width", type=int, default=None, help="SVG width in pixels (default: auto-fit)")
+    parser.add_argument("--height", type=int, default=None, help="SVG height in pixels (default: auto-fit)")
 
     args = parser.parse_args()
 

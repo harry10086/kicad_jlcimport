@@ -380,9 +380,7 @@ def parse_footprint_content(content: str) -> ParsedFootprint:
         # Check for fill
         fill = bool(re.search(r"\(fill\s+solid\)", rest))
 
-        fp.circles.append(
-            ParsedCircle(cx=cx, cy=cy, radius=radius, width=width, layer=layer, fill=fill)
-        )
+        fp.circles.append(ParsedCircle(cx=cx, cy=cy, radius=radius, width=width, layer=layer, fill=fill))
 
     # --- Parse fp_arc ---
     arc_pattern = (
@@ -403,9 +401,7 @@ def parse_footprint_content(content: str) -> ParsedFootprint:
         width_match = re.search(r"\(stroke\s+\(width\s+([\d.-]+)\)", rest)
         width = float(width_match.group(1)) if width_match else 0.15
 
-        fp.arcs.append(
-            ParsedArc(start=(sx, sy), mid=(mx, my), end=(ex, ey), width=width, layer=layer)
-        )
+        fp.arcs.append(ParsedArc(start=(sx, sy), mid=(mx, my), end=(ex, ey), width=width, layer=layer))
 
     # --- Parse fp_poly ---
     poly_pattern = r"\(fp_poly\s+\(pts\s+((?:\(xy\s+[\d.-]+\s+[\d.-]+\)\s*)+)\)(.*?)\(layer\s+\"([^\"]+)\"\)"
@@ -414,9 +410,7 @@ def parse_footprint_content(content: str) -> ParsedFootprint:
         rest = m.group(2)
         layer = m.group(3)
 
-        points = [
-            (float(x), float(y)) for x, y in re.findall(r"\(xy\s+([\d.-]+)\s+([\d.-]+)\)", pts_str)
-        ]
+        points = [(float(x), float(y)) for x, y in re.findall(r"\(xy\s+([\d.-]+)\s+([\d.-]+)\)", pts_str)]
 
         width_match = re.search(r"\(stroke\s+\(width\s+([\d.-]+)\)", rest)
         width = float(width_match.group(1)) if width_match else 0
@@ -453,11 +447,7 @@ def parse_footprint_content(content: str) -> ParsedFootprint:
         font_size = float(font_match.group(1)) if font_match else 1.0
 
         if visible:
-            fp.texts.append(
-                ParsedText(
-                    text=text, x=x, y=y, rotation=rotation, layer=layer, font_size=font_size
-                )
-            )
+            fp.texts.append(ParsedText(text=text, x=x, y=y, rotation=rotation, layer=layer, font_size=font_size))
 
     return fp
 
@@ -493,9 +483,7 @@ def get_layer_color(layer: str) -> str:
     return LAYER_COLORS.get(layer, "#888888")
 
 
-def render_pad_shape(
-    pad: ParsedPad, scale: float, offset_x: float, offset_y: float
-) -> Tuple[str, Optional[str]]:
+def render_pad_shape(pad: ParsedPad, scale: float, offset_x: float, offset_y: float) -> Tuple[str, Optional[str]]:
     """Render a pad shape and return (pad_svg, drill_svg)."""
     cx = pad.x * scale + offset_x
     cy = pad.y * scale + offset_y  # Y not flipped for footprints (already in correct orientation)
@@ -724,9 +712,7 @@ def parse_kicad_mod_to_svg(
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Convert KiCad footprint (.kicad_mod) to SVG for debugging"
-    )
+    parser = argparse.ArgumentParser(description="Convert KiCad footprint (.kicad_mod) to SVG for debugging")
     parser.add_argument("input", help="Input .kicad_mod file")
     parser.add_argument("output", nargs="?", help="Output .svg file (default: stdout)")
     parser.add_argument(

@@ -102,31 +102,31 @@ def test_convert_all_testdata():
             data = json.load(f)
 
         # Symbol
-        sym_data = data['symbol_data_list'][0]
-        shapes = sym_data.get('dataStr', {}).get('shape', [])
-        origin_x = data['sym_origin_x']
-        origin_y = data['sym_origin_y']
+        sym_data = data["symbol_data_list"][0]
+        shapes = sym_data.get("dataStr", {}).get("shape", [])
+        origin_x = data["sym_origin_x"]
+        origin_y = data["sym_origin_y"]
         symbol = parse_symbol_shapes(shapes, origin_x, origin_y)
-        sym_content = write_symbol(symbol, data['title'])
+        sym_content = write_symbol(symbol, data["title"])
         sym_lib = write_symbol_library([sym_content])
-        kicad_sym = output_dir / 'C442826.kicad_sym'
+        kicad_sym = output_dir / "C442826.kicad_sym"
         kicad_sym.write_text(sym_lib)
-        svg_path = output_dir / 'C442826_symbol.svg'
-        subprocess.run([sys.executable, 'kicad_sym_to_svg.py', str(kicad_sym), str(svg_path)], capture_output=True)
+        svg_path = output_dir / "C442826_symbol.svg"
+        subprocess.run([sys.executable, "kicad_sym_to_svg.py", str(kicad_sym), str(svg_path)], capture_output=True)
         all_svgs.append(str(svg_path))
         print(f"  Symbol: {len(symbol.pins)} pins, {len(symbol.arcs)} arcs")
 
         # Footprint
-        fp_data = data['footprint_data']
-        fp_shapes = fp_data.get('dataStr', {}).get('shape', [])
-        fp_origin_x = data['fp_origin_x']
-        fp_origin_y = data['fp_origin_y']
+        fp_data = data["footprint_data"]
+        fp_shapes = fp_data.get("dataStr", {}).get("shape", [])
+        fp_origin_x = data["fp_origin_x"]
+        fp_origin_y = data["fp_origin_y"]
         footprint = parse_footprint_shapes(fp_shapes, fp_origin_x, fp_origin_y)
-        fp_content = write_footprint(footprint, data['title'])
-        kicad_mod = output_dir / 'C442826.kicad_mod'
+        fp_content = write_footprint(footprint, data["title"])
+        kicad_mod = output_dir / "C442826.kicad_mod"
         kicad_mod.write_text(fp_content)
-        svg_path = output_dir / 'C442826_footprint.svg'
-        subprocess.run([sys.executable, 'kicad_mod_to_svg.py', str(kicad_mod), str(svg_path)], capture_output=True)
+        svg_path = output_dir / "C442826_footprint.svg"
+        subprocess.run([sys.executable, "kicad_mod_to_svg.py", str(kicad_mod), str(svg_path)], capture_output=True)
         all_svgs.append(str(svg_path))
         print(f"  Footprint: {len(footprint.pads)} pads")
         print()

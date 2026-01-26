@@ -2,15 +2,16 @@
 
 ## BEFORE COMMITTING - MANDATORY BUILD CHECKS
 
-**NEVER COMMIT WITHOUT RUNNING THESE CHECKS FIRST:**
+**NEVER COMMIT WITHOUT RUNNING ALL THREE CHECKS:**
 
 ```bash
-# Run from project directory
+# Run from project root directory (/Users/joshv/git/kicad_jlcimport)
 python3 -m ruff check .
-PYTHONPATH=.. python3 -m pytest tests/ -q
+python3 -m ruff format --check .
+python3 -m pytest tests/ -q --cov=. --cov-fail-under=80
 ```
 
-Both must pass with zero errors before any commit or push.
+ALL THREE must pass with zero errors before any commit or push.
 
 ## IMPORTANT: RUNNING PYTHON IN THIS PROJECT
 

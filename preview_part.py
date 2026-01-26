@@ -49,16 +49,17 @@ def preview_part(part_id: str):
 
             svg_path = output_dir / f"{part_id}_symbol.svg"
             result = subprocess.run(
-                [sys.executable, str(Path(__file__).parent / "kicad_sym_to_svg.py"),
-                 str(kicad_sym), str(svg_path)],
-                capture_output=True
+                [sys.executable, str(Path(__file__).parent / "kicad_sym_to_svg.py"), str(kicad_sym), str(svg_path)],
+                capture_output=True,
             )
             if result.returncode == 0:
                 svgs.append(svg_path)
             else:
                 print(f"  Warning: Symbol SVG generation failed: {result.stderr.decode()}")
-            print(f"  Symbol: {len(symbol.pins)} pins, {len(symbol.rectangles)} rects, "
-                  f"{len(symbol.polylines)} polylines, {len(symbol.arcs)} arcs")
+            print(
+                f"  Symbol: {len(symbol.pins)} pins, {len(symbol.rectangles)} rects, "
+                f"{len(symbol.polylines)} polylines, {len(symbol.arcs)} arcs"
+            )
     else:
         print("  Symbol: none")
 
@@ -82,16 +83,17 @@ def preview_part(part_id: str):
 
             svg_path = output_dir / f"{part_id}_footprint.svg"
             result = subprocess.run(
-                [sys.executable, str(Path(__file__).parent / "kicad_mod_to_svg.py"),
-                 str(kicad_mod), str(svg_path)],
-                capture_output=True
+                [sys.executable, str(Path(__file__).parent / "kicad_mod_to_svg.py"), str(kicad_mod), str(svg_path)],
+                capture_output=True,
             )
             if result.returncode == 0:
                 svgs.append(svg_path)
             else:
                 print(f"  Warning: Footprint SVG generation failed: {result.stderr.decode()}")
-            print(f"  Footprint: {len(footprint.pads)} pads, {len(footprint.tracks)} tracks, "
-                  f"{len(footprint.regions)} regions")
+            print(
+                f"  Footprint: {len(footprint.pads)} pads, {len(footprint.tracks)} tracks, "
+                f"{len(footprint.regions)} regions"
+            )
     else:
         print("  Footprint: none")
 

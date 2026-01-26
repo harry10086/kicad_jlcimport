@@ -19,7 +19,7 @@ testpaths = ["tests"]
 
 [tool.coverage.run]
 source = ["."]
-omit = ["tests/*", "tui/*", "gui/*", "tui_entry.py", "gui_entry.py", "dialog.py", "plugin.py", "categories.py"]
+omit = ["**/tests/*", "**/tui/*", "**/gui/*", "**/tui_entry.py", "**/gui_entry.py", "**/dialog.py", "**/plugin.py", "**/categories.py", "**/convert_testdata.py", "**/kicad_mod_to_svg.py", "**/kicad_sym_to_svg.py", "**/preview_part.py"]
 
 [tool.coverage.report]
 fail_under = 80
