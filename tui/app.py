@@ -37,6 +37,7 @@ from kicad_jlcimport.api import (
 )
 from kicad_jlcimport.categories import CATEGORIES
 from kicad_jlcimport.importer import import_component
+from kicad_jlcimport.kicad_version import DEFAULT_KICAD_VERSION, SUPPORTED_VERSIONS
 from kicad_jlcimport.library import (
     get_global_lib_dir,
     load_config,
@@ -221,6 +222,7 @@ class JLCImportTUI(App):
     }
     #lib-name-label { width: auto; margin: 0 1; }
     #lib-name-input { width: 16; margin-right: 2; }
+    #kicad-version-select { width: 10; margin-right: 1; }
     #part-input { width: 16; }
     #overwrite-cb { margin: 0 1; width: auto; }
     #import-btn { margin-left: 1; }
@@ -251,11 +253,12 @@ class JLCImportTUI(App):
         ("100K+", 100000),
     ]
 
-    def __init__(self, project_dir: str = ""):
+    def __init__(self, project_dir: str = "", kicad_version: int | None = None):
         super().__init__()
         self._project_dir = project_dir
+        self._kicad_version = kicad_version or DEFAULT_KICAD_VERSION
         self._lib_name = load_config().get("lib_name", "JLCImport")
-        self._global_lib_dir = get_global_lib_dir()
+        self._global_lib_dir = get_global_lib_dir(self._kicad_version)
         self._search_results: list = []
         self._raw_search_results: list = []
         self._sort_col: int = -1
@@ -340,6 +343,12 @@ class JLCImportTUI(App):
                         )
                     yield Label("Lib", id="lib-name-label")
                     yield Input(value=self._lib_name, id="lib-name-input")
+                    yield Select(
+                        [(f"v{v}", v) for v in sorted(SUPPORTED_VERSIONS)],
+                        value=self._kicad_version,
+                        id="kicad-version-select",
+                        allow_blank=False,
+                    )
                     yield Input(placeholder="C427602", id="part-input")
                     yield Checkbox("Overwrite", id="overwrite-cb")
                     yield Button("Import", id="import-btn", variant="success")
@@ -621,11 +630,15 @@ class JLCImportTUI(App):
         self._search_results = filtered
 
     def on_select_changed(self, event: Select.Changed):
-        """Re-filter when min-stock or package selection changes."""
+        """Re-filter when min-stock or package selection changes, update path on version change."""
         if event.select.id in ("min-stock-select", "package-select"):
             if self._raw_search_results:
                 self._apply_filters()
                 self._repopulate_results()
+        elif event.select.id == "kicad-version-select":
+            version = self._get_kicad_version()
+            self._global_lib_dir = get_global_lib_dir(version)
+            self.query_one("#dest-global", RadioButton).label = f"Global [b]{self._global_lib_dir}[/b]"
 
     def on_radio_set_changed(self, event: RadioSet.Changed):
         """Re-filter when type filter changes."""
@@ -644,7 +657,7 @@ class JLCImportTUI(App):
         if self._project_dir:
             paths.append(os.path.join(self._project_dir, f"{lib_name}.kicad_sym"))
         try:
-            global_dir = get_global_lib_dir()
+            global_dir = get_global_lib_dir(self._get_kicad_version())
             paths.append(os.path.join(global_dir, f"{lib_name}.kicad_sym"))
         except Exception:
             pass
@@ -817,9 +830,10 @@ class JLCImportTUI(App):
 
         dest_selector = self.query_one("#dest-selector", RadioSet)
         use_global = dest_selector.pressed_index == 1
+        kicad_version = self._get_kicad_version()
 
         if use_global:
-            lib_dir = get_global_lib_dir()
+            lib_dir = get_global_lib_dir(kicad_version)
         else:
             lib_dir = self._project_dir
             if not lib_dir:
@@ -830,13 +844,19 @@ class JLCImportTUI(App):
 
         self.query_one("#import-btn", Button).disabled = True
         self.query_one("#detail-import-btn", Button).disabled = True
-        self._run_import(lcsc_id, lib_dir, overwrite, use_global)
+        self._run_import(lcsc_id, lib_dir, overwrite, use_global, kicad_version)
+
+    def _get_kicad_version(self) -> int:
+        """Return the selected KiCad version from the dropdown."""
+        select = self.query_one("#kicad-version-select", Select)
+        val = select.value
+        return val if isinstance(val, int) else DEFAULT_KICAD_VERSION
 
     @work(thread=True)
-    def _run_import(self, lcsc_id: str, lib_dir: str, overwrite: bool, use_global: bool):
+    def _run_import(self, lcsc_id: str, lib_dir: str, overwrite: bool, use_global: bool, kicad_version: int):
         """Run the import in a background thread."""
         try:
-            self._do_import(lcsc_id, lib_dir, overwrite, use_global)
+            self._do_import(lcsc_id, lib_dir, overwrite, use_global, kicad_version)
         except APIError as e:
             self.app.call_from_thread(self._log, f"[red]API Error: {e}[/red]")
         except Exception as e:
@@ -846,7 +866,7 @@ class JLCImportTUI(App):
             self.app.call_from_thread(self.query_one("#import-btn", Button).__setattr__, "disabled", False)
             self.app.call_from_thread(self.query_one("#detail-import-btn", Button).__setattr__, "disabled", False)
 
-    def _do_import(self, lcsc_id: str, lib_dir: str, overwrite: bool, use_global: bool):
+    def _do_import(self, lcsc_id: str, lib_dir: str, overwrite: bool, use_global: bool, kicad_version: int):
         """Execute the import process."""
         lib_name = self._lib_name
 
@@ -860,6 +880,7 @@ class JLCImportTUI(App):
             overwrite=overwrite,
             use_global=use_global,
             log=log,
+            kicad_version=kicad_version,
         )
 
         title = result["title"]

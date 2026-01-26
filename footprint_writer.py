@@ -1,4 +1,4 @@
-"""Generate KiCad 9 .kicad_mod footprint files."""
+"""Generate KiCad .kicad_mod footprint files (v8 and v9)."""
 
 from typing import Tuple
 
@@ -6,6 +6,7 @@ from ._kicad_format import escape_sexpr as _escape
 from ._kicad_format import fmt_float as _fmt
 from ._kicad_format import gen_uuid as _uuid
 from .ee_types import EEFootprint
+from .kicad_version import DEFAULT_KICAD_VERSION, footprint_format_version, has_embedded_fonts, has_generator_version
 from .parser import compute_arc_midpoint
 
 
@@ -18,6 +19,7 @@ def write_footprint(
     model_path: str = "",
     model_offset: Tuple[float, float, float] = (0, 0, 0),
     model_rotation: Tuple[float, float, float] = (0, 0, 0),
+    kicad_version: int = DEFAULT_KICAD_VERSION,
 ) -> str:
     """Generate complete .kicad_mod content for a footprint."""
     lines = []
@@ -39,9 +41,10 @@ def write_footprint(
     val_y = max_y + 1.0
 
     lines.append(f'(footprint "{name}"')
-    lines.append("  (version 20241229)")
+    lines.append(f"  (version {footprint_format_version(kicad_version)})")
     lines.append('  (generator "JLCImport")')
-    lines.append('  (generator_version "1.0")')
+    if has_generator_version(kicad_version):
+        lines.append('  (generator_version "1.0")')
     lines.append('  (layer "F.Cu")')
 
     # Properties
@@ -152,7 +155,8 @@ def write_footprint(
         lines.append(f"    (rotate (xyz {_fmt(rx)} {_fmt(ry)} {_fmt(rz)}))")
         lines.append("  )")
 
-    lines.append("  (embedded_fonts no)")
+    if has_embedded_fonts(kicad_version):
+        lines.append("  (embedded_fonts no)")
     lines.append(")")
 
     return "\n".join(lines) + "\n"

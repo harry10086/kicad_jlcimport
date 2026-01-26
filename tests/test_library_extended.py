@@ -166,24 +166,35 @@ class TestKicadConfigBase:
 class TestGetGlobalLibDir:
     """Tests for get_global_lib_dir function."""
 
-    def test_returns_path_with_3rdparty(self, monkeypatch):
-        monkeypatch.setattr(library, "_detect_kicad_version", lambda: "9.0")
+    def test_returns_path_with_3rdparty_v9(self, monkeypatch):
         monkeypatch.setattr(library, "_kicad_data_base", lambda: "/home/user/kicad")
 
-        result = library.get_global_lib_dir()
+        result = library.get_global_lib_dir(kicad_version=9)
         assert "3rdparty" in result
         assert "9.0" in result
+
+    def test_returns_path_with_3rdparty_v8(self, monkeypatch):
+        monkeypatch.setattr(library, "_kicad_data_base", lambda: "/home/user/kicad")
+
+        result = library.get_global_lib_dir(kicad_version=8)
+        assert "3rdparty" in result
+        assert "8.0" in result
 
 
 class TestGetGlobalConfigDir:
     """Tests for get_global_config_dir function."""
 
-    def test_returns_path_with_version(self, monkeypatch):
-        monkeypatch.setattr(library, "_detect_kicad_version", lambda: "9.0")
+    def test_returns_path_with_version_v9(self, monkeypatch):
         monkeypatch.setattr(library, "_kicad_config_base", lambda: "/home/user/.config/kicad")
 
-        result = library.get_global_config_dir()
+        result = library.get_global_config_dir(kicad_version=9)
         assert "9.0" in result
+
+    def test_returns_path_with_version_v8(self, monkeypatch):
+        monkeypatch.setattr(library, "_kicad_config_base", lambda: "/home/user/.config/kicad")
+
+        result = library.get_global_config_dir(kicad_version=8)
+        assert "8.0" in result
 
 
 class TestUpdateProjectLibTables:
@@ -208,7 +219,7 @@ class TestUpdateGlobalLibTables:
 
     def test_creates_tables_in_config_dir(self, tmp_path, monkeypatch):
         config_dir = tmp_path / "config"
-        monkeypatch.setattr(library, "get_global_config_dir", lambda: str(config_dir))
+        monkeypatch.setattr(library, "get_global_config_dir", lambda _v=9: str(config_dir))
 
         library.update_global_lib_tables(str(tmp_path / "libs"), "TestLib")
 
@@ -217,7 +228,7 @@ class TestUpdateGlobalLibTables:
 
     def test_creates_config_dir_if_needed(self, tmp_path, monkeypatch):
         config_dir = tmp_path / "new" / "config"
-        monkeypatch.setattr(library, "get_global_config_dir", lambda: str(config_dir))
+        monkeypatch.setattr(library, "get_global_config_dir", lambda _v=9: str(config_dir))
 
         library.update_global_lib_tables(str(tmp_path / "libs"), "TestLib")
 

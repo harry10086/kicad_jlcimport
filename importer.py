@@ -5,6 +5,7 @@ from typing import Callable
 
 from .api import fetch_full_component
 from .footprint_writer import write_footprint
+from .kicad_version import DEFAULT_KICAD_VERSION, has_generator_version, symbol_format_version
 from .library import (
     add_symbol_to_lib,
     ensure_lib_structure,
@@ -26,6 +27,7 @@ def import_component(
     use_global: bool = False,
     export_only: bool = False,
     log: Callable[[str], None] = print,
+    kicad_version: int = DEFAULT_KICAD_VERSION,
 ) -> dict:
     """Import an LCSC component into a KiCad library or export raw files.
 
@@ -37,6 +39,7 @@ def import_component(
         use_global: If True, use absolute model paths and update global lib tables.
         export_only: If True, write raw .kicad_mod/.kicad_sym/3D files to a flat directory.
         log: Callback for status messages.
+        kicad_version: Target KiCad major version (8 or 9).
 
     Returns:
         dict with keys: title, name, fp_content, sym_content
@@ -105,6 +108,7 @@ def import_component(
             sym_content,
             title,
             log,
+            kicad_version,
         )
 
     return _import_to_library(
@@ -122,6 +126,7 @@ def import_component(
         sym_content,
         title,
         log,
+        kicad_version,
     )
 
 
@@ -138,6 +143,7 @@ def _export_only(
     sym_content,
     title,
     log,
+    kicad_version,
 ):
     """Write raw .kicad_mod, .kicad_sym, and 3D models to a flat directory."""
     os.makedirs(out_dir, exist_ok=True)
@@ -154,6 +160,7 @@ def _export_only(
         model_path=model_path,
         model_offset=model_offset,
         model_rotation=model_rotation,
+        kicad_version=kicad_version,
     )
 
     fp_path = os.path.join(out_dir, f"{name}.kicad_mod")
@@ -163,12 +170,12 @@ def _export_only(
 
     if sym_content:
         sym_path = os.path.join(out_dir, f"{name}.kicad_sym")
-        sym_lib = (
-            "(kicad_symbol_lib\n"
-            "  (version 20241209)\n"
-            '  (generator "JLCImport")\n'
-            '  (generator_version "1.0")\n' + sym_content + ")\n"
-        )
+        sym_lib = "(kicad_symbol_lib\n"
+        sym_lib += f"  (version {symbol_format_version(kicad_version)})\n"
+        sym_lib += '  (generator "JLCImport")\n'
+        if has_generator_version(kicad_version):
+            sym_lib += '  (generator_version "1.0")\n'
+        sym_lib += sym_content + ")\n"
         with open(sym_path, "w") as f:
             f.write(sym_lib)
         log(f"  Saved: {sym_path}")
@@ -199,6 +206,7 @@ def _import_to_library(
     sym_content,
     title,
     log,
+    kicad_version,
 ):
     """Import into KiCad library structure with lib-table updates."""
     log(f"Destination: {lib_dir}")
@@ -243,6 +251,7 @@ def _import_to_library(
         model_path=model_path,
         model_offset=model_offset,
         model_rotation=model_rotation,
+        kicad_version=kicad_version,
     )
     fp_path = os.path.join(paths["fp_dir"], f"{name}.kicad_mod")
     fp_saved = save_footprint(paths["fp_dir"], name, fp_content, overwrite)
@@ -253,7 +262,7 @@ def _import_to_library(
 
     # Write symbol
     if sym_content:
-        sym_added = add_symbol_to_lib(paths["sym_path"], name, sym_content, overwrite)
+        sym_added = add_symbol_to_lib(paths["sym_path"], name, sym_content, overwrite, kicad_version=kicad_version)
         if sym_added:
             log(f"  Symbol added: {paths['sym_path']}")
         else:
@@ -261,7 +270,7 @@ def _import_to_library(
 
     # Update lib tables
     if use_global:
-        update_global_lib_tables(lib_dir, lib_name)
+        update_global_lib_tables(lib_dir, lib_name, kicad_version=kicad_version)
         log("Global library tables updated.")
     else:
         newly_created = update_project_lib_tables(lib_dir, lib_name)

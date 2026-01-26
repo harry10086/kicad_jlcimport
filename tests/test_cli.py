@@ -46,6 +46,7 @@ def test_cli_import_project_writes_kicad_library(tmp_path, monkeypatch, capsys):
         global_dest=False,
         overwrite=False,
         lib_name="MyLib",
+        kicad_version=9,
     )
     cli.cmd_import(args)
 
@@ -87,7 +88,7 @@ def test_cli_import_global_does_not_require_project_dir(tmp_path, monkeypatch, c
     monkeypatch.setattr(importer, "fetch_full_component", lambda _lcsc: fake_comp)
     monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *_a, **_k: _Footprint())
     monkeypatch.setattr(importer, "write_footprint", lambda *_a, **_k: "fp\n")
-    monkeypatch.setattr(cli, "get_global_lib_dir", lambda: str(tmp_path))
+    monkeypatch.setattr(cli, "get_global_lib_dir", lambda _v=9: str(tmp_path))
     monkeypatch.setattr(importer, "update_global_lib_tables", lambda *_a, **_k: None)
 
     args = SimpleNamespace(
@@ -98,6 +99,7 @@ def test_cli_import_global_does_not_require_project_dir(tmp_path, monkeypatch, c
         global_dest=True,
         overwrite=False,
         lib_name="MyLib",
+        kicad_version=9,
     )
     cli.cmd_import(args)
 
@@ -161,6 +163,7 @@ def test_cli_import_project_skips_existing_3d_models_without_overwrite(tmp_path,
         global_dest=False,
         overwrite=False,
         lib_name="MyLib",
+        kicad_version=9,
     )
 
     cli.cmd_import(args)
@@ -173,3 +176,61 @@ def test_cli_import_project_skips_existing_3d_models_without_overwrite(tmp_path,
     assert "Skipped:" in out
     assert ".step" in out
     assert ".wrl" in out
+
+
+def test_cli_import_with_kicad_v8(tmp_path, monkeypatch, capsys):
+    """Test that --kicad-version 8 produces v8-format library files."""
+    import kicad_jlcimport.cli as cli
+    import kicad_jlcimport.importer as importer
+
+    fake_comp = {
+        "title": "TestPart",
+        "prefix": "U",
+        "description": "desc",
+        "datasheet": "",
+        "manufacturer": "",
+        "manufacturer_part": "",
+        "footprint_data": {"dataStr": {"shape": ""}},
+        "fp_origin_x": 0,
+        "fp_origin_y": 0,
+        "symbol_data_list": [{"dataStr": {"shape": ""}}],
+        "sym_origin_x": 0,
+        "sym_origin_y": 0,
+    }
+
+    class _Pad:
+        layer = "1"
+
+    class _Footprint:
+        pads = [_Pad()]
+        tracks = []
+        model = None
+
+    class _Symbol:
+        pins = [object()]
+        rectangles = []
+
+    monkeypatch.setattr(importer, "fetch_full_component", lambda _lcsc: fake_comp)
+    monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *_a, **_k: _Footprint())
+    monkeypatch.setattr(importer, "parse_symbol_shapes", lambda *_a, **_k: _Symbol())
+    monkeypatch.setattr(importer, "write_footprint", lambda *_a, **_k: "fp\n")
+    monkeypatch.setattr(importer, "write_symbol", lambda *_a, **_k: "sym\n")
+
+    args = SimpleNamespace(
+        part="C123",
+        show=None,
+        output=None,
+        project=str(tmp_path),
+        global_dest=False,
+        overwrite=False,
+        lib_name="MyLib",
+        kicad_version=8,
+    )
+    cli.cmd_import(args)
+
+    # Verify the symbol library was created with v8 format
+    sym_path = tmp_path / "MyLib.kicad_sym"
+    assert sym_path.exists()
+    sym_text = sym_path.read_text()
+    assert "(version 20231120)" in sym_text
+    assert "generator_version" not in sym_text

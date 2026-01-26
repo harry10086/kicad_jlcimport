@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from kicad_jlcimport.api import APIError, filter_by_min_stock, filter_by_type, search_components, validate_lcsc_id
 from kicad_jlcimport.importer import import_component
+from kicad_jlcimport.kicad_version import DEFAULT_KICAD_VERSION, SUPPORTED_VERSIONS
 from kicad_jlcimport.library import get_global_lib_dir, load_config
 
 
@@ -95,6 +96,7 @@ def cmd_import(args):
         return
 
     lib_name = args.lib_name
+    kicad_version = args.kicad_version
 
     def log(msg):
         print(f"  {msg}")
@@ -112,9 +114,10 @@ def cmd_import(args):
                 overwrite=args.overwrite,
                 use_global=False,
                 log=log,
+                kicad_version=kicad_version,
             )
         elif getattr(args, "global_dest", False):
-            lib_dir = get_global_lib_dir()
+            lib_dir = get_global_lib_dir(kicad_version)
             result = import_component(
                 lcsc_id,
                 lib_dir,
@@ -122,6 +125,7 @@ def cmd_import(args):
                 overwrite=args.overwrite,
                 use_global=True,
                 log=log,
+                kicad_version=kicad_version,
             )
         elif args.output:
             result = import_component(
@@ -130,6 +134,7 @@ def cmd_import(args):
                 lib_name,
                 export_only=True,
                 log=log,
+                kicad_version=kicad_version,
             )
         else:
             # No destination: fetch, parse, and show summary without writing
@@ -142,6 +147,7 @@ def cmd_import(args):
                     lib_name,
                     export_only=True,
                     log=log,
+                    kicad_version=kicad_version,
                 )
             if not args.show:
                 fp_content = result["fp_content"]
@@ -186,6 +192,7 @@ examples:
   %(prog)s import C427602 -o ./output
   %(prog)s import C427602 -p /path/to/project
   %(prog)s import C427602 --global
+  %(prog)s import C427602 -o ./output --kicad-version 8
 """,
     )
 
@@ -221,6 +228,13 @@ examples:
         "--lib-name",
         default=load_config().get("lib_name", "JLCImport"),
         help="Library name (default: from config or 'JLCImport')",
+    )
+    ip.add_argument(
+        "--kicad-version",
+        type=int,
+        choices=sorted(SUPPORTED_VERSIONS),
+        default=DEFAULT_KICAD_VERSION,
+        help=f"Target KiCad version (default: {DEFAULT_KICAD_VERSION})",
     )
     ip.set_defaults(func=cmd_import)
 

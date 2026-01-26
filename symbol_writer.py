@@ -1,10 +1,11 @@
-"""Generate KiCad 9 .kicad_sym symbol blocks."""
+"""Generate KiCad .kicad_sym symbol blocks (v8 and v9)."""
 
 from typing import List
 
 from ._kicad_format import escape_sexpr as _escape
 from ._kicad_format import fmt_float as _fmt
 from .ee_types import EESymbol
+from .kicad_version import DEFAULT_KICAD_VERSION, has_generator_version, symbol_format_version
 from .parser import compute_arc_midpoint
 
 
@@ -21,7 +22,7 @@ def write_symbol(
     unit_index: int = 0,
     total_units: int = 1,
 ) -> str:
-    """Generate a complete (symbol ...) block for KiCad 9.
+    """Generate a complete (symbol ...) block.
 
     For multi-unit components, call once per unit with appropriate unit_index.
     If unit_index == 0 and total_units == 1, generates a single-unit symbol.
@@ -155,14 +156,18 @@ def write_symbol(
     return "\n".join(lines) + "\n"
 
 
-def write_symbol_library(symbols_content: List[str]) -> str:
+def write_symbol_library(
+    symbols_content: List[str],
+    kicad_version: int = DEFAULT_KICAD_VERSION,
+) -> str:
     """Wrap symbol blocks in a complete library file."""
     lines = [
         "(kicad_symbol_lib",
-        "  (version 20241209)",
+        f"  (version {symbol_format_version(kicad_version)})",
         '  (generator "JLCImport")',
-        '  (generator_version "1.0")',
     ]
+    if has_generator_version(kicad_version):
+        lines.append('  (generator_version "1.0")')
     for sym in symbols_content:
         lines.append(sym)
     lines.append(")")

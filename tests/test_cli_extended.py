@@ -310,6 +310,7 @@ class TestCmdImport:
             global_dest=False,
             overwrite=False,
             lib_name="Test",
+            kicad_version=9,
         )
         cli.cmd_import(args)
         out = capsys.readouterr().out
@@ -327,6 +328,7 @@ class TestCmdImport:
             global_dest=False,
             overwrite=False,
             lib_name="Test",
+            kicad_version=9,
         )
         cli.cmd_import(args)
         out = capsys.readouterr().out
@@ -371,6 +373,7 @@ class TestCmdImport:
             global_dest=False,
             overwrite=False,
             lib_name="MyLib",
+            kicad_version=9,
         )
         cli.cmd_import(args)
         out = capsys.readouterr().out
@@ -415,6 +418,7 @@ class TestCmdImport:
             global_dest=False,
             overwrite=False,
             lib_name="MyLib",
+            kicad_version=9,
         )
         cli.cmd_import(args)
         out = capsys.readouterr().out
@@ -460,6 +464,7 @@ class TestCmdImport:
             global_dest=False,
             overwrite=False,
             lib_name="MyLib",
+            kicad_version=9,
         )
         cli.cmd_import(args)
         out = capsys.readouterr().out
@@ -509,6 +514,7 @@ class TestCmdImport:
             global_dest=False,
             overwrite=False,
             lib_name="MyLib",
+            kicad_version=9,
         )
         cli.cmd_import(args)
         out = capsys.readouterr().out
@@ -558,6 +564,7 @@ class TestCmdImport:
             global_dest=False,
             overwrite=False,
             lib_name="MyLib",
+            kicad_version=9,
         )
         cli.cmd_import(args)
         out = capsys.readouterr().out
@@ -602,6 +609,7 @@ class TestCmdImport:
             global_dest=False,
             overwrite=False,
             lib_name="MyLib",
+            kicad_version=9,
         )
         cli.cmd_import(args)
         out = capsys.readouterr().out
@@ -624,6 +632,7 @@ class TestCmdImport:
             global_dest=False,
             overwrite=False,
             lib_name="MyLib",
+            kicad_version=9,
         )
         cli.cmd_import(args)
         out = capsys.readouterr().out
