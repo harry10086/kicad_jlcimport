@@ -4,7 +4,7 @@ This document describes how JLCImport works: the system architecture, data flow,
 
 ## Overview
 
-JLCImport bridges the JLCPCB/LCSC component catalog with KiCad 9. It fetches component data from EasyEDA's public APIs, parses their proprietary shape format, and writes native KiCad file formats (`.kicad_sym`, `.kicad_mod`, `.step`, `.wrl`). The plugin runs entirely within KiCad's bundled Python environment with no external dependencies. A standalone TUI provides the same functionality in the terminal.
+JLCImport bridges the JLCPCB/LCSC component catalog with KiCad 8 and 9. It fetches component data from EasyEDA's public APIs, parses their proprietary shape format, and writes native KiCad file formats (`.kicad_sym`, `.kicad_mod`, `.step`, `.wrl`). The plugin auto-detects the running KiCad version; the standalone CLI, GUI, and TUI allow selecting the target version. The plugin runs entirely within KiCad's bundled Python environment with no external dependencies. A standalone TUI provides the same functionality in the terminal.
 
 ## Architecture Layers
 
@@ -45,8 +45,8 @@ JLCImport bridges the JLCPCB/LCSC component catalog with KiCad 9. It fetches com
 
 ### Format Writers
 
-- **`symbol_writer.py`** — Generates KiCad 9 symbol blocks in S-expression format. Writes properties (Reference, Value, Footprint, Datasheet, LCSC part number) and graphics (rectangles, circles, polylines, arcs, pins).
-- **`footprint_writer.py`** — Generates KiCad 9 footprint files in S-expression format. Writes pads, tracks, arcs, circles, holes, zones, and 3D model references. Auto-detects SMD vs through-hole placement.
+- **`symbol_writer.py`** — Generates KiCad symbol blocks in S-expression format. Writes properties (Reference, Value, Footprint, Datasheet, LCSC part number) and graphics (rectangles, circles, polylines, arcs, pins). Output format adapts to the selected KiCad version.
+- **`footprint_writer.py`** — Generates KiCad footprint files in S-expression format. Writes pads, tracks, arcs, circles, holes, zones, and 3D model references. Auto-detects SMD vs through-hole placement. Output format adapts to the selected KiCad version.
 
 ### File Management
 
@@ -55,6 +55,7 @@ JLCImport bridges the JLCPCB/LCSC component catalog with KiCad 9. It fetches com
 ### Utilities
 
 - **`ee_types.py`** — Dataclasses representing parsed EasyEDA primitives: pads, tracks, arcs, pins, polygons, etc. These are the intermediate representation between parsing and writing.
+- **`kicad_version.py`** — Central version management. Defines supported KiCad versions (8, 9), format version constants, feature flags (`has_generator_version`, `has_embedded_fonts`), and directory name mapping. Auto-detection from `pcbnew` for plugin use; explicit selection for standalone tools.
 - **`_kicad_format.py`** — Small helpers for float formatting, S-expression string escaping, and UUID generation.
 
 ## Data Flow
@@ -194,11 +195,16 @@ Tests live in `tests/` and cover each module independently:
 tests/
 ├── test_api.py              # LCSC ID validation, SSRF protection
 ├── test_parser.py           # Shape parsing, coordinate math
-├── test_footprint_writer.py # Footprint S-expression output
-├── test_symbol_writer.py    # Symbol S-expression output
+├── test_footprint_writer.py # Footprint S-expression output, v8/v9 versions
+├── test_symbol_writer.py    # Symbol S-expression output, v8/v9 versions
 ├── test_model3d.py          # 3D model transforms
 ├── test_kicad_format.py     # Float formatting, UUID generation
-└── test_library.py          # File I/O, library table management
+├── test_kicad_version.py    # Version constants, feature flags, detection
+├── test_library.py          # File I/O, library table management
+├── test_library_extended.py # Global paths, config dirs, version-aware paths
+├── test_cli.py              # CLI import/search commands
+├── test_cli_extended.py     # CLI edge cases, filters, output formats
+└── test_importer.py         # Component import orchestration
 ```
 
 Run with:

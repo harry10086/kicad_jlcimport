@@ -1,6 +1,6 @@
 # JLCImport
 
-A KiCad 9 Action Plugin that imports symbols, footprints, and 3D models directly from LCSC/JLCPCB into your KiCad project or global library.
+A KiCad 8/9 Action Plugin that imports symbols, footprints, and 3D models directly from LCSC/JLCPCB into your KiCad project or global library.
 
 ![Search and details](images/search_results.png)
 
@@ -26,11 +26,11 @@ A KiCad 9 Action Plugin that imports symbols, footprints, and 3D models directly
 
 | OS | Path |
 |----|------|
-| macOS | `~/Documents/KiCad/9.0/scripting/plugins/` |
-| Linux | `~/.local/share/kicad/9.0/scripting/plugins/` |
-| Windows | `%APPDATA%\kicad\9.0\scripting\plugins\` |
+| macOS | `~/Documents/KiCad/<version>/scripting/plugins/` |
+| Linux | `~/.local/share/kicad/<version>/scripting/plugins/` |
+| Windows | `%APPDATA%\kicad\<version>\scripting\plugins\` |
 
-> Replace `9.0` with your KiCad version if different.
+> Replace `<version>` with `8.0` or `9.0` depending on your KiCad installation.
 
 ### Option 1: Symlink (recommended for development)
 
@@ -109,6 +109,9 @@ python3 cli.py import C427602 -p /path/to/kicad/project
 # Import into KiCad's global 3rd-party library (updates global lib tables)
 python3 cli.py import C427602 --global
 
+# Import targeting KiCad 8 format and library paths
+python3 cli.py import C427602 --global --kicad-version 8
+
 # Re-import a component, overwriting existing symbol/footprint/3D models
 python3 cli.py import C427602 -p /path/to/kicad/project --overwrite
 ```
@@ -129,9 +132,12 @@ python3 gui_entry.py -p /path/to/kicad/project
 
 # Global library only (skip directory picker)
 python3 gui_entry.py --global
+
+# Target KiCad 8 format and library paths
+python3 gui_entry.py --kicad-version 8
 ```
 
-When run without arguments, a directory picker dialog lets you select your KiCad project folder. Cancel to use the global library only.
+When run without arguments, a directory picker dialog lets you select your KiCad project folder. Cancel to use the global library only. The KiCad version can also be changed from the dropdown in the import section.
 
 ### TUI
 
@@ -148,6 +154,9 @@ python3 -m tui -p /path/to/kicad/project
 
 # Run without project (global library only)
 python3 -m tui
+
+# Target KiCad 8 format and library paths
+python3 -m tui --kicad-version 8
 ```
 
 Features:
@@ -174,10 +183,10 @@ Currently stores the library name preference. Shared between the plugin, TUI, an
 
 ## How It Works
 
-JLCImport fetches component data from the EasyEDA/LCSC API, parses the proprietary shape format, and converts it to KiCad 9 file formats:
+JLCImport fetches component data from the EasyEDA/LCSC API, parses the proprietary shape format, and converts it to KiCad file formats:
 
-- **Symbols** → `.kicad_sym` (version 20241209)
-- **Footprints** → `.kicad_mod` (version 20241229)
+- **Symbols** → `.kicad_sym` (version 20231120 for KiCad 8, 20241209 for KiCad 9)
+- **Footprints** → `.kicad_mod` (version 20240108 for KiCad 8, 20241229 for KiCad 9)
 - **3D Models** → `.step` and `.wrl`
 
 The plugin automatically creates and updates `sym-lib-table` and `fp-lib-table` entries so imported parts are immediately available in your schematic and PCB editors.
@@ -186,7 +195,7 @@ For a detailed look at the architecture, data flow, module responsibilities, and
 
 ## Requirements
 
-- KiCad 9.0+
+- KiCad 8.0+
 - Python 3 (bundled with KiCad)
 - Internet connection
 
