@@ -1,30 +1,64 @@
 """EasyEDA/LCSC HTTP client using only urllib."""
 
 import json
+import logging
+import os
 import re
 import ssl
 import urllib.request
+import warnings
 from typing import Any, Dict, List, Optional
 
+logger = logging.getLogger(__name__)
 
-def _make_ssl_contexts():
-    """Create verified and unverified SSL contexts.
+_CACERTS_PEM = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cacerts.pem")
 
-    Returns (verified_ctx, unverified_ctx). The verified context is preferred;
-    the unverified context is the fallback for KiCad's bundled Python where
-    certificate stores may be missing or incomplete.
+
+def _make_ssl_context():
+    """Create a verified SSL context from the best available CA source.
+
+    Tries in order:
+    1. Bundled cacerts.pem (endpoint-specific root CAs, works everywhere)
+    2. certifi package (Mozilla's CA bundle)
+    3. System certificate store (may be incomplete in KiCad's bundled Python)
+
+    Returns None only if no certificate source is usable.
     """
+    # 1. Bundled endpoint-specific CAs — preferred, works in KiCad's Python
+    if os.path.isfile(_CACERTS_PEM):
+        try:
+            ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+            ctx.load_verify_locations(cafile=_CACERTS_PEM)
+            logger.debug("TLS: using bundled cacerts.pem")
+            return ctx
+        except Exception:
+            logger.debug("TLS: cacerts.pem exists but failed to load", exc_info=True)
+
+    # 2. certifi — good cross-platform fallback
     try:
-        verified = ssl.create_default_context()
+        import certifi
+
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        ctx.load_verify_locations(cafile=certifi.where())
+        logger.debug("TLS: using certifi CA bundle")
+        return ctx
+    except ImportError:
+        pass
     except Exception:
-        verified = None
-    unverified = ssl._create_unverified_context()
-    return verified, unverified
+        logger.debug("TLS: certifi available but failed to load", exc_info=True)
+
+    # 3. System certificate store
+    try:
+        ctx = ssl.create_default_context()
+        logger.debug("TLS: using system certificate store")
+        return ctx
+    except Exception:
+        logger.debug("TLS: system certificate store unavailable", exc_info=True)
+
+    return None
 
 
-_SSL_VERIFIED, _SSL_UNVERIFIED = _make_ssl_contexts()
-# Tracks whether we've already fallen back to unverified for this session
-_ssl_use_unverified = False
+_SSL_CTX = _make_ssl_context()
 
 
 def validate_lcsc_id(lcsc_id: str) -> str:
@@ -57,24 +91,21 @@ class APIError(Exception):
 
 
 def _urlopen(req, timeout=30):
-    """Open a URL with SSL fallback.
+    """Open a URL with certificate verification.
 
-    Tries verified SSL first. If that fails with an SSL-related error,
-    falls back to unverified SSL for the remainder of the session
-    (common with KiCad's bundled Python on macOS/Windows).
+    Uses the best available verified SSL context (bundled CAs → certifi →
+    system store).  Falls back to unverified HTTPS **only** when no CA source
+    could be loaded at all, and emits a warning each time this happens.
     """
-    global _ssl_use_unverified
-    if not _ssl_use_unverified and _SSL_VERIFIED is not None:
-        try:
-            return urllib.request.urlopen(req, timeout=timeout, context=_SSL_VERIFIED)
-        except (urllib.error.URLError, ssl.SSLError, OSError) as e:
-            # Check if this is SSL-related
-            reason = getattr(e, "reason", e)
-            if isinstance(reason, (ssl.SSLError, OSError)) or "ssl" in str(e).lower():
-                _ssl_use_unverified = True
-            else:
-                raise
-    return urllib.request.urlopen(req, timeout=timeout, context=_SSL_UNVERIFIED)
+    if _SSL_CTX is not None:
+        return urllib.request.urlopen(req, timeout=timeout, context=_SSL_CTX)
+
+    warnings.warn(
+        "No TLS certificate source available — using unverified HTTPS. "
+        "Run 'python -m kicad_jlcimport.fetch_cacerts' to fix this.",
+        stacklevel=2,
+    )
+    return urllib.request.urlopen(req, timeout=timeout, context=ssl._create_unverified_context())
 
 
 def _get_json(url: str) -> Any:
