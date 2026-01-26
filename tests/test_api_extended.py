@@ -1,6 +1,7 @@
 """Extended tests for api.py to improve coverage."""
 
 import json
+import ssl
 import urllib.error
 from unittest.mock import MagicMock, patch
 
@@ -10,50 +11,93 @@ from kicad_jlcimport import api
 from kicad_jlcimport.api import APIError
 
 
-class TestMakeSslContexts:
-    """Tests for _make_ssl_contexts."""
+class TestMakeSslContext:
+    """Tests for _make_ssl_context."""
 
-    def test_creates_both_contexts(self):
-        # The function is called at module import, so just verify the module globals
-        # _SSL_VERIFIED might be None if SSL is broken, _SSL_UNVERIFIED should exist
-        assert api._SSL_UNVERIFIED is not None
+    def test_creates_verified_context(self):
+        # The function is called at module import; verify the global is usable
+        assert api._SSL_CTX is not None
+        assert api._SSL_CTX.check_hostname is True
+        assert api._SSL_CTX.verify_mode == ssl.CERT_REQUIRED
+
+    def test_prefers_bundled_cacerts(self, monkeypatch, tmp_path):
+        """When cacerts.pem exists and is valid, it should be used."""
+        import os
+
+        # Use the project's own cacerts.pem as a known-good CA bundle
+        project_pem = os.path.join(os.path.dirname(os.path.dirname(__file__)), "cacerts.pem")
+        pem = tmp_path / "cacerts.pem"
+        pem.write_text(open(project_pem).read())
+        monkeypatch.setattr(api, "_CACERTS_PEM", str(pem))
+
+        ctx = api._make_ssl_context()
+        assert ctx is not None
+        assert ctx.check_hostname is True
+
+    def test_falls_back_to_certifi(self, monkeypatch):
+        """When no cacerts.pem exists, certifi should be tried."""
+        monkeypatch.setattr(api, "_CACERTS_PEM", "/nonexistent/cacerts.pem")
+        ctx = api._make_ssl_context()
+        # certifi is installed in the test environment, so this should succeed
+        assert ctx is not None
+        assert ctx.verify_mode == ssl.CERT_REQUIRED
+
+    def test_returns_none_when_nothing_available(self, monkeypatch):
+        """When all CA sources fail, returns None."""
+        monkeypatch.setattr(api, "_CACERTS_PEM", "/nonexistent/cacerts.pem")
+        # Block certifi import
+        import builtins
+
+        real_import = builtins.__import__
+
+        def mock_import(name, *args, **kwargs):
+            if name == "certifi":
+                raise ImportError("mocked")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", mock_import)
+        # Block system store
+        monkeypatch.setattr(ssl, "create_default_context", lambda: (_ for _ in ()).throw(OSError("mocked")))
+
+        ctx = api._make_ssl_context()
+        assert ctx is None
 
 
 class TestUrlopen:
     """Tests for _urlopen function."""
 
-    def test_urlopen_uses_verified_context_first(self, monkeypatch):
-        # Reset the global
-        monkeypatch.setattr(api, "_ssl_use_unverified", False)
-
+    def test_urlopen_uses_verified_context(self, monkeypatch):
         mock_response = MagicMock()
-        mock_response.__enter__ = MagicMock(return_value=mock_response)
-        mock_response.__exit__ = MagicMock(return_value=False)
+        # Ensure a verified context is set
+        monkeypatch.setattr(api, "_SSL_CTX", ssl.create_default_context())
 
         with patch("urllib.request.urlopen", return_value=mock_response) as mock_urlopen:
             api._urlopen("https://example.com", timeout=10)
-            # Should be called with _SSL_VERIFIED context if available
             assert mock_urlopen.called
+            _, kwargs = mock_urlopen.call_args
+            assert kwargs["context"].check_hostname is True
 
-    def test_urlopen_falls_back_on_ssl_error(self, monkeypatch):
-        import ssl
+    def test_urlopen_warns_when_no_context(self, monkeypatch):
+        monkeypatch.setattr(api, "_SSL_CTX", None)
 
-        monkeypatch.setattr(api, "_ssl_use_unverified", False)
+        mock_response = MagicMock()
+        with patch("urllib.request.urlopen", return_value=mock_response):
+            with pytest.warns(UserWarning, match="No TLS certificate source"):
+                api._urlopen("https://example.com", timeout=10)
 
-        def raise_ssl_error(*args, **kwargs):
-            raise ssl.SSLError("certificate verify failed")
+    def test_urlopen_unverified_when_no_context(self, monkeypatch):
+        monkeypatch.setattr(api, "_SSL_CTX", None)
 
-        call_count = [0]
+        mock_response = MagicMock()
+        with patch("urllib.request.urlopen", return_value=mock_response) as mock_urlopen:
+            import warnings
 
-        def mock_urlopen(*args, **kwargs):
-            call_count[0] += 1
-            if call_count[0] == 1:
-                raise ssl.SSLError("certificate verify failed")
-            return MagicMock()
-
-        with patch("urllib.request.urlopen", side_effect=mock_urlopen):
-            api._urlopen("https://example.com", timeout=10)
-            assert api._ssl_use_unverified is True
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                api._urlopen("https://example.com", timeout=10)
+            _, kwargs = mock_urlopen.call_args
+            # Should use an unverified context as last resort
+            assert kwargs["context"].check_hostname is False
 
 
 class TestGetJson:
@@ -450,3 +494,87 @@ class TestFetchProductImageExtended:
         with patch.object(api, "_urlopen", mock_urlopen):
             result = api.fetch_product_image("https://jlcpcb.com/product/C123")
             assert result is None
+
+
+class TestSSLCertError:
+    """Tests for SSLCertError and the allow_unverified_ssl mechanism."""
+
+    def test_ssl_cert_error_is_api_error_subclass(self):
+        assert issubclass(api.SSLCertError, api.APIError)
+
+    def test_ssl_cert_error_caught_by_api_error_handler(self):
+        err = api.SSLCertError("cert failed")
+        with pytest.raises(APIError):
+            raise err
+
+    def test_urlopen_raises_ssl_cert_error_on_verification_failure(self, monkeypatch):
+        """_urlopen raises SSLCertError when the cert fails verification."""
+        monkeypatch.setattr(api, "_SSL_CTX", ssl.create_default_context())
+        monkeypatch.setattr(api, "_allow_unverified", False)
+
+        cert_err = ssl.SSLCertVerificationError("certificate verify failed")
+        url_err = urllib.error.URLError(cert_err)
+
+        with patch("urllib.request.urlopen", side_effect=url_err):
+            with pytest.raises(api.SSLCertError, match="TLS certificate verification failed"):
+                api._urlopen("https://example.com", timeout=10)
+
+    def test_urlopen_reraises_non_cert_url_error(self, monkeypatch):
+        """_urlopen re-raises URLError normally for non-cert failures."""
+        monkeypatch.setattr(api, "_SSL_CTX", ssl.create_default_context())
+        monkeypatch.setattr(api, "_allow_unverified", False)
+
+        url_err = urllib.error.URLError("Connection refused")
+
+        with patch("urllib.request.urlopen", side_effect=url_err):
+            with pytest.raises(urllib.error.URLError, match="Connection refused"):
+                api._urlopen("https://example.com", timeout=10)
+
+    def test_allow_unverified_ssl_enables_unverified_context(self, monkeypatch):
+        """After allow_unverified_ssl(), _urlopen uses an unverified context."""
+        monkeypatch.setattr(api, "_SSL_CTX", ssl.create_default_context())
+        monkeypatch.setattr(api, "_allow_unverified", False)
+
+        api.allow_unverified_ssl()
+        assert api._allow_unverified is True
+
+        mock_response = MagicMock()
+        with patch("urllib.request.urlopen", return_value=mock_response) as mock_urlopen:
+            api._urlopen("https://example.com", timeout=10)
+            _, kwargs = mock_urlopen.call_args
+            assert kwargs["context"].check_hostname is False
+
+        # Reset for other tests
+        monkeypatch.setattr(api, "_allow_unverified", False)
+
+    def test_full_flow_cert_error_then_allow_retry(self, monkeypatch):
+        """Full flow: cert error → allow_unverified → retry succeeds."""
+        monkeypatch.setattr(api, "_SSL_CTX", ssl.create_default_context())
+        monkeypatch.setattr(api, "_allow_unverified", False)
+
+        cert_err = ssl.SSLCertVerificationError("certificate verify failed")
+        url_err = urllib.error.URLError(cert_err)
+        mock_response = MagicMock()
+
+        call_count = [0]
+
+        def mock_urlopen(*args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise url_err
+            return mock_response
+
+        with patch("urllib.request.urlopen", side_effect=mock_urlopen):
+            # First call fails with SSLCertError
+            with pytest.raises(api.SSLCertError):
+                api._urlopen("https://example.com", timeout=10)
+
+            # User or UI enables unverified SSL
+            api.allow_unverified_ssl()
+
+            # Second call succeeds
+            result = api._urlopen("https://example.com", timeout=10)
+            assert result is mock_response
+
+        # Reset
+        monkeypatch.setattr(api, "_allow_unverified", False)

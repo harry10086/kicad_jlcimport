@@ -9,7 +9,16 @@ import webbrowser
 
 import wx
 
-from .api import APIError, fetch_product_image, filter_by_min_stock, filter_by_type, search_components, validate_lcsc_id
+from . import api as _api_module
+from .api import (
+    APIError,
+    SSLCertError,
+    fetch_product_image,
+    filter_by_min_stock,
+    filter_by_type,
+    search_components,
+    validate_lcsc_id,
+)
 from .categories import CATEGORIES
 from .importer import import_component
 from .kicad_version import DEFAULT_KICAD_VERSION, SUPPORTED_VERSIONS
@@ -27,6 +36,7 @@ class JLCImportDialog(wx.Dialog):
         self._search_request_id = 0
         self._image_request_id = 0
         self._gallery_request_id = 0
+        self._ssl_warning_shown = False
         self._init_ui()
         self.Centre()
 
@@ -332,6 +342,26 @@ class JLCImportDialog(wx.Dialog):
         self.status_text.AppendText(msg + "\n")
         wx.Yield()
 
+    def _handle_ssl_cert_error(self):
+        """Show a one-time SSL warning and enable unverified HTTPS."""
+        if not self._ssl_warning_shown:
+            self._ssl_warning_shown = True
+            wx.CallAfter(
+                wx.MessageBox,
+                "TLS certificate verification failed.\n\n"
+                "A proxy or firewall may be intercepting HTTPS traffic. "
+                "The session will continue without certificate verification.\n\n"
+                "Consider downloading the latest version of this plugin which "
+                "may include updated CA certificates.",
+                "TLS Certificate Warning",
+                wx.OK | wx.ICON_WARNING,
+            )
+            wx.CallAfter(
+                self._log,
+                "TLS certificate verification disabled for this session.",
+            )
+        _api_module.allow_unverified_ssl()
+
     def _on_search_text_changed(self, event):
         """Update ComboBox choices as user types."""
         if getattr(self, "_updating_choices", False):
@@ -409,7 +439,11 @@ class JLCImportDialog(wx.Dialog):
     def _fetch_search_results(self, keyword, request_id):
         """Background thread: fetch search results from API."""
         try:
-            result = search_components(keyword, page_size=500)
+            try:
+                result = search_components(keyword, page_size=500)
+            except SSLCertError:
+                self._handle_ssl_cert_error()
+                result = search_components(keyword, page_size=500)
             wx.CallAfter(self._on_search_complete, result, request_id)
         except APIError as e:
             wx.CallAfter(self._on_search_error, f"Search error: {e}", request_id)
@@ -836,7 +870,11 @@ class JLCImportDialog(wx.Dialog):
     def _fetch_gallery_image(self, lcsc_url, request_id):
         """Fetch full-size image for gallery."""
         try:
-            img_data = fetch_product_image(lcsc_url)
+            try:
+                img_data = fetch_product_image(lcsc_url)
+            except SSLCertError:
+                self._handle_ssl_cert_error()
+                img_data = fetch_product_image(lcsc_url)
         except Exception:
             img_data = None
         if self._gallery_request_id == request_id:
@@ -906,7 +944,11 @@ class JLCImportDialog(wx.Dialog):
     def _fetch_image(self, lcsc_url, request_id):
         """Fetch product image in background thread."""
         try:
-            img_data = fetch_product_image(lcsc_url)
+            try:
+                img_data = fetch_product_image(lcsc_url)
+            except SSLCertError:
+                self._handle_ssl_cert_error()
+                img_data = fetch_product_image(lcsc_url)
         except Exception:
             img_data = None
         if self._image_request_id == request_id:
@@ -966,7 +1008,11 @@ class JLCImportDialog(wx.Dialog):
         self.status_text.Clear()
 
         try:
-            self._do_import(lcsc_id, lib_dir, overwrite, use_global)
+            try:
+                self._do_import(lcsc_id, lib_dir, overwrite, use_global)
+            except SSLCertError:
+                self._handle_ssl_cert_error()
+                self._do_import(lcsc_id, lib_dir, overwrite, use_global)
         except APIError as e:
             self._log(f"API Error: {e}")
         except Exception as e:
