@@ -22,11 +22,12 @@ class TestMakeSslContext:
 
     def test_prefers_bundled_cacerts(self, monkeypatch, tmp_path):
         """When cacerts.pem exists and is valid, it should be used."""
-        import certifi
+        import os
 
+        # Use the project's own cacerts.pem as a known-good CA bundle
+        project_pem = os.path.join(os.path.dirname(os.path.dirname(__file__)), "cacerts.pem")
         pem = tmp_path / "cacerts.pem"
-        # Copy a known-good CA bundle so load_verify_locations succeeds
-        pem.write_text(open(certifi.where()).read())
+        pem.write_text(open(project_pem).read())
         monkeypatch.setattr(api, "_CACERTS_PEM", str(pem))
 
         ctx = api._make_ssl_context()
