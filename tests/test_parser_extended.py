@@ -467,6 +467,18 @@ class TestParseSymbolShapesExtended:
         assert len(sym.circles) == 1
         assert sym.circles[0].radius == mil_to_mm(50)
 
+    def test_parse_text_font_size_conversion(self):
+        """T~ text font size in pt must be converted to mm (× 0.3528)."""
+        # Format: T~type~x~y~rotation~color~font~size~?~?~anchor~?~text~...
+        shapes = ["T~L~400~300~0~#0000FF~Tahoma~10pt~0.1~~middle~comment~Hello~1~middle~gge1~0~"]
+        sym = parse_symbol_shapes(shapes, 400, 300)
+        assert len(sym.texts) == 1
+        # 10pt * 0.3528 = 3.528 mm
+        expected = 10.0 * 0.3528
+        assert abs(sym.texts[0].font_size - expected) < 0.01, (
+            f"Font size should be {expected} mm but got {sym.texts[0].font_size}"
+        )
+
 
 class TestComputeArcMidpointExtended:
     """Extended tests for compute_arc_midpoint."""
