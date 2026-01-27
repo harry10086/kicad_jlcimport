@@ -5,7 +5,7 @@ import os
 import re
 import sys
 
-from .kicad_version import DEFAULT_KICAD_VERSION, has_generator_version, symbol_format_version, version_dir_name
+from .version import DEFAULT_KICAD_VERSION, has_generator_version, symbol_format_version, version_dir_name
 
 _DEFAULT_CONFIG = {"lib_name": "JLCImport"}
 

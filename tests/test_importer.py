@@ -3,7 +3,7 @@
 import os
 
 from kicad_jlcimport import importer
-from kicad_jlcimport.ee_types import EE3DModel, EEFootprint, EEPad, EEPin, EESymbol
+from kicad_jlcimport.easyeda.ee_types import EE3DModel, EEFootprint, EEPad, EEPin, EESymbol
 
 
 class TestImportComponent:
@@ -85,10 +85,15 @@ class TestImportComponent:
         monkeypatch.setattr(importer, "fetch_full_component", lambda _: fake_comp)
         monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *a, **k: fake_fp)
         monkeypatch.setattr(importer, "write_footprint", lambda *a, **k: "(footprint TestPart)\n")
+        monkeypatch.setattr(importer, "download_step", lambda _: b"step-data")
+        monkeypatch.setattr(importer, "download_wrl_source", lambda _: None)
         monkeypatch.setattr(
             importer,
-            "download_and_save_models",
-            lambda uuid, dir, name, overwrite: (str(tmp_path / "3dmodels" / f"{name}.step"), None),
+            "save_models",
+            lambda dir, name, step_data=None, wrl_source=None: (
+                os.path.join(dir, f"{name}.step") if step_data else None,
+                None,
+            ),
         )
 
         importer.import_component(
@@ -159,20 +164,27 @@ class TestImportComponent:
         fake_comp = self._make_fake_comp(with_symbol=False, with_3d=True)
         fake_fp = self._make_fake_footprint()
 
-        def fake_download(uuid, dir, name, overwrite):
+        def fake_save(dir, name, step_data=None, wrl_source=None):
             step_path = os.path.join(dir, f"{name}.step")
             wrl_path = os.path.join(dir, f"{name}.wrl")
             os.makedirs(dir, exist_ok=True)
-            with open(step_path, "w") as f:
-                f.write("STEP")
-            with open(wrl_path, "w") as f:
-                f.write("WRL")
-            return step_path, wrl_path
+            if step_data:
+                with open(step_path, "wb") as f:
+                    f.write(step_data)
+            if wrl_source:
+                with open(wrl_path, "w") as f:
+                    f.write("WRL")
+            return (
+                step_path if step_data else None,
+                wrl_path if wrl_source else None,
+            )
 
         monkeypatch.setattr(importer, "fetch_full_component", lambda _: fake_comp)
         monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *a, **k: fake_fp)
         monkeypatch.setattr(importer, "write_footprint", lambda *a, **k: "(footprint TestPart)\n")
-        monkeypatch.setattr(importer, "download_and_save_models", fake_download)
+        monkeypatch.setattr(importer, "download_step", lambda _: b"STEP")
+        monkeypatch.setattr(importer, "download_wrl_source", lambda _: "wrl-src")
+        monkeypatch.setattr(importer, "save_models", fake_save)
 
         importer.import_component(
             "C123",
@@ -199,7 +211,10 @@ class TestImportComponent:
         (models_dir / "TestPart.step").write_text("existing")
         (models_dir / "TestPart.wrl").write_text("existing")
 
-        def fake_download(uuid, dir, name, overwrite):
+        def _should_not_download(_):
+            raise AssertionError("download should be skipped for existing files")
+
+        def fake_save(dir, name, step_data=None, wrl_source=None):
             step_path = os.path.join(dir, f"{name}.step")
             wrl_path = os.path.join(dir, f"{name}.wrl")
             return step_path, wrl_path
@@ -207,7 +222,9 @@ class TestImportComponent:
         monkeypatch.setattr(importer, "fetch_full_component", lambda _: fake_comp)
         monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *a, **k: fake_fp)
         monkeypatch.setattr(importer, "write_footprint", lambda *a, **k: "(footprint TestPart)\n")
-        monkeypatch.setattr(importer, "download_and_save_models", fake_download)
+        monkeypatch.setattr(importer, "download_step", _should_not_download)
+        monkeypatch.setattr(importer, "download_wrl_source", _should_not_download)
+        monkeypatch.setattr(importer, "save_models", fake_save)
 
         importer.import_component(
             "C123",
@@ -301,13 +318,12 @@ class TestImportComponent:
         fake_comp = self._make_fake_comp(with_symbol=False, with_3d=False)
         fake_fp = self._make_fake_footprint(with_model=True)
 
-        def fake_download(uuid, dir, name, overwrite):
-            return None, None
-
         monkeypatch.setattr(importer, "fetch_full_component", lambda _: fake_comp)
         monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *a, **k: fake_fp)
         monkeypatch.setattr(importer, "write_footprint", lambda *a, **k: "(footprint TestPart)\n")
-        monkeypatch.setattr(importer, "download_and_save_models", fake_download)
+        monkeypatch.setattr(importer, "download_step", lambda _: None)
+        monkeypatch.setattr(importer, "download_wrl_source", lambda _: None)
+        monkeypatch.setattr(importer, "save_models", lambda *a, **k: (None, None))
 
         importer.import_component(
             "C123",
@@ -347,12 +363,13 @@ class TestImportComponent:
         fake_comp = self._make_fake_comp(with_symbol=False, with_3d=True)
         fake_fp = self._make_fake_footprint()
 
-        def fake_download(uuid, dir, name, overwrite):
+        def fake_save(dir, name, step_data=None, wrl_source=None):
             step_path = os.path.join(dir, f"{name}.step")
             os.makedirs(dir, exist_ok=True)
-            with open(step_path, "w") as f:
-                f.write("STEP")
-            return step_path, None
+            if step_data:
+                with open(step_path, "wb") as f:
+                    f.write(step_data)
+            return (step_path if step_data else None, None)
 
         captured_model_path = []
 
@@ -363,7 +380,9 @@ class TestImportComponent:
         monkeypatch.setattr(importer, "fetch_full_component", lambda _: fake_comp)
         monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *a, **k: fake_fp)
         monkeypatch.setattr(importer, "write_footprint", capture_write_footprint)
-        monkeypatch.setattr(importer, "download_and_save_models", fake_download)
+        monkeypatch.setattr(importer, "download_step", lambda _: b"STEP")
+        monkeypatch.setattr(importer, "download_wrl_source", lambda _: None)
+        monkeypatch.setattr(importer, "save_models", fake_save)
         monkeypatch.setattr(importer, "update_global_lib_tables", lambda *a, **k: None)
 
         importer.import_component(

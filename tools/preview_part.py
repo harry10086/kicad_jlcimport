@@ -6,12 +6,12 @@ import subprocess
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from kicad_jlcimport.api import fetch_full_component
-from kicad_jlcimport.footprint_writer import write_footprint
-from kicad_jlcimport.parser import parse_footprint_shapes, parse_symbol_shapes
-from kicad_jlcimport.symbol_writer import write_symbol, write_symbol_library
+from kicad_jlcimport.easyeda.api import fetch_full_component
+from kicad_jlcimport.easyeda.parser import parse_footprint_shapes, parse_symbol_shapes
+from kicad_jlcimport.kicad.footprint_writer import write_footprint
+from kicad_jlcimport.kicad.symbol_writer import write_symbol, write_symbol_library
 
 
 def preview_part(part_id: str):

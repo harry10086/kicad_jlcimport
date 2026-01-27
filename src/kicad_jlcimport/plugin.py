@@ -3,7 +3,7 @@
 import pcbnew
 
 from .dialog import JLCImportDialog
-from .kicad_version import detect_kicad_version_from_pcbnew
+from .kicad.version import detect_kicad_version_from_pcbnew
 
 
 class JLCImportPlugin(pcbnew.ActionPlugin):

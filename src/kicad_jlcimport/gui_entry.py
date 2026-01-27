@@ -5,9 +5,9 @@ This module allows running JLCImport as a standalone application outside of KiCa
 It can be run directly or built into a binary with PyInstaller.
 
 Usage:
-    python gui_entry.py                    # Opens directory picker dialog
-    python gui_entry.py -p /path/to/project  # Uses specified project directory
-    python gui_entry.py --global           # Uses global library only (no project)
+    python -m kicad_jlcimport.gui                        # Opens directory picker dialog
+    python -m kicad_jlcimport.gui -p /path/to/project    # Uses specified project directory
+    python -m kicad_jlcimport.gui --global               # Uses global library only (no project)
 """
 
 import argparse
@@ -63,7 +63,7 @@ Examples:
     args = parser.parse_args()
 
     if args.insecure:
-        from kicad_jlcimport import api
+        from kicad_jlcimport.easyeda import api
 
         api.allow_unverified_ssl()
 

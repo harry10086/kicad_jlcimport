@@ -238,7 +238,7 @@ def _urlopen(req, timeout=30):
 
     warnings.warn(
         "No TLS certificate source available — using unverified HTTPS. "
-        "Run 'python -m kicad_jlcimport.fetch_cacerts' to fix this.",
+        "Run 'python -m kicad_jlcimport.easyeda.fetch_cacerts' to fix this.",
         stacklevel=2,
     )
     return urllib.request.urlopen(req, timeout=timeout, context=ssl._create_unverified_context())

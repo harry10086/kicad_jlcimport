@@ -1,35 +1,43 @@
 # Project Notes
 
+## DEVELOPMENT ENVIRONMENT
+
+All work must be done inside the project's virtual environment. Activate it before running any commands:
+
+```bash
+source install.sh
+```
+
+This creates the venv and installs dependencies on first run, or just activates the existing venv.
+
 ## BEFORE COMMITTING - MANDATORY BUILD CHECKS
 
 **NEVER COMMIT WITHOUT RUNNING ALL THREE CHECKS:**
 
 ```bash
-# Run from project root directory (/Users/joshv/git/kicad_jlcimport)
-python3 -m ruff check .
-python3 -m ruff format --check .
-python3 -m pytest tests/ -q --cov=. --cov-fail-under=80
+# Run from project root directory (venv must be active)
+ruff check .
+ruff format --check .
+pytest tests/ -q --cov=kicad_jlcimport --cov-fail-under=80
 ```
 
 ALL THREE must pass with zero errors before any commit or push.
 
-## IMPORTANT: RUNNING PYTHON IN THIS PROJECT
+## PROJECT STRUCTURE
 
-**THE PROJECT DIRECTORY IS THE PACKAGE. SET PYTHONPATH TO THE PARENT!**
+This project uses the standard **src layout**. The package source lives in `src/kicad_jlcimport/`.
 
-The `kicad_jlcimport` directory IS the package, so imports like `from kicad_jlcimport.parser import ...` require the PARENT directory in PYTHONPATH.
-
-WRONG:
-```bash
-PYTHONPATH=. python3 -c "from kicad_jlcimport.parser import ..."
 ```
-
-RIGHT:
-```bash
-cd /Users/joshv/git && PYTHONPATH=. python3 -c "from kicad_jlcimport.parser import ..."
+src/kicad_jlcimport/         # main package
+├── easyeda/                  # EasyEDA data fetching, types, and parsing
+├── kicad/                    # KiCad file generation and library management
+├── gui/                      # wxPython GUI
+├── tui/                      # Textual TUI
+├── importer.py               # import orchestration
+└── ...
+tests/                        # test suite
+tools/                        # developer utilities (not part of the package)
 ```
-
-OR use existing scripts that handle the path (like convert_testdata.py).
 
 ## FIXING TEST FAILURES
 

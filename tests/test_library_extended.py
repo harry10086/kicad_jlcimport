@@ -5,7 +5,7 @@ import os
 import sys
 from unittest.mock import MagicMock
 
-from kicad_jlcimport import library
+from kicad_jlcimport.kicad import library
 
 
 class TestConfigPath:

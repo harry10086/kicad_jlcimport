@@ -10,6 +10,7 @@ import sys
 def main():
     """Entry point for standalone wxPython GUI."""
     parser = argparse.ArgumentParser(
+        prog="jlcimport-gui",
         description="JLCImport GUI - Import JLCPCB/LCSC components into KiCad libraries",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
@@ -43,7 +44,7 @@ Examples:
     args = parser.parse_args()
 
     if args.insecure:
-        from .. import api
+        from ..easyeda import api
 
         api.allow_unverified_ssl()
 

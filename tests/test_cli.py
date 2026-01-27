@@ -111,7 +111,7 @@ def test_cli_import_global_does_not_require_project_dir(tmp_path, monkeypatch, c
 def test_cli_import_project_skips_existing_3d_models_without_overwrite(tmp_path, monkeypatch, capsys):
     import kicad_jlcimport.cli as cli
     import kicad_jlcimport.importer as importer
-    import kicad_jlcimport.model3d as model3d
+    import kicad_jlcimport.kicad.model3d as model3d
 
     fake_comp = {
         "title": "TestPart",
@@ -151,8 +151,8 @@ def test_cli_import_project_skips_existing_3d_models_without_overwrite(tmp_path,
         calls["wrl"] += 1
         return "src"
 
-    monkeypatch.setattr(model3d, "download_step", _download_step)
-    monkeypatch.setattr(model3d, "download_wrl_source", _download_wrl_source)
+    monkeypatch.setattr(importer, "download_step", _download_step)
+    monkeypatch.setattr(importer, "download_wrl_source", _download_wrl_source)
     monkeypatch.setattr(model3d, "convert_to_vrml", lambda *_a, **_k: "wrl")
 
     args = SimpleNamespace(

@@ -2,12 +2,12 @@
 
 from typing import Tuple
 
-from ._kicad_format import escape_sexpr as _escape
-from ._kicad_format import fmt_float as _fmt
-from ._kicad_format import gen_uuid as _uuid
-from .ee_types import EEFootprint
-from .kicad_version import DEFAULT_KICAD_VERSION, footprint_format_version, has_embedded_fonts, has_generator_version
-from .parser import compute_arc_midpoint
+from ..easyeda.ee_types import EEFootprint
+from ..easyeda.parser import compute_arc_midpoint
+from ._format import escape_sexpr as _escape
+from ._format import fmt_float as _fmt
+from ._format import gen_uuid as _uuid
+from .version import DEFAULT_KICAD_VERSION, footprint_format_version, has_embedded_fonts, has_generator_version
 
 
 def write_footprint(

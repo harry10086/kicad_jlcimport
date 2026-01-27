@@ -6,12 +6,12 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Add parent to path for imports
-sys.path.insert(0, str(Path(__file__).parent))
+# Add src/ to path for imports
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from kicad_jlcimport.footprint_writer import write_footprint
-from kicad_jlcimport.parser import parse_footprint_shapes, parse_symbol_shapes
-from kicad_jlcimport.symbol_writer import write_symbol, write_symbol_library
+from kicad_jlcimport.easyeda.parser import parse_footprint_shapes, parse_symbol_shapes
+from kicad_jlcimport.kicad.footprint_writer import write_footprint
+from kicad_jlcimport.kicad.symbol_writer import write_symbol, write_symbol_library
 
 
 def convert_component(part_id: str, testdata_dir: Path, output_dir: Path):

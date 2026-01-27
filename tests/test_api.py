@@ -5,7 +5,7 @@ from urllib.error import URLError
 
 import pytest
 
-from kicad_jlcimport.api import fetch_product_image, filter_by_min_stock, filter_by_type, validate_lcsc_id
+from kicad_jlcimport.easyeda.api import fetch_product_image, filter_by_min_stock, filter_by_type, validate_lcsc_id
 
 
 class TestValidateLcscId:
@@ -80,14 +80,14 @@ class TestFetchProductImageSSRF:
     def test_rejects_ftp_scheme(self):
         assert fetch_product_image("ftp://jlcpcb.com/file") is None
 
-    @patch("kicad_jlcimport.api._urlopen", side_effect=URLError("network down"))
+    @patch("kicad_jlcimport.easyeda.api._urlopen", side_effect=URLError("network down"))
     def test_allows_jlcpcb_domain(self, mock_urlopen):
         # Should pass SSRF validation and attempt the fetch (mock returns URLError)
         result = fetch_product_image("https://jlcpcb.com/product/C427602")
         assert result is None
         mock_urlopen.assert_called_once()
 
-    @patch("kicad_jlcimport.api._urlopen", side_effect=URLError("network down"))
+    @patch("kicad_jlcimport.easyeda.api._urlopen", side_effect=URLError("network down"))
     def test_allows_lcsc_domain(self, mock_urlopen):
         result = fetch_product_image("https://lcsc.com/product/C427602")
         assert result is None

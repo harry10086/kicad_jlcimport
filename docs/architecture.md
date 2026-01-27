@@ -6,24 +6,43 @@ This document describes how JLCImport works: the system architecture, data flow,
 
 JLCImport bridges the JLCPCB/LCSC component catalog with KiCad 8 and 9. It fetches component data from EasyEDA's public APIs, parses their proprietary shape format, and writes native KiCad file formats (`.kicad_sym`, `.kicad_mod`, `.step`, `.wrl`). The plugin auto-detects the running KiCad version; the standalone CLI, GUI, and TUI allow selecting the target version. The plugin runs entirely within KiCad's bundled Python environment with no external dependencies. A standalone TUI provides the same functionality in the terminal.
 
-## Architecture Layers
+## Source Layout
+
+The project uses a standard `src/` layout. The package is organized into two subpackages that separate concerns:
 
 ```
-┌─────────────────────────────────────────────────────┐
-│  User Interface                                     │
-│  (plugin.py, dialog.py, cli.py, tui/)               │  wxPython / Textual / CLI
-├─────────────────────────────────────────────────────┤
-│  Network & Orchestration (api.py)                   │  HTTP client, API calls
-├─────────────────────────────────────────────────────┤
-│  Data Processing (parser.py, model3d.py)            │  Format parsing & conversion
-├─────────────────────────────────────────────────────┤
-│  Format Writers (symbol_writer.py, footprint_writer.py) │  KiCad S-expression output
-├─────────────────────────────────────────────────────┤
-│  File Management (library.py)                       │  Library files, tables & config
-├─────────────────────────────────────────────────────┤
-│  Utilities (_kicad_format.py, ee_types.py)          │  Shared helpers & data types
-└─────────────────────────────────────────────────────┘
+src/kicad_jlcimport/
+├── easyeda/              # EasyEDA/LCSC data fetching, types, and parsing
+│   ├── api.py            #   HTTP client, search, component data, images
+│   ├── parser.py         #   Shape string → dataclass conversion
+│   └── ee_types.py       #   Dataclasses for parsed EasyEDA primitives
+├── kicad/                # KiCad file generation and library management
+│   ├── symbol_writer.py  #   .kicad_sym S-expression output
+│   ├── footprint_writer.py # .kicad_mod S-expression output
+│   ├── model3d.py        #   STEP/WRL saving, transforms, VRML conversion
+│   ├── library.py        #   Library structure and table management
+│   ├── version.py        #   KiCad version constants and feature flags
+│   └── _format.py        #   Float formatting, escaping, UUID helpers
+├── gui/                  # Standalone wxPython GUI
+├── tui/                  # Terminal UI (Textual)
+├── importer.py           # Import pipeline orchestrator
+├── cli.py                # Command-line interface
+├── dialog.py             # KiCad plugin dialog (wxPython)
+├── plugin.py             # KiCad ActionPlugin entry point
+└── categories.py         # JLCPCB category tree
 ```
+
+The `easyeda/` and `kicad/` subpackages have a clean dependency boundary: `kicad/` depends on `easyeda/` types but not vice versa, enabling future extraction of the KiCad conversion code as an independent module.
+
+## Architecture Layers
+
+The codebase is organized in layers from top to bottom:
+
+1. **User Interface** — `plugin.py`, `dialog.py`, `cli.py`, `gui/`, and `tui/` provide the entry points (wxPython, Textual, and CLI). They handle user interaction and delegate all work downward.
+2. **Orchestration** — `importer.py` coordinates the full import pipeline. All UIs call into this single module.
+3. **Two core subpackages** sit below the orchestrator, side by side:
+   - **`easyeda/`** handles all external data: HTTP requests, API response parsing, and shape-string-to-dataclass conversion.
+   - **`kicad/`** handles all output: S-expression writers, 3D model transforms, library file management, and version-specific formatting.
 
 ## Module Responsibilities
 
@@ -32,87 +51,43 @@ JLCImport bridges the JLCPCB/LCSC component catalog with KiCad 8 and 9. It fetch
 - **`plugin.py`** — KiCad ActionPlugin registration. Defines the menu entry under Tools > External Plugins > JLCImport and spawns the dialog.
 - **`dialog.py`** — wxPython dialog with search input, results list, detail panel, image gallery, import options, and status log. Long-running operations (search, import, image fetch) run in background threads to keep the UI responsive.
 - **`cli.py`** — Command-line interface with `search` and `import` subcommands for scripted or batch use outside KiCad. Supports `--lib-name` for custom library names.
+- **`gui/`** — Standalone wxPython GUI for use outside KiCad. Provides the same workflow as the plugin dialog with a directory picker for project selection.
 - **`tui/`** — Terminal UI built with Textual. Provides the same search, filter, detail, gallery, and import workflow as the plugin dialog. Supports Sixel, Kitty, iTerm2, and halfcell image rendering.
 
-### Network & Orchestration
+### Orchestration
 
-- **`api.py`** — HTTP client that talks to the JLCPCB and EasyEDA APIs. Handles search queries, component data fetching, image scraping, and 3D model downloads. Includes SSRF protection (domain whitelist) and SSL fallback for environments with certificate issues.
+- **`importer.py`** — Central import pipeline. Coordinates fetching component data from the EasyEDA API, parsing shapes, writing KiCad files, downloading 3D models, and updating library tables. Called by all user interfaces.
 
-### Data Processing
+### `easyeda/` — EasyEDA Data Fetching & Parsing
 
-- **`parser.py`** — Converts EasyEDA's proprietary shape strings into structured Python dataclasses. Handles coordinate conversion (mils to mm), layer mapping (EasyEDA layers to KiCad layers), and geometry calculations (arc midpoints, origin offsets).
-- **`model3d.py`** — Downloads STEP files and WRL source data, computes 3D model transforms (offset, rotation, scale), and converts OBJ-like mesh data to VRML 2.0 format.
+- **`easyeda/api.py`** — HTTP client that talks to the JLCPCB and EasyEDA APIs. Handles search queries, component data fetching, image scraping, and 3D model downloads. Includes SSRF protection (domain whitelist) and SSL fallback for environments with certificate issues.
+- **`easyeda/parser.py`** — Converts EasyEDA's proprietary shape strings into structured Python dataclasses. Handles coordinate conversion (mils to mm), layer mapping (EasyEDA layers to KiCad layers), and geometry calculations (arc midpoints, origin offsets).
+- **`easyeda/ee_types.py`** — Dataclasses representing parsed EasyEDA primitives: pads, tracks, arcs, pins, polygons, etc. These are the intermediate representation between parsing and writing.
 
-### Format Writers
+### `kicad/` — KiCad File Generation
 
-- **`symbol_writer.py`** — Generates KiCad symbol blocks in S-expression format. Writes properties (Reference, Value, Footprint, Datasheet, LCSC part number) and graphics (rectangles, circles, polylines, arcs, pins). Output format adapts to the selected KiCad version.
-- **`footprint_writer.py`** — Generates KiCad footprint files in S-expression format. Writes pads, tracks, arcs, circles, holes, zones, and 3D model references. Auto-detects SMD vs through-hole placement. Output format adapts to the selected KiCad version.
-
-### File Management
-
-- **`library.py`** — Manages the on-disk library structure. Creates directories, appends symbols to `.kicad_sym` files, saves `.kicad_mod` footprints, and updates `sym-lib-table` / `fp-lib-table` so KiCad can find imported parts. Handles cross-platform path differences. Also manages persistent configuration (library name preference) via `jlcimport.json`.
-
-### Utilities
-
-- **`ee_types.py`** — Dataclasses representing parsed EasyEDA primitives: pads, tracks, arcs, pins, polygons, etc. These are the intermediate representation between parsing and writing.
-- **`kicad_version.py`** — Central version management. Defines supported KiCad versions (8, 9), format version constants, feature flags (`has_generator_version`, `has_embedded_fonts`), and directory name mapping. Auto-detection from `pcbnew` for plugin use; explicit selection for standalone tools.
-- **`_kicad_format.py`** — Small helpers for float formatting, S-expression string escaping, and UUID generation.
+- **`kicad/symbol_writer.py`** — Generates KiCad symbol blocks in S-expression format. Writes properties (Reference, Value, Footprint, Datasheet, LCSC part number) and graphics (rectangles, circles, polylines, arcs, pins). Output format adapts to the selected KiCad version.
+- **`kicad/footprint_writer.py`** — Generates KiCad footprint files in S-expression format. Writes pads, tracks, arcs, circles, holes, zones, and 3D model references. Auto-detects SMD vs through-hole placement. Output format adapts to the selected KiCad version.
+- **`kicad/model3d.py`** — Computes 3D model transforms (offset, rotation, scale), saves STEP files, and converts OBJ-like mesh data to VRML 2.0 format. Downloads are handled by `importer.py` via `easyeda/api.py`.
+- **`kicad/library.py`** — Manages the on-disk library structure. Creates directories, appends symbols to `.kicad_sym` files, saves `.kicad_mod` footprints, and updates `sym-lib-table` / `fp-lib-table` so KiCad can find imported parts. Handles cross-platform path differences. Also manages persistent configuration (library name preference) via `jlcimport.json`.
+- **`kicad/version.py`** — Central version management. Defines supported KiCad versions (8, 9), format version constants, feature flags (`has_generator_version`, `has_embedded_fonts`), and directory name mapping. Auto-detection from `pcbnew` for plugin use; explicit selection for standalone tools.
+- **`kicad/_format.py`** — Small helpers for float formatting, S-expression string escaping, and UUID generation.
 
 ## Data Flow
 
 ### Search
 
-```
-User enters query
-    │
-    ▼
-api.search_components()  ───►  JLCPCB search API
-    │                              │
-    │◄─────────────────────────────┘  JSON response
-    ▼
-Display results in list (part number, description, price, stock)
-    │
-    ▼  (user clicks a result)
-api.fetch_product_image()  ───►  LCSC product page
-    │                              │
-    │◄─────────────────────────────┘  Image URL extracted from HTML
-    ▼
-Display thumbnail and part details
-```
+The user enters a query. `easyeda/api.py` sends the query to the JLCPCB search API and returns a JSON list of matching parts (part number, description, price, stock). The UI displays these in a sortable results list. When the user selects a part, `easyeda/api.py` scrapes the LCSC product page to extract a product image URL, then fetches the image for display as a thumbnail alongside part details.
 
 ### Import
 
-```
-User clicks "Import"
-    │
-    ▼
-api.fetch_component_uuids(lcsc_id)  ───►  EasyEDA SVGs API
-    │                                         │
-    │◄────────────────────────────────────────┘  List of component UUIDs
-    ▼
-api.fetch_component_data(uuid)  ───►  EasyEDA component API  (for each UUID)
-    │                                     │
-    │◄────────────────────────────────────┘  Shape data (dataStr)
-    ▼
-parser.parse_symbol_shapes()   → EESymbol dataclass
-parser.parse_footprint_shapes() → EEFootprint dataclass
-    │
-    ▼
-symbol_writer.write_symbol()     → .kicad_sym text
-footprint_writer.write_footprint() → .kicad_mod text
-    │
-    ▼
-model3d.download_and_save_models()  ───►  EasyEDA 3D model endpoints
-    │                                         │
-    │◄────────────────────────────────────────┘  STEP binary / WRL source
-    ▼
-library.add_symbol_to_lib()        → appends to <lib_name>.kicad_sym
-library.save_footprint()           → writes <lib_name>.pretty/<name>.kicad_mod
-library.update_project_lib_tables() → updates sym-lib-table & fp-lib-table
-    │
-    ▼
-Part available in KiCad schematic and PCB editors
-```
+When the user triggers an import, `importer.py` orchestrates the following steps:
+
+1. **Fetch component data** — `easyeda/api.py` calls the EasyEDA SVGs API with the LCSC part number to get component UUIDs, then fetches the shape data (`dataStr`) for each UUID from the EasyEDA component API.
+2. **Parse shapes** — `easyeda/parser.py` converts the proprietary shape strings into `EESymbol` and `EEFootprint` dataclass trees (coordinates converted from mils to mm, layers mapped to KiCad equivalents).
+3. **Write KiCad files** — `kicad/symbol_writer.py` generates `.kicad_sym` S-expression text and `kicad/footprint_writer.py` generates `.kicad_mod` text, both adapting output to the target KiCad version.
+4. **Download 3D models** — `kicad/model3d.py` fetches STEP binary and WRL mesh data from EasyEDA endpoints, computes transforms, and saves the files.
+5. **Update library** — `kicad/library.py` appends the symbol to `<lib_name>.kicad_sym`, saves the footprint to `<lib_name>.pretty/`, and updates `sym-lib-table` / `fp-lib-table` so KiCad discovers the imported part.
 
 ## External APIs
 
@@ -193,22 +168,26 @@ Tests live in `tests/` and cover each module independently:
 
 ```
 tests/
-├── test_api.py              # LCSC ID validation, SSRF protection
-├── test_parser.py           # Shape parsing, coordinate math
-├── test_footprint_writer.py # Footprint S-expression output, v8/v9 versions
-├── test_symbol_writer.py    # Symbol S-expression output, v8/v9 versions
-├── test_model3d.py          # 3D model transforms
-├── test_kicad_format.py     # Float formatting, UUID generation
-├── test_kicad_version.py    # Version constants, feature flags, detection
-├── test_library.py          # File I/O, library table management
-├── test_library_extended.py # Global paths, config dirs, version-aware paths
-├── test_cli.py              # CLI import/search commands
-├── test_cli_extended.py     # CLI edge cases, filters, output formats
-└── test_importer.py         # Component import orchestration
+├── test_api.py              # LCSC ID validation, SSRF protection (easyeda/api.py)
+├── test_api_extended.py     # SSL fallback, cert handling (easyeda/api.py)
+├── test_parser.py           # Shape parsing, coordinate math (easyeda/parser.py)
+├── test_parser_extended.py  # Extended parser edge cases (easyeda/parser.py)
+├── test_footprint_writer.py # Footprint S-expression output, v8/v9 (kicad/footprint_writer.py)
+├── test_symbol_writer.py    # Symbol S-expression output, v8/v9 (kicad/symbol_writer.py)
+├── test_model3d.py          # 3D model transforms (kicad/model3d.py)
+├── test_kicad_format.py     # Float formatting, UUID generation (kicad/format.py)
+├── test_kicad_version.py    # Version constants, feature flags (kicad/version.py)
+├── test_library.py          # File I/O, library table management (kicad/library.py)
+├── test_library_extended.py # Global paths, config dirs (kicad/library.py)
+├── test_cli.py              # CLI import/search commands (cli.py)
+├── test_cli_extended.py     # CLI edge cases, filters, output formats (cli.py)
+├── test_importer.py         # Component import orchestration (importer.py)
+├── test_integration.py      # End-to-end integration tests
+└── test_convert_all.py      # Batch conversion of test data
 ```
 
 Run with:
 
 ```bash
-pytest tests/
+pytest tests/ -v --cov=kicad_jlcimport --cov-report=term-missing
 ```

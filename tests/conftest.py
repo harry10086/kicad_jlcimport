@@ -3,7 +3,7 @@
 import os
 import sys
 
-# Add the parent directory so we can import the package as 'JLCImport'
-_pkg_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_parent_dir = os.path.dirname(_pkg_dir)
-sys.path.insert(0, _parent_dir)
+# Add the src directory so we can import the package as 'kicad_jlcimport'
+_repo_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_src_dir = os.path.join(_repo_dir, "src")
+sys.path.insert(0, _src_dir)

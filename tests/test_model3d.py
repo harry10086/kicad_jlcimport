@@ -2,8 +2,8 @@
 
 import pytest
 
-from kicad_jlcimport.ee_types import EE3DModel
-from kicad_jlcimport.model3d import compute_model_transform, convert_to_vrml, download_and_save_models
+from kicad_jlcimport.easyeda.ee_types import EE3DModel
+from kicad_jlcimport.kicad.model3d import compute_model_transform, convert_to_vrml, save_models
 
 
 class TestComputeModelTransform:
@@ -119,41 +119,39 @@ class TestConvertToVrml:
         assert lines[0] == "#VRML V2.0 utf8"
 
 
-class TestDownloadAndSaveModels:
-    def test_skips_existing_files_by_default(self, tmp_path, monkeypatch):
-        import kicad_jlcimport.model3d as model3d
-
+class TestSaveModels:
+    def test_returns_existing_files_when_no_data(self, tmp_path):
+        """When no data is provided, existing files are still returned."""
         step_path = tmp_path / "part.step"
         wrl_path = tmp_path / "part.wrl"
         step_path.write_bytes(b"old-step")
         wrl_path.write_text("old-wrl", encoding="utf-8")
 
-        def _should_not_download(*_a, **_k):
-            raise AssertionError("download should be skipped for existing files")
-
-        monkeypatch.setattr(model3d, "download_step", _should_not_download)
-        monkeypatch.setattr(model3d, "download_wrl_source", _should_not_download)
-
-        step_out, wrl_out = download_and_save_models("uuid", str(tmp_path), "part")
+        step_out, wrl_out = save_models(str(tmp_path), "part")
         assert step_out == str(step_path)
         assert wrl_out == str(wrl_path)
         assert step_path.read_bytes() == b"old-step"
         assert wrl_path.read_text(encoding="utf-8") == "old-wrl"
 
-    def test_overwrite_true_rewrites_files(self, tmp_path, monkeypatch):
-        import kicad_jlcimport.model3d as model3d
+    def test_saves_new_data(self, tmp_path, monkeypatch):
+        """New data is written and paths are returned."""
+        import kicad_jlcimport.kicad.model3d as model3d
 
         step_path = tmp_path / "part.step"
         wrl_path = tmp_path / "part.wrl"
         step_path.write_bytes(b"old-step")
         wrl_path.write_text("old-wrl", encoding="utf-8")
 
-        monkeypatch.setattr(model3d, "download_step", lambda *_a, **_k: b"new-step")
-        monkeypatch.setattr(model3d, "download_wrl_source", lambda *_a, **_k: "src")
         monkeypatch.setattr(model3d, "convert_to_vrml", lambda *_a, **_k: "new-wrl")
 
-        step_out, wrl_out = download_and_save_models("uuid", str(tmp_path), "part", overwrite=True)
+        step_out, wrl_out = save_models(str(tmp_path), "part", step_data=b"new-step", wrl_source="src")
         assert step_out == str(step_path)
         assert wrl_out == str(wrl_path)
         assert step_path.read_bytes() == b"new-step"
         assert wrl_path.read_text(encoding="utf-8") == "new-wrl"
+
+    def test_returns_none_when_no_data_and_no_file(self, tmp_path):
+        """Returns None for files that don't exist and have no data."""
+        step_out, wrl_out = save_models(str(tmp_path), "part")
+        assert step_out is None
+        assert wrl_out is None

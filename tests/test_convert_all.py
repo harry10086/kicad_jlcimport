@@ -5,9 +5,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-from kicad_jlcimport.footprint_writer import write_footprint
-from kicad_jlcimport.parser import parse_footprint_shapes, parse_symbol_shapes
-from kicad_jlcimport.symbol_writer import write_symbol, write_symbol_library
+from kicad_jlcimport.easyeda.parser import parse_footprint_shapes, parse_symbol_shapes
+from kicad_jlcimport.kicad.footprint_writer import write_footprint
+from kicad_jlcimport.kicad.symbol_writer import write_symbol, write_symbol_library
 
 
 def test_convert_all_testdata():

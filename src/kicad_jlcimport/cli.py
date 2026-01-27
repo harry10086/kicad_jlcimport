@@ -5,10 +5,8 @@ import argparse
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from kicad_jlcimport import api
-from kicad_jlcimport.api import (
+from kicad_jlcimport.easyeda import api
+from kicad_jlcimport.easyeda.api import (
     APIError,
     SSLCertError,
     filter_by_min_stock,
@@ -17,8 +15,8 @@ from kicad_jlcimport.api import (
     validate_lcsc_id,
 )
 from kicad_jlcimport.importer import import_component
-from kicad_jlcimport.kicad_version import DEFAULT_KICAD_VERSION, SUPPORTED_VERSIONS
-from kicad_jlcimport.library import get_global_lib_dir, load_config
+from kicad_jlcimport.kicad.library import get_global_lib_dir, load_config
+from kicad_jlcimport.kicad.version import DEFAULT_KICAD_VERSION, SUPPORTED_VERSIONS
 
 
 def cmd_search(args):
@@ -195,6 +193,7 @@ def cmd_import(args):
 
 def main():
     parser = argparse.ArgumentParser(
+        prog="jlcimport-cli",
         description="JLCImport CLI - search and test LCSC component imports",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""

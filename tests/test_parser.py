@@ -1,7 +1,7 @@
 """Tests for parser.py - shape parsing and coordinate conversion."""
 
-from kicad_jlcimport.ee_types import EEFootprint, EESymbol
-from kicad_jlcimport.parser import (
+from kicad_jlcimport.easyeda.ee_types import EEFootprint, EESymbol
+from kicad_jlcimport.easyeda.parser import (
     MILS_TO_MM_DIVISOR,
     _find_svg_path,
     _parse_solid_region,

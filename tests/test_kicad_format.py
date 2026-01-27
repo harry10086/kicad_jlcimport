@@ -1,6 +1,6 @@
 """Tests for _kicad_format.py - shared formatting utilities."""
 
-from kicad_jlcimport._kicad_format import escape_sexpr, fmt_float, gen_uuid
+from kicad_jlcimport.kicad._format import escape_sexpr, fmt_float, gen_uuid
 
 
 class TestGenUuid:

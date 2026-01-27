@@ -1,10 +1,9 @@
-"""3D model download and WRL conversion."""
+"""3D model transforms, WRL conversion, and file saving."""
 
 import os
 from typing import Optional, Tuple
 
-from .api import download_step, download_wrl_source
-from .ee_types import EE3DModel
+from ..easyeda.ee_types import EE3DModel
 
 # EasyEDA 3D coordinates use 100 units per mm
 _EE_3D_UNITS_PER_MM = 100.0
@@ -29,16 +28,19 @@ def compute_model_transform(
     return offset, model.rotation
 
 
-def download_and_save_models(
-    uuid_3d: str,
+def save_models(
     output_dir: str,
     name: str,
-    overwrite: bool = False,
+    step_data: Optional[bytes] = None,
+    wrl_source: Optional[str] = None,
 ) -> Tuple[Optional[str], Optional[str]]:
-    """Download STEP and WRL models, save to output_dir.
+    """Save STEP and WRL model files to *output_dir*.
 
-    If overwrite is False, existing files are kept and their paths are returned.
-    Returns (step_path, wrl_path) - either may be None if unavailable.
+    *step_data* — raw STEP bytes (``None`` to skip saving).
+    *wrl_source* — OBJ-like text to convert to VRML (``None`` to skip).
+
+    Existing files on disk are returned even when new data is not provided.
+    Returns *(step_path, wrl_path)* — either may be ``None``.
     """
     os.makedirs(output_dir, exist_ok=True)
 
@@ -46,41 +48,36 @@ def download_and_save_models(
     wrl_path = os.path.join(output_dir, f"{name}.wrl")
 
     output_dir_abs = os.path.abspath(output_dir)
-    step_path_abs = os.path.abspath(step_path)
-    wrl_path_abs = os.path.abspath(wrl_path)
-
-    if not step_path_abs.startswith(output_dir_abs):
+    if not os.path.abspath(step_path).startswith(output_dir_abs):
         raise ValueError(f"Invalid model name: {name}")
-    if not wrl_path_abs.startswith(output_dir_abs):
+    if not os.path.abspath(wrl_path).startswith(output_dir_abs):
         raise ValueError(f"Invalid model name: {name}")
 
-    # Download STEP
-    if os.path.exists(step_path) and not overwrite:
+    # Save STEP
+    if step_data is not None:
+        with open(step_path, "wb") as f:
+            f.write(step_data)
+        step_out = step_path
+    elif os.path.exists(step_path):
         step_out = step_path
     else:
-        step_data = download_step(uuid_3d)
-        if step_data:
-            with open(step_path, "wb") as f:
-                f.write(step_data)
-            step_out = step_path
-        else:
-            step_out = step_path if os.path.exists(step_path) else None
+        step_out = None
 
-    # Download and convert WRL
-    if os.path.exists(wrl_path) and not overwrite:
+    # Convert and save WRL
+    if wrl_source is not None:
+        wrl_content = convert_to_vrml(wrl_source)
+        if wrl_content:
+            with open(wrl_path, "w", encoding="utf-8") as f:
+                f.write(wrl_content)
+            wrl_out = wrl_path
+        elif os.path.exists(wrl_path):
+            wrl_out = wrl_path
+        else:
+            wrl_out = None
+    elif os.path.exists(wrl_path):
         wrl_out = wrl_path
     else:
-        wrl_source = download_wrl_source(uuid_3d)
-        if wrl_source:
-            wrl_content = convert_to_vrml(wrl_source)
-            if wrl_content:
-                with open(wrl_path, "w", encoding="utf-8") as f:
-                    f.write(wrl_content)
-                wrl_out = wrl_path
-            else:
-                wrl_out = wrl_path if os.path.exists(wrl_path) else None
-        else:
-            wrl_out = wrl_path if os.path.exists(wrl_path) else None
+        wrl_out = None
 
     return step_out, wrl_out
 

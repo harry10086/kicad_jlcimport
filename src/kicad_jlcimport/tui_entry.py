@@ -1,5 +1,5 @@
 """Entry point for PyInstaller TUI build."""
 
-from tui import main
+from kicad_jlcimport.tui import main
 
 main()
