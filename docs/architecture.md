@@ -36,25 +36,13 @@ The `easyeda/` and `kicad/` subpackages have a clean dependency boundary: `kicad
 
 ## Architecture Layers
 
-```
-┌──────────────────────────────────────────────────────────┐
-│  User Interface                                          │
-│  (plugin.py, dialog.py, cli.py, gui/, tui/)              │  wxPython / Textual / CLI
-├──────────────────────────────────────────────────────────┤
-│  Orchestration (importer.py)                             │  Import pipeline coordination
-├──────────────────────────────────────────────────────────┤
-│  easyeda/                        │  kicad/               │
-│  ┌────────────────────────────┐  │  ┌─────────────────┐  │
-│  │ api.py      HTTP client    │  │  │ symbol_writer.py│  │
-│  │ parser.py   Shape parsing  │  │  │ footprint_      │  │
-│  │ ee_types.py Data types     │  │  │   writer.py     │  │
-│  └────────────────────────────┘  │  │ model3d.py      │  │
-│                                  │  │ library.py      │  │
-│                                  │  │ format.py       │  │
-│                                  │  │ version.py      │  │
-│                                  │  └─────────────────┘  │
-└──────────────────────────────────────────────────────────┘
-```
+The codebase is organized in layers from top to bottom:
+
+1. **User Interface** — `plugin.py`, `dialog.py`, `cli.py`, `gui/`, and `tui/` provide the entry points (wxPython, Textual, and CLI). They handle user interaction and delegate all work downward.
+2. **Orchestration** — `importer.py` coordinates the full import pipeline. All UIs call into this single module.
+3. **Two core subpackages** sit below the orchestrator, side by side:
+   - **`easyeda/`** handles all external data: HTTP requests, API response parsing, and shape-string-to-dataclass conversion.
+   - **`kicad/`** handles all output: S-expression writers, 3D model transforms, library file management, and version-specific formatting.
 
 ## Module Responsibilities
 
@@ -89,57 +77,17 @@ The `easyeda/` and `kicad/` subpackages have a clean dependency boundary: `kicad
 
 ### Search
 
-```
-User enters query
-    │
-    ▼
-easyeda.api.search_components()  ───►  JLCPCB search API
-    │                              │
-    │◄─────────────────────────────┘  JSON response
-    ▼
-Display results in list (part number, description, price, stock)
-    │
-    ▼  (user clicks a result)
-easyeda.api.fetch_product_image()  ───►  LCSC product page
-    │                              │
-    │◄─────────────────────────────┘  Image URL extracted from HTML
-    ▼
-Display thumbnail and part details
-```
+The user enters a query. `easyeda/api.py` sends the query to the JLCPCB search API and returns a JSON list of matching parts (part number, description, price, stock). The UI displays these in a sortable results list. When the user selects a part, `easyeda/api.py` scrapes the LCSC product page to extract a product image URL, then fetches the image for display as a thumbnail alongside part details.
 
 ### Import
 
-```
-User clicks "Import"
-    │
-    ▼
-easyeda.api.fetch_component_uuids(lcsc_id)  ───►  EasyEDA SVGs API
-    │                                                  │
-    │◄─────────────────────────────────────────────────┘  List of component UUIDs
-    ▼
-easyeda.api.fetch_component_data(uuid)  ───►  EasyEDA component API  (for each UUID)
-    │                                              │
-    │◄─────────────────────────────────────────────┘  Shape data (dataStr)
-    ▼
-easyeda.parser.parse_symbol_shapes()   → EESymbol dataclass
-easyeda.parser.parse_footprint_shapes() → EEFootprint dataclass
-    │
-    ▼
-kicad.symbol_writer.write_symbol()     → .kicad_sym text
-kicad.footprint_writer.write_footprint() → .kicad_mod text
-    │
-    ▼
-kicad.model3d.download_and_save_models()  ───►  EasyEDA 3D model endpoints
-    │                                                │
-    │◄───────────────────────────────────────────────┘  STEP binary / WRL source
-    ▼
-kicad.library.add_symbol_to_lib()        → appends to <lib_name>.kicad_sym
-kicad.library.save_footprint()           → writes <lib_name>.pretty/<name>.kicad_mod
-kicad.library.update_project_lib_tables() → updates sym-lib-table & fp-lib-table
-    │
-    ▼
-Part available in KiCad schematic and PCB editors
-```
+When the user triggers an import, `importer.py` orchestrates the following steps:
+
+1. **Fetch component data** — `easyeda/api.py` calls the EasyEDA SVGs API with the LCSC part number to get component UUIDs, then fetches the shape data (`dataStr`) for each UUID from the EasyEDA component API.
+2. **Parse shapes** — `easyeda/parser.py` converts the proprietary shape strings into `EESymbol` and `EEFootprint` dataclass trees (coordinates converted from mils to mm, layers mapped to KiCad equivalents).
+3. **Write KiCad files** — `kicad/symbol_writer.py` generates `.kicad_sym` S-expression text and `kicad/footprint_writer.py` generates `.kicad_mod` text, both adapting output to the target KiCad version.
+4. **Download 3D models** — `kicad/model3d.py` fetches STEP binary and WRL mesh data from EasyEDA endpoints, computes transforms, and saves the files.
+5. **Update library** — `kicad/library.py` appends the symbol to `<lib_name>.kicad_sym`, saves the footprint to `<lib_name>.pretty/`, and updates `sym-lib-table` / `fp-lib-table` so KiCad discovers the imported part.
 
 ## External APIs
 
