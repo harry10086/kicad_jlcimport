@@ -30,3 +30,11 @@ cd /Users/joshv/git && PYTHONPATH=. python3 -c "from kicad_jlcimport.parser impo
 ```
 
 OR use existing scripts that handle the path (like convert_testdata.py).
+
+## FIXING TEST FAILURES
+
+**Understand the root cause before changing anything.** Don't jump to the first edit that makes tests pass.
+
+- **Never modify production code just to make a test pass.** If a test fails, first determine whether the test or the production code is wrong. Read the production code's docstrings, comments, and recent commit history before deciding.
+- **Treat merged/reviewed production code as intentional.** If code is deliberately designed a certain way (especially error handling, security boundaries, or API contracts), fix the tests to match the design — not the other way around.
+- **Mock external dependencies.** When tests fail because they make real network, filesystem, or OS calls, mock the external dependency. Don't weaken production error handling to tolerate environment differences.
