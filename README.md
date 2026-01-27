@@ -35,13 +35,13 @@ A KiCad 8/9 Action Plugin that imports symbols, footprints, and 3D models direct
 ### Option 1: Symlink (recommended for development)
 
 ```bash
-ln -s /path/to/kicad_jlcimport <plugins-dir>/kicad_jlcimport
+ln -s /path/to/kicad_jlcimport/src/kicad_jlcimport <plugins-dir>/kicad_jlcimport
 ```
 
 ### Option 2: Copy
 
 ```bash
-cp -r /path/to/kicad_jlcimport <plugins-dir>/kicad_jlcimport
+cp -r /path/to/kicad_jlcimport/src/kicad_jlcimport <plugins-dir>/kicad_jlcimport
 ```
 
 ### Activate
@@ -87,33 +87,37 @@ Without this, macOS Gatekeeper will block the unsigned binaries.
 The CLI tool can be used outside KiCad for testing or scripted imports:
 
 ```bash
+# All CLI examples assume you run from the repo root.
+# With pip install: use the commands directly.
+# Without pip install: prefix with PYTHONPATH=src python3 -m kicad_jlcimport.cli
+
 # Search (default: --min-stock 1, only shows parts in stock)
-python3 cli.py search "100nF 0402" -t basic
-python3 cli.py search "ESP32" -n 20 --min-stock 100
+PYTHONPATH=src python3 -m kicad_jlcimport.cli search "100nF 0402" -t basic
+PYTHONPATH=src python3 -m kicad_jlcimport.cli search "ESP32" -n 20 --min-stock 100
 
 # Search with CSV output
-python3 cli.py search "RP2350" --csv > parts.csv
+PYTHONPATH=src python3 -m kicad_jlcimport.cli search "RP2350" --csv > parts.csv
 
 # Import (prints generated output)
-python3 cli.py import C427602 --show both
+PYTHONPATH=src python3 -m kicad_jlcimport.cli import C427602 --show both
 
 # Import to directory (saves .kicad_sym, .kicad_mod, and 3D models)
-python3 cli.py import C427602 -o ./output
+PYTHONPATH=src python3 -m kicad_jlcimport.cli import C427602 -o ./output
 
 # Import using a custom library name
-python3 cli.py import C427602 -o ./output --lib-name MyParts
+PYTHONPATH=src python3 -m kicad_jlcimport.cli import C427602 -o ./output --lib-name MyParts
 
 # Import directly into a KiCad project (updates sym-lib-table / fp-lib-table)
-python3 cli.py import C427602 -p /path/to/kicad/project
+PYTHONPATH=src python3 -m kicad_jlcimport.cli import C427602 -p /path/to/kicad/project
 
 # Import into KiCad's global 3rd-party library (updates global lib tables)
-python3 cli.py import C427602 --global
+PYTHONPATH=src python3 -m kicad_jlcimport.cli import C427602 --global
 
 # Import targeting KiCad 8 format and library paths
-python3 cli.py import C427602 --global --kicad-version 8
+PYTHONPATH=src python3 -m kicad_jlcimport.cli import C427602 --global --kicad-version 8
 
 # Re-import a component, overwriting existing symbol/footprint/3D models
-python3 cli.py import C427602 -p /path/to/kicad/project --overwrite
+PYTHONPATH=src python3 -m kicad_jlcimport.cli import C427602 -p /path/to/kicad/project --overwrite
 ```
 
 ### Standalone GUI
@@ -124,17 +128,17 @@ Run the wxPython GUI outside of KiCad — useful for importing parts before star
 # Install GUI dependencies
 pip install wxPython
 
-# Run from the project directory
-python3 gui_entry.py
+# Run from the repo root
+PYTHONPATH=src python3 -m kicad_jlcimport.gui
 
 # Or with a project directory
-python3 gui_entry.py -p /path/to/kicad/project
+PYTHONPATH=src python3 -m kicad_jlcimport.gui -p /path/to/kicad/project
 
 # Global library only (skip directory picker)
-python3 gui_entry.py --global
+PYTHONPATH=src python3 -m kicad_jlcimport.gui --global
 
 # Target KiCad 8 format and library paths
-python3 gui_entry.py --kicad-version 8
+PYTHONPATH=src python3 -m kicad_jlcimport.gui --kicad-version 8
 ```
 
 When run without arguments, a directory picker dialog lets you select your KiCad project folder. Cancel to use the global library only. The KiCad version can also be changed from the dropdown in the import section.
@@ -149,14 +153,14 @@ A terminal-based interface with image preview support (Sixel, Kitty, iTerm2, or 
 # Install TUI dependencies (requires Python 3.10+)
 pip install textual "textual-image[textual]" Pillow
 
-# Run from the project directory
-python3 -m tui -p /path/to/kicad/project
+# Run from the repo root
+PYTHONPATH=src python3 -m kicad_jlcimport.tui -p /path/to/kicad/project
 
 # Run without project (global library only)
-python3 -m tui
+PYTHONPATH=src python3 -m kicad_jlcimport.tui
 
 # Target KiCad 8 format and library paths
-python3 -m tui --kicad-version 8
+PYTHONPATH=src python3 -m kicad_jlcimport.tui --kicad-version 8
 ```
 
 Features:
