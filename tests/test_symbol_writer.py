@@ -42,6 +42,19 @@ class TestWriteSymbol:
         result = write_symbol(sym, "Test", footprint_ref="JLCImport:Test")
         assert '(property "Footprint" "JLCImport:Test"' in result
 
+    def test_metadata_properties_are_hidden(self):
+        """Footprint, Datasheet, LCSC properties must have 'hide' to avoid schematic clutter."""
+        sym = _make_symbol()
+        result = write_symbol(sym, "Test", footprint_ref="JLC:Test", datasheet="https://x.com", lcsc_id="C1")
+        for prop_name in ["Footprint", "Datasheet", "LCSC"]:
+            # Find the property block (property line + effects line)
+            lines = result.split("\n")
+            for i, line in enumerate(lines):
+                if f'"{prop_name}"' in line:
+                    effects_line = lines[i + 1]
+                    assert "hide" in effects_line, f'Property "{prop_name}" must be hidden'
+                    break
+
     def test_lcsc_property(self):
         sym = _make_symbol()
         result = write_symbol(sym, "Test", lcsc_id="C123456")

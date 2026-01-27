@@ -1,6 +1,6 @@
 """Tests for footprint_writer.py - KiCad footprint generation."""
 
-from kicad_jlcimport.ee_types import EECircle, EEFootprint, EEHole, EEPad, EETrack
+from kicad_jlcimport.ee_types import EEArc, EECircle, EEFootprint, EEHole, EEPad, EETrack
 from kicad_jlcimport.footprint_writer import write_footprint
 from kicad_jlcimport.kicad_version import KICAD_V8, KICAD_V9
 
@@ -58,6 +58,13 @@ class TestWriteFootprint:
         assert "(drill" in result
         assert '(pad "A1" thru_hole' in result
 
+    def test_oval_pad_shape(self):
+        """OVAL pads must produce 'oval' shape in KiCad output, not 'rect'."""
+        pad = EEPad(shape="OVAL", x=0, y=0, width=1.5, height=0.8, layer="1", number="1", drill=0)
+        fp = _make_footprint(pads=[pad])
+        result = write_footprint(fp, "Test")
+        assert "smd oval" in result
+
     def test_pad_with_rotation(self):
         pad = EEPad(shape="RECT", x=0, y=0, width=1, height=2, layer="1", number="1", drill=0, rotation=45.0)
         fp = _make_footprint(pads=[pad])
@@ -86,6 +93,15 @@ class TestWriteFootprint:
         result = write_footprint(fp, "Test")
         assert "np_thru_hole" in result
         assert "(drill" in result
+
+    def test_hole_diameter_is_twice_radius(self):
+        """NPTH holes must use diameter (radius*2) for size and drill."""
+        hole = EEHole(x=0, y=0, radius=0.75)
+        fp = _make_footprint(holes=[hole])
+        result = write_footprint(fp, "Test")
+        # diameter = 0.75 * 2 = 1.5
+        assert "(size 1.5 1.5)" in result
+        assert "(drill 1.5)" in result
 
     def test_properties_added(self):
         fp = _make_footprint()
@@ -133,6 +149,33 @@ class TestWriteFootprint:
         assert '"B.Cu"' in result
         assert '"B.Mask"' in result
         assert '"B.Paste"' in result
+
+    def test_arc_sweep_zero_swaps_start_end(self):
+        """When sweep==0, arc start/end must be swapped in KiCad output."""
+        arc = EEArc(
+            width=0.2,
+            layer="F.SilkS",
+            start=(1.0, 2.0),
+            end=(3.0, 4.0),
+            rx=5.0,
+            ry=5.0,
+            large_arc=0,
+            sweep=0,
+        )
+        fp = _make_footprint(arcs=[arc])
+        result = write_footprint(fp, "Test")
+        assert "(fp_arc" in result
+        # With sweep==0, start/end should be swapped: output start=(3,4), end=(1,2)
+        start_idx = result.index("(start")
+        end_idx = result.index("(end")
+        start_section = result[start_idx : start_idx + 30]
+        end_section = result[end_idx : end_idx + 30]
+        # The output start should contain the original end coords (3.0, 4.0)
+        assert "3" in start_section
+        assert "4" in start_section
+        # The output end should contain the original start coords (1.0, 2.0)
+        assert "1" in end_section
+        assert "2" in end_section
 
 
 class TestWriteFootprintVersions:
