@@ -4,9 +4,9 @@ from typing import Tuple
 
 from ..easyeda.ee_types import EEFootprint
 from ..easyeda.parser import compute_arc_midpoint
-from .format import escape_sexpr as _escape
-from .format import fmt_float as _fmt
-from .format import gen_uuid as _uuid
+from ._format import escape_sexpr as _escape
+from ._format import fmt_float as _fmt
+from ._format import gen_uuid as _uuid
 from .version import DEFAULT_KICAD_VERSION, footprint_format_version, has_embedded_fonts, has_generator_version
 
 

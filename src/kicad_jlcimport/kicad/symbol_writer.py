@@ -4,8 +4,8 @@ from typing import List
 
 from ..easyeda.ee_types import EESymbol
 from ..easyeda.parser import compute_arc_midpoint
-from .format import escape_sexpr as _escape
-from .format import fmt_float as _fmt
+from ._format import escape_sexpr as _escape
+from ._format import fmt_float as _fmt
 from .version import DEFAULT_KICAD_VERSION, has_generator_version, symbol_format_version
 
 

@@ -8,7 +8,7 @@
 # Run from project root directory
 python3 -m ruff check .
 python3 -m ruff format --check .
-python3 -m pytest tests/ -q --cov=src --cov-fail-under=80
+python3 -m pytest tests/ -q --cov=kicad_jlcimport --cov-fail-under=80
 ```
 
 ALL THREE must pass with zero errors before any commit or push.
@@ -29,9 +29,9 @@ tests/                        # test suite
 tools/                        # developer utilities (not part of the package)
 ```
 
-To run code that imports the package, set `PYTHONPATH` to the `src/` directory:
+Install in development mode so the package is importable everywhere:
 ```bash
-PYTHONPATH=src python3 -c "from kicad_jlcimport.easyeda.parser import ..."
+pip install -e '.[dev]'
 ```
 
 ## FIXING TEST FAILURES

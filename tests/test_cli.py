@@ -151,8 +151,8 @@ def test_cli_import_project_skips_existing_3d_models_without_overwrite(tmp_path,
         calls["wrl"] += 1
         return "src"
 
-    monkeypatch.setattr(model3d, "download_step", _download_step)
-    monkeypatch.setattr(model3d, "download_wrl_source", _download_wrl_source)
+    monkeypatch.setattr(importer, "download_step", _download_step)
+    monkeypatch.setattr(importer, "download_wrl_source", _download_wrl_source)
     monkeypatch.setattr(model3d, "convert_to_vrml", lambda *_a, **_k: "wrl")
 
     args = SimpleNamespace(

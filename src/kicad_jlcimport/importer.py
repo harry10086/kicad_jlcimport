@@ -3,7 +3,7 @@
 import os
 from typing import Callable
 
-from .easyeda.api import fetch_full_component
+from .easyeda.api import download_step, download_wrl_source, fetch_full_component
 from .easyeda.parser import parse_footprint_shapes, parse_symbol_shapes
 from .kicad.footprint_writer import write_footprint
 from .kicad.library import (
@@ -14,7 +14,7 @@ from .kicad.library import (
     update_global_lib_tables,
     update_project_lib_tables,
 )
-from .kicad.model3d import compute_model_transform, download_and_save_models
+from .kicad.model3d import compute_model_transform, save_models
 from .kicad.symbol_writer import write_symbol
 from .kicad.version import DEFAULT_KICAD_VERSION, has_generator_version, symbol_format_version
 
@@ -182,7 +182,9 @@ def _export_only(
 
     if uuid_3d:
         models_dir = os.path.join(out_dir, "3dmodels")
-        step_path, wrl_path = download_and_save_models(uuid_3d, models_dir, name, overwrite=True)
+        step_data = download_step(uuid_3d)
+        wrl_source = download_wrl_source(uuid_3d)
+        step_path, wrl_path = save_models(models_dir, name, step_data, wrl_source)
         if step_path:
             log(f"  Saved: {step_path}")
         if wrl_path:
@@ -222,7 +224,9 @@ def _import_to_library(
         wrl_existed = os.path.exists(wrl_dest)
 
         log("Downloading 3D model...")
-        step_path, wrl_path = download_and_save_models(uuid_3d, paths["models_dir"], name, overwrite=overwrite)
+        step_data = download_step(uuid_3d) if overwrite or not step_existed else None
+        wrl_source = download_wrl_source(uuid_3d) if overwrite or not wrl_existed else None
+        step_path, wrl_path = save_models(paths["models_dir"], name, step_data, wrl_source)
         if step_path:
             if use_global:
                 model_path = os.path.join(paths["models_dir"], f"{name}.step")
