@@ -9,8 +9,9 @@ import webbrowser
 
 import wx
 
-from . import api as _api_module
-from .api import (
+from .categories import CATEGORIES
+from .easyeda import api as _api_module
+from .easyeda.api import (
     APIError,
     SSLCertError,
     fetch_product_image,
@@ -19,10 +20,9 @@ from .api import (
     search_components,
     validate_lcsc_id,
 )
-from .categories import CATEGORIES
 from .importer import import_component
-from .kicad_version import DEFAULT_KICAD_VERSION, SUPPORTED_VERSIONS
-from .library import get_global_lib_dir, load_config, save_config
+from .kicad.library import get_global_lib_dir, load_config, save_config
+from .kicad.version import DEFAULT_KICAD_VERSION, SUPPORTED_VERSIONS
 
 
 class _CategoryPopup(wx.PopupWindow):

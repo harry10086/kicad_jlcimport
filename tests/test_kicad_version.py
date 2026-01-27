@@ -2,7 +2,7 @@
 
 import pytest
 
-from kicad_jlcimport.kicad_version import (
+from kicad_jlcimport.kicad.version import (
     DEFAULT_KICAD_VERSION,
     KICAD_V8,
     KICAD_V9,

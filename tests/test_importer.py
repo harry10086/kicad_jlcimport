@@ -3,7 +3,7 @@
 import os
 
 from kicad_jlcimport import importer
-from kicad_jlcimport.ee_types import EE3DModel, EEFootprint, EEPad, EEPin, EESymbol
+from kicad_jlcimport.easyeda.ee_types import EE3DModel, EEFootprint, EEPad, EEPin, EESymbol
 
 
 class TestImportComponent:

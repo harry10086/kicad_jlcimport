@@ -5,9 +5,9 @@ import os
 
 import pytest
 
-from kicad_jlcimport.footprint_writer import write_footprint
-from kicad_jlcimport.parser import parse_footprint_shapes, parse_symbol_shapes
-from kicad_jlcimport.symbol_writer import write_symbol
+from kicad_jlcimport.easyeda.parser import parse_footprint_shapes, parse_symbol_shapes
+from kicad_jlcimport.kicad.footprint_writer import write_footprint
+from kicad_jlcimport.kicad.symbol_writer import write_symbol
 
 TESTDATA_DIR = os.path.join(os.path.dirname(__file__), "..", "testdata")
 

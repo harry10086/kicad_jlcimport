@@ -7,8 +7,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from kicad_jlcimport import api
-from kicad_jlcimport.api import APIError
+from kicad_jlcimport.easyeda import api
+from kicad_jlcimport.easyeda.api import APIError
 
 
 class TestMakeSslContext:
@@ -25,7 +25,9 @@ class TestMakeSslContext:
         import os
 
         # Use the project's own cacerts.pem as a known-good CA bundle
-        project_pem = os.path.join(os.path.dirname(os.path.dirname(__file__)), "cacerts.pem")
+        project_pem = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)), "src", "kicad_jlcimport", "easyeda", "cacerts.pem"
+        )
         pem = tmp_path / "cacerts.pem"
         pem.write_text(open(project_pem).read())
         monkeypatch.setattr(api, "_CACERTS_PEM", str(pem))

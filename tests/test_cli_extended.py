@@ -617,7 +617,7 @@ class TestCmdImport:
 
     def test_import_api_error(self, monkeypatch, capsys):
         import kicad_jlcimport.importer as importer
-        from kicad_jlcimport.api import APIError
+        from kicad_jlcimport.easyeda.api import APIError
 
         def raise_api_error(_):
             raise APIError("Component not found")

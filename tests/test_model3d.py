@@ -2,8 +2,8 @@
 
 import pytest
 
-from kicad_jlcimport.ee_types import EE3DModel
-from kicad_jlcimport.model3d import compute_model_transform, convert_to_vrml, download_and_save_models
+from kicad_jlcimport.easyeda.ee_types import EE3DModel
+from kicad_jlcimport.kicad.model3d import compute_model_transform, convert_to_vrml, download_and_save_models
 
 
 class TestComputeModelTransform:
@@ -121,7 +121,7 @@ class TestConvertToVrml:
 
 class TestDownloadAndSaveModels:
     def test_skips_existing_files_by_default(self, tmp_path, monkeypatch):
-        import kicad_jlcimport.model3d as model3d
+        import kicad_jlcimport.kicad.model3d as model3d
 
         step_path = tmp_path / "part.step"
         wrl_path = tmp_path / "part.wrl"
@@ -141,7 +141,7 @@ class TestDownloadAndSaveModels:
         assert wrl_path.read_text(encoding="utf-8") == "old-wrl"
 
     def test_overwrite_true_rewrites_files(self, tmp_path, monkeypatch):
-        import kicad_jlcimport.model3d as model3d
+        import kicad_jlcimport.kicad.model3d as model3d
 
         step_path = tmp_path / "part.step"
         wrl_path = tmp_path / "part.wrl"

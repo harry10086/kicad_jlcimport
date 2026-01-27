@@ -3,8 +3,8 @@
 import os
 from typing import Optional, Tuple
 
-from .api import download_step, download_wrl_source
-from .ee_types import EE3DModel
+from ..easyeda.api import download_step, download_wrl_source
+from ..easyeda.ee_types import EE3DModel
 
 # EasyEDA 3D coordinates use 100 units per mm
 _EE_3D_UNITS_PER_MM = 100.0

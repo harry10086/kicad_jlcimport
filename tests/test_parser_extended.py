@@ -2,7 +2,7 @@
 
 import json
 
-from kicad_jlcimport.parser import (
+from kicad_jlcimport.easyeda.parser import (
     LAYER_MAP,
     _parse_circle,
     _parse_fp_arc,

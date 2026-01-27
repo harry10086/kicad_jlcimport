@@ -30,8 +30,9 @@ from textual.widgets import (
 )
 from textual_image.widget import HalfcellImage
 
-from kicad_jlcimport import api
-from kicad_jlcimport.api import (
+from kicad_jlcimport.categories import CATEGORIES
+from kicad_jlcimport.easyeda import api
+from kicad_jlcimport.easyeda.api import (
     APIError,
     SSLCertError,
     fetch_product_image,
@@ -40,14 +41,13 @@ from kicad_jlcimport.api import (
     search_components,
     validate_lcsc_id,
 )
-from kicad_jlcimport.categories import CATEGORIES
 from kicad_jlcimport.importer import import_component
-from kicad_jlcimport.kicad_version import DEFAULT_KICAD_VERSION, SUPPORTED_VERSIONS
-from kicad_jlcimport.library import (
+from kicad_jlcimport.kicad.library import (
     get_global_lib_dir,
     load_config,
     save_config,
 )
+from kicad_jlcimport.kicad.version import DEFAULT_KICAD_VERSION, SUPPORTED_VERSIONS
 
 from .gallery import GalleryScreen
 from .helpers import TIImage, make_no_image, make_skeleton_frame, pil_from_bytes

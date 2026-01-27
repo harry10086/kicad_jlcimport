@@ -3,7 +3,7 @@
 import os
 import tempfile
 
-from kicad_jlcimport.library import (
+from kicad_jlcimport.kicad.library import (
     _remove_symbol,
     _update_lib_table,
     add_symbol_to_lib,

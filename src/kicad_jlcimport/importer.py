@@ -3,10 +3,10 @@
 import os
 from typing import Callable
 
-from .api import fetch_full_component
-from .footprint_writer import write_footprint
-from .kicad_version import DEFAULT_KICAD_VERSION, has_generator_version, symbol_format_version
-from .library import (
+from .easyeda.api import fetch_full_component
+from .easyeda.parser import parse_footprint_shapes, parse_symbol_shapes
+from .kicad.footprint_writer import write_footprint
+from .kicad.library import (
     add_symbol_to_lib,
     ensure_lib_structure,
     sanitize_name,
@@ -14,9 +14,9 @@ from .library import (
     update_global_lib_tables,
     update_project_lib_tables,
 )
-from .model3d import compute_model_transform, download_and_save_models
-from .parser import parse_footprint_shapes, parse_symbol_shapes
-from .symbol_writer import write_symbol
+from .kicad.model3d import compute_model_transform, download_and_save_models
+from .kicad.symbol_writer import write_symbol
+from .kicad.version import DEFAULT_KICAD_VERSION, has_generator_version, symbol_format_version
 
 
 def import_component(

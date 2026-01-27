@@ -10,7 +10,7 @@ from textual.screen import Screen
 from textual.widgets import Button, Label
 from textual_image.widget import HalfcellImage
 
-from kicad_jlcimport.api import SSLCertError, allow_unverified_ssl, fetch_product_image
+from kicad_jlcimport.easyeda.api import SSLCertError, allow_unverified_ssl, fetch_product_image
 
 from .helpers import TIImage, make_no_image, make_skeleton_frame, pil_from_bytes
 

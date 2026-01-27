@@ -43,7 +43,7 @@ Examples:
     args = parser.parse_args()
 
     if args.insecure:
-        from .. import api
+        from ..easyeda import api
 
         api.allow_unverified_ssl()
 

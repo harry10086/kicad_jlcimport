@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "kicad-jlcimport"
 version = "1.0.0"
@@ -14,11 +18,14 @@ dev = ["ruff>=0.4.0", "pytest>=7.0.0", "pytest-cov>=4.0.0"]
 jlcimport-tui = "kicad_jlcimport.tui:main"
 jlcimport-gui = "kicad_jlcimport.gui:main"
 
+[tool.setuptools.packages.find]
+where = ["src"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
 [tool.coverage.run]
-source = ["."]
+source = ["src"]
 omit = ["**/tests/*", "**/tui/*", "**/gui/*", "**/tui_entry.py", "**/gui_entry.py", "**/dialog.py", "**/plugin.py", "**/categories.py", "**/convert_testdata.py", "**/kicad_mod_to_svg.py", "**/kicad_sym_to_svg.py", "**/preview_part.py", "**/fetch_cacerts.py"]
 
 [tool.coverage.report]

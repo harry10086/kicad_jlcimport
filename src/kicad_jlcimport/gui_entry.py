@@ -63,7 +63,7 @@ Examples:
     args = parser.parse_args()
 
     if args.insecure:
-        from kicad_jlcimport import api
+        from kicad_jlcimport.easyeda import api
 
         api.allow_unverified_ssl()
 
