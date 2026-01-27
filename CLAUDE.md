@@ -1,14 +1,24 @@
 # Project Notes
 
+## DEVELOPMENT ENVIRONMENT
+
+All work must be done inside the project's virtual environment. Activate it before running any commands:
+
+```bash
+source install.sh
+```
+
+This creates the venv and installs dependencies on first run, or just activates the existing venv.
+
 ## BEFORE COMMITTING - MANDATORY BUILD CHECKS
 
 **NEVER COMMIT WITHOUT RUNNING ALL THREE CHECKS:**
 
 ```bash
-# Run from project root directory
-python3 -m ruff check .
-python3 -m ruff format --check .
-python3 -m pytest tests/ -q --cov=kicad_jlcimport --cov-fail-under=80
+# Run from project root directory (venv must be active)
+ruff check .
+ruff format --check .
+pytest tests/ -q --cov=kicad_jlcimport --cov-fail-under=80
 ```
 
 ALL THREE must pass with zero errors before any commit or push.
@@ -27,11 +37,6 @@ src/kicad_jlcimport/         # main package
 └── ...
 tests/                        # test suite
 tools/                        # developer utilities (not part of the package)
-```
-
-Install in development mode so the package is importable everywhere:
-```bash
-pip install -e '.[dev]'
 ```
 
 ## FIXING TEST FAILURES

@@ -5,8 +5,6 @@ import argparse
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 from kicad_jlcimport.easyeda import api
 from kicad_jlcimport.easyeda.api import (
     APIError,
@@ -195,6 +193,7 @@ def cmd_import(args):
 
 def main():
     parser = argparse.ArgumentParser(
+        prog="jlcimport-cli",
         description="JLCImport CLI - search and test LCSC component imports",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""

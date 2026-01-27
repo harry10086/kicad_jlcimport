@@ -10,6 +10,7 @@ import sys
 def main():
     """Entry point for standalone wxPython GUI."""
     parser = argparse.ArgumentParser(
+        prog="jlcimport-gui",
         description="JLCImport GUI - Import JLCPCB/LCSC components into KiCad libraries",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
