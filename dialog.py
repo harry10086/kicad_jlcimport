@@ -380,9 +380,9 @@ class JLCImportDialog(wx.Dialog):
                 current = self.search_input.GetValue()
                 self.search_input.Set(matches)
                 self.search_input.SetValue(current)
-                self.search_input.SetInsertionPointEnd()
                 self._updating_choices = False
                 self.search_input.Popup()
+                wx.CallAfter(self.search_input.SetInsertionPointEnd)
         else:
             self.search_input.Dismiss()
 
