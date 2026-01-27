@@ -1,5 +1,8 @@
 """Tests for api.py - validation and response parsing."""
 
+from unittest.mock import patch
+from urllib.error import URLError
+
 import pytest
 
 from kicad_jlcimport.api import fetch_product_image, filter_by_min_stock, filter_by_type, validate_lcsc_id
@@ -77,16 +80,18 @@ class TestFetchProductImageSSRF:
     def test_rejects_ftp_scheme(self):
         assert fetch_product_image("ftp://jlcpcb.com/file") is None
 
-    def test_allows_jlcpcb_domain(self):
-        # This will fail network-wise but should pass SSRF validation
-        # and attempt the fetch (returning None due to network error in tests)
+    @patch("kicad_jlcimport.api._urlopen", side_effect=URLError("network down"))
+    def test_allows_jlcpcb_domain(self, mock_urlopen):
+        # Should pass SSRF validation and attempt the fetch (mock returns URLError)
         result = fetch_product_image("https://jlcpcb.com/product/C427602")
-        # Should be None (network error in test env) but NOT blocked by SSRF check
         assert result is None
+        mock_urlopen.assert_called_once()
 
-    def test_allows_lcsc_domain(self):
+    @patch("kicad_jlcimport.api._urlopen", side_effect=URLError("network down"))
+    def test_allows_lcsc_domain(self, mock_urlopen):
         result = fetch_product_image("https://lcsc.com/product/C427602")
         assert result is None
+        mock_urlopen.assert_called_once()
 
 
 class TestFilterByMinStock:
