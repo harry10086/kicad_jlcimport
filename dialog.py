@@ -25,6 +25,104 @@ from .kicad_version import DEFAULT_KICAD_VERSION, SUPPORTED_VERSIONS
 from .library import get_global_lib_dir, load_config, save_config
 
 
+class _CategoryPopup(wx.PopupWindow):
+    """Owner-drawn category suggestions popup.
+
+    Draws items directly on the popup surface rather than using a child
+    wx.ListBox.  This avoids two cross-platform issues with PopupWindow:
+    Windows does not forward mouse events to child controls, and macOS
+    requires an extra click to activate the popup before children respond.
+    """
+
+    ITEM_PAD = 6  # vertical padding per item
+
+    def __init__(self, parent, on_select=None):
+        super().__init__(parent, flags=wx.BORDER_SIMPLE)
+        self._items = []
+        self._hover = -1
+        self._selection = wx.NOT_FOUND
+        self._on_select = on_select
+        self.SetBackgroundStyle(wx.BG_STYLE_PAINT)
+        self.Bind(wx.EVT_PAINT, self._on_paint)
+        self.Bind(wx.EVT_LEFT_DOWN, self._on_click)
+        self.Bind(wx.EVT_MOTION, self._on_motion)
+        self.Bind(wx.EVT_LEAVE_WINDOW, self._on_leave)
+
+    # -- public API matching the subset used by the dialog --
+
+    def Set(self, items):
+        self._items = list(items)
+        self._hover = -1
+        self._selection = wx.NOT_FOUND
+        self.Refresh()
+
+    def GetSelection(self):
+        return self._selection
+
+    def GetString(self, idx):
+        if 0 <= idx < len(self._items):
+            return self._items[idx]
+        return ""
+
+    def GetCharHeight(self):
+        dc = wx.ClientDC(self.GetParent())
+        return dc.GetCharHeight()
+
+    def Popup(self):
+        self.Show()
+
+    def Dismiss(self):
+        self.Hide()
+
+    # -- internals --
+
+    def _item_height(self):
+        return self.GetCharHeight() + self.ITEM_PAD
+
+    def _hit_test(self, y):
+        ih = self._item_height()
+        if ih <= 0:
+            return -1
+        idx = y // ih
+        return idx if 0 <= idx < len(self._items) else -1
+
+    def _on_paint(self, event):
+        dc = wx.AutoBufferedPaintDC(self)
+        dc.SetFont(self.GetParent().GetFont())
+        w, _ = self.GetClientSize()
+        ih = self._item_height()
+        dc.SetBackground(wx.Brush(wx.SystemSettings.GetColour(wx.SYS_COLOUR_WINDOW)))
+        dc.Clear()
+        for i, item in enumerate(self._items):
+            y = i * ih
+            if i == self._hover:
+                dc.SetBrush(wx.Brush(wx.SystemSettings.GetColour(wx.SYS_COLOUR_HIGHLIGHT)))
+                dc.SetPen(wx.TRANSPARENT_PEN)
+                dc.DrawRectangle(0, y, w, ih)
+                dc.SetTextForeground(wx.SystemSettings.GetColour(wx.SYS_COLOUR_HIGHLIGHTTEXT))
+            else:
+                dc.SetTextForeground(wx.SystemSettings.GetColour(wx.SYS_COLOUR_WINDOWTEXT))
+            dc.DrawText(item, 4, y + self.ITEM_PAD // 2)
+
+    def _on_motion(self, event):
+        idx = self._hit_test(event.GetY())
+        if idx != self._hover:
+            self._hover = idx
+            self.Refresh()
+
+    def _on_leave(self, event):
+        if self._hover != -1:
+            self._hover = -1
+            self.Refresh()
+
+    def _on_click(self, event):
+        idx = self._hit_test(event.GetY())
+        if idx >= 0:
+            self._selection = idx
+            if self._on_select:
+                self._on_select()
+
+
 class JLCImportDialog(wx.Dialog):
     def __init__(self, parent, board, project_dir=None, kicad_version=None):
         super().__init__(parent, title="JLCImport", size=(700, 600), style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER)
@@ -53,11 +151,10 @@ class JLCImportDialog(wx.Dialog):
 
         # Search input row
         hbox_search = wx.BoxSizer(wx.HORIZONTAL)
-        self.search_input = wx.ComboBox(panel, style=wx.CB_DROPDOWN | wx.TE_PROCESS_ENTER)
+        self.search_input = wx.TextCtrl(panel, style=wx.TE_PROCESS_ENTER)
         self.search_input.SetHint("Search JLCPCB parts...")
         self.search_input.Bind(wx.EVT_TEXT_ENTER, self._on_search)
         self.search_input.Bind(wx.EVT_TEXT, self._on_search_text_changed)
-        self.search_input.Bind(wx.EVT_COMBOBOX, self._on_category_selected)
         hbox_search.Add(self.search_input, 1, wx.EXPAND | wx.RIGHT, 5)
         self.search_btn = wx.Button(panel, label="Search")
         self.search_btn.Bind(wx.EVT_BUTTON, self._on_search)
@@ -262,6 +359,9 @@ class JLCImportDialog(wx.Dialog):
 
         panel.SetSizer(vbox)
 
+        # Category suggestions popup (owner-drawn for cross-platform compatibility)
+        self._category_popup = _CategoryPopup(self, on_select=lambda: self._on_category_selected(None))
+
         # --- Gallery panel (hidden by default) ---
         self._gallery_panel = wx.Panel(self)
         self._gallery_panel.Hide()
@@ -362,36 +462,43 @@ class JLCImportDialog(wx.Dialog):
             )
         _api_module.allow_unverified_ssl()
 
+    def _show_category_list(self, matches):
+        """Position and show the category suggestion popup below the search input."""
+        self._category_popup.Set(matches)
+        # Position in screen coordinates (PopupWindow uses screen coords)
+        screen_pos = self.search_input.ClientToScreen(wx.Point(0, 0))
+        sz = self.search_input.GetSize()
+        height = min(len(matches), 10) * self._category_popup.GetCharHeight() + 20
+        self._category_popup.SetPosition(wx.Point(screen_pos.x, screen_pos.y + sz.height))
+        self._category_popup.SetSize(sz.width, height)
+        self._category_popup.Popup()
+
     def _on_search_text_changed(self, event):
-        """Update ComboBox choices as user types."""
-        if getattr(self, "_updating_choices", False):
-            return
+        """Show category suggestions as user types."""
         text = self.search_input.GetValue().strip().lower()
         if len(text) < 2:
-            self.search_input.Dismiss()
+            self._category_popup.Dismiss()
             return
         pattern = re.compile(r"\b" + re.escape(text), re.IGNORECASE)
         matches = [c for c in CATEGORIES if pattern.search(c)]
         if matches and len(matches) <= 20:
             if len(matches) == 1 and matches[0].lower() == text:
-                self.search_input.Dismiss()
+                self._category_popup.Dismiss()
             else:
-                self._updating_choices = True
-                current = self.search_input.GetValue()
-                self.search_input.Set(matches)
-                self.search_input.SetValue(current)
-                self._updating_choices = False
-                self.search_input.Popup()
-                wx.CallAfter(self.search_input.SetInsertionPointEnd)
+                self._show_category_list(matches)
         else:
-            self.search_input.Dismiss()
+            self._category_popup.Dismiss()
 
     def _on_category_selected(self, event):
-        """Handle category selection from dropdown."""
-        self.search_input.SetInsertionPointEnd()
+        """Handle category selection from suggestions popup."""
+        sel = self._category_popup.GetSelection()
+        if sel != wx.NOT_FOUND:
+            self.search_input.SetValue(self._category_popup.GetString(sel))
+            self._category_popup.Dismiss()
+            self.search_input.SetInsertionPointEnd()
 
     def _on_search(self, event):
-        self.search_input.Dismiss()
+        self._category_popup.Dismiss()
         keyword = self.search_input.GetValue().strip()
         if not keyword:
             return
