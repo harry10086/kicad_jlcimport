@@ -1,5 +1,6 @@
 """EasyEDA/LCSC HTTP client using only urllib."""
 
+import gzip
 import json
 import logging
 import os
@@ -441,7 +442,10 @@ def download_step(uuid_3d: str) -> Optional[bytes]:
     req = urllib.request.Request(url, headers=_HEADERS)
     try:
         with _urlopen(req, timeout=60) as resp:
-            return resp.read()
+            data = resp.read()
+            if data[:2] == b"\x1f\x8b":
+                data = gzip.decompress(data)
+            return data
     except (urllib.error.HTTPError, urllib.error.URLError):
         return None
 
@@ -452,7 +456,10 @@ def download_wrl_source(uuid_3d: str) -> Optional[str]:
     req = urllib.request.Request(url, headers=_HEADERS)
     try:
         with _urlopen(req, timeout=60) as resp:
-            return resp.read().decode("utf-8")
+            data = resp.read()
+            if data[:2] == b"\x1f\x8b":
+                data = gzip.decompress(data)
+            return data.decode("utf-8")
     except (urllib.error.HTTPError, urllib.error.URLError):
         return None
 
