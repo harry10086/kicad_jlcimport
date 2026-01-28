@@ -1,6 +1,6 @@
-# Manual Testing
+# Visual Testing
 
-## Visual Comparison Testing
+## Comparison Testing
 
 The `tools/compare_part.py` script fetches EasyEDA preview SVGs and renders the KiCad conversion output side-by-side in an HTML page. Use this before releases to verify that symbols and footprints convert correctly across a variety of real-world parts.
 
