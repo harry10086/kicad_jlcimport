@@ -250,15 +250,21 @@ def render_kicad_svgs(kicad_files: dict, tmp_dir: str) -> dict:
     return result
 
 
-def strip_svg_dimensions(svg: str) -> str:
-    """Replace width/height with large pixel values derived from the viewBox.
+def clean_svg_for_inline(svg: str) -> str:
+    """Prepare an SVG for inline embedding in HTML.
 
-    KiCad SVGs use mm-unit dimensions (e.g. width="28mm") with a tiny viewBox
-    (~28x19 units). Stripping these entirely leaves the browser with a ~28x19px
-    intrinsic size; mobile Safari rasterizes at that size then upscales, causing
-    pixelation. Instead, we set large pixel dimensions (min 800px wide) so the
-    browser rasterizes at high resolution. CSS width:100% handles display sizing.
+    - Strips XML declaration and DOCTYPE (invalid in inline HTML5, can cause
+      browsers to mishandle SVG rendering)
+    - Replaces width/height with large pixel values derived from viewBox so
+      browsers rasterize at high resolution (KiCad SVGs use mm-scale viewBox
+      coordinates like 13x5 which otherwise become the intrinsic pixel size)
     """
+    # Strip XML declaration and DOCTYPE — these are only valid in standalone
+    # SVG files and cause parse errors when embedded inline in HTML5
+    svg = re.sub(r"<\?xml[^?]*\?>", "", svg)
+    svg = re.sub(r"<!DOCTYPE[^>]*>", "", svg)
+    svg = svg.lstrip()
+
     viewbox_match = re.search(r'viewBox="([^"]+)"', svg)
     if viewbox_match:
         parts = viewbox_match.group(1).split()
@@ -334,7 +340,7 @@ def generate_html(parts: list) -> str:
         # SVG cells
         def svg_cell(svg, label):
             if svg:
-                return f'<div class="svg-cell">{strip_svg_dimensions(svg)}</div>'
+                return f'<div class="svg-cell">{clean_svg_for_inline(svg)}</div>'
             return f'<div class="svg-cell empty">{html.escape(label)}</div>'
 
         symbol_row = (
