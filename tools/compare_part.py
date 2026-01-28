@@ -274,8 +274,11 @@ def _add_board_background(svg: str, color: str = "#001023") -> str:
         return svg
     x, y, w, h = parts
     bg_rect = f'<rect x="{x}" y="{y}" width="{w}" height="{h}" fill="{color}"/>'
-    # Insert after opening svg tag
-    svg = re.sub(r"(</desc>)", rf"\1\n{bg_rect}", svg, count=1)
+    # Insert after </desc> if present, otherwise after opening <svg> tag
+    if "</desc>" in svg:
+        svg = re.sub(r"(</desc>)", rf"\1\n{bg_rect}", svg, count=1)
+    else:
+        svg = re.sub(r"(<svg[^>]*>)", rf"\1\n{bg_rect}", svg, count=1)
     return svg
 
 

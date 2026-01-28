@@ -1,5 +1,7 @@
 """Tests for symbol_writer.py - KiCad symbol generation."""
 
+import re
+
 from kicad_jlcimport.easyeda.ee_types import EECircle, EEPin, EEPolyline, EERectangle, EESymbol
 from kicad_jlcimport.kicad.symbol_writer import (
     _estimate_bottom,
@@ -42,6 +44,34 @@ class TestWriteSymbol:
         sym = _make_symbol()
         result = write_symbol(sym, "My_Resistor")
         assert '(property "Value" "My_Resistor"' in result
+
+    def test_reference_positioned_above_symbol(self):
+        """Reference property must be positioned above the symbol body, not inside it."""
+        rect = EERectangle(x=-5, y=5, width=10, height=-10)  # top=5, bottom=-5
+        sym = _make_symbol(rectangles=[rect])
+        result = write_symbol(sym, "Test", prefix="U")
+
+        # Extract Reference Y position
+        match = re.search(r'\(property "Reference" "U" \(at [\d.-]+ ([\d.-]+)', result)
+        assert match, "Reference property not found"
+        ref_y = float(match.group(1))
+
+        # Reference should be above the symbol top (y=5), so ref_y > 5
+        assert ref_y > 5, f"Reference Y={ref_y} should be above symbol top (5)"
+
+    def test_value_positioned_below_symbol(self):
+        """Value property must be positioned below the symbol body, not inside it."""
+        rect = EERectangle(x=-5, y=5, width=10, height=-10)  # top=5, bottom=-5
+        sym = _make_symbol(rectangles=[rect])
+        result = write_symbol(sym, "TestValue", prefix="U")
+
+        # Extract Value Y position
+        match = re.search(r'\(property "Value" "TestValue" \(at [\d.-]+ ([\d.-]+)', result)
+        assert match, "Value property not found"
+        val_y = float(match.group(1))
+
+        # Value should be below the symbol bottom (y=-5), so val_y < -5
+        assert val_y < -5, f"Value Y={val_y} should be below symbol bottom (-5)"
 
     def test_footprint_property(self):
         sym = _make_symbol()
@@ -161,8 +191,6 @@ class TestWriteSymbol:
         # Should produce a (polyline ...) block instead
         assert "(polyline" in result
         # Extract all xy points from the polyline
-        import re
-
         xy_matches = re.findall(r"\(xy ([\d.e+-]+) ([\d.e+-]+)\)", result)
         assert len(xy_matches) > 4, "Rounded rect should have many points"
         first = (float(xy_matches[0][0]), float(xy_matches[0][1]))
