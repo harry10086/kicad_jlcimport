@@ -250,18 +250,44 @@ def render_kicad_svgs(kicad_files: dict, tmp_dir: str) -> dict:
     return result
 
 
-def strip_svg_dimensions(svg: str) -> str:
-    """Remove width/height attributes from SVG element only, preserving viewBox for responsive sizing."""
+def normalize_svg_dimensions(svg: str, target_width: int = 400) -> str:
+    """Set explicit width/height on SVG based on viewBox aspect ratio.
 
-    # Only strip width/height from the opening <svg> tag, not from other elements
-    def strip_from_svg_tag(match: re.Match) -> str:
+    Safari has issues rendering SVGs without explicit dimensions, especially
+    inside flex containers. This function ensures SVGs have explicit pixel
+    dimensions while maintaining aspect ratio from the viewBox.
+    """
+    # Extract viewBox to calculate aspect ratio
+    viewbox_match = re.search(r'viewBox="([^"]+)"', svg)
+    if viewbox_match:
+        parts = viewbox_match.group(1).split()
+        if len(parts) == 4:
+            vb_width = float(parts[2])
+            vb_height = float(parts[3])
+            if vb_width > 0:
+                aspect_ratio = vb_height / vb_width
+                target_height = int(target_width * aspect_ratio)
+
+                def set_dimensions(match: re.Match) -> str:
+                    tag = match.group(0)
+                    # Remove existing width/height
+                    tag = re.sub(r'\s+width="[^"]*"', "", tag)
+                    tag = re.sub(r'\s+height="[^"]*"', "", tag)
+                    # Insert new dimensions before the closing >
+                    tag = tag.rstrip(">")
+                    tag = f'{tag} width="{target_width}" height="{target_height}">'
+                    return tag
+
+                return re.sub(r"<svg[^>]*>", set_dimensions, svg, count=1)
+
+    # Fallback: just remove dimensions if no viewBox (shouldn't happen)
+    def strip_dimensions(match: re.Match) -> str:
         tag = match.group(0)
         tag = re.sub(r'\s+width="[^"]*"', "", tag)
         tag = re.sub(r'\s+height="[^"]*"', "", tag)
         return tag
 
-    svg = re.sub(r"<svg[^>]*>", strip_from_svg_tag, svg, count=1)
-    return svg
+    return re.sub(r"<svg[^>]*>", strip_dimensions, svg, count=1)
 
 
 def _add_board_background(svg: str, color: str = "#001023") -> str:
@@ -309,7 +335,7 @@ def generate_html(parts: list) -> str:
         # SVG cells
         def svg_cell(svg, label):
             if svg:
-                return f'<div class="svg-cell">{strip_svg_dimensions(svg)}</div>'
+                return f'<div class="svg-cell">{normalize_svg_dimensions(svg)}</div>'
             return f'<div class="svg-cell empty">{html.escape(label)}</div>'
 
         symbol_row = (
@@ -364,9 +390,8 @@ def generate_html(parts: list) -> str:
   .col-label {{ text-align: center; font-size: 0.85em; color: #888;
                 margin-bottom: 0.3em; text-transform: uppercase; letter-spacing: 0.05em; }}
   .svg-cell {{ border: 1px solid #ddd; border-radius: 4px; padding: 1em;
-               display: flex; align-items: center; justify-content: center;
-               min-height: 150px; background: #fafafa; }}
-  .svg-cell svg {{ max-width: 100%; max-height: 400px; }}
+               text-align: center; min-height: 150px; background: #fafafa; }}
+  .svg-cell svg {{ max-width: 100%; max-height: 400px; display: block; margin: auto; }}
   .svg-cell.empty {{ color: #999; font-style: italic; }}
 </style>
 </head>
