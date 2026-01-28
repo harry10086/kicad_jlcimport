@@ -6,6 +6,7 @@ import html
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -20,7 +21,7 @@ from kicad_jlcimport.kicad.footprint_writer import write_footprint
 from kicad_jlcimport.kicad.library import sanitize_name
 from kicad_jlcimport.kicad.symbol_writer import write_symbol, write_symbol_library
 
-KICAD_CLI = "/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli"
+KICAD_CLI = shutil.which("kicad-cli") or "/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli"
 
 
 def fetch_easyeda_svgs(lcsc_id: str) -> dict:
@@ -318,6 +319,7 @@ def main():
     parser = argparse.ArgumentParser(description="Compare EasyEDA and KiCad renderings of JLCPCB parts")
     parser.add_argument("part_ids", nargs="+", help="LCSC part numbers (e.g. C427602)")
     parser.add_argument("--no-open", action="store_true", help="Don't open the HTML in a browser")
+    parser.add_argument("--output-dir", help="Write HTML to this directory instead of a temp dir")
     args = parser.parse_args()
 
     # Check kicad-cli exists
@@ -335,13 +337,20 @@ def main():
 
     # Generate HTML
     html_content = generate_html(parts)
-    html_path = os.path.join(tmp_dir, "comparison.html")
+
+    if args.output_dir:
+        out_dir = Path(args.output_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        html_path = str(out_dir / "index.html")
+    else:
+        html_path = os.path.join(tmp_dir, "comparison.html")
+
     with open(html_path, "w") as f:
         f.write(html_content)
 
     print(f"\nHTML written to: {html_path}")
 
-    if not args.no_open:
+    if not args.output_dir and not args.no_open:
         webbrowser.open(f"file://{html_path}")
 
 
