@@ -204,6 +204,8 @@ The plugin automatically creates and updates `sym-lib-table` and `fp-lib-table` 
 
 For a detailed look at the architecture, data flow, module responsibilities, and external APIs, see the [Architecture Documentation](docs/architecture.md).
 
+A [visual comparison](https://jvanderberg.github.io/kicad_jlcimport/) of EasyEDA source renderings vs KiCad conversion output is published on each release, covering 100 parts across ICs, passives, LEDs, transistors, and connectors.
+
 ## Requirements
 
 - KiCad 8.0+
