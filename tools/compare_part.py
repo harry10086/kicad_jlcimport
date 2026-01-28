@@ -251,13 +251,35 @@ def render_kicad_svgs(kicad_files: dict, tmp_dir: str) -> dict:
 
 
 def strip_svg_dimensions(svg: str) -> str:
-    """Remove width/height attributes from the SVG element, preserving viewBox.
+    """Replace width/height with large pixel values derived from the viewBox.
 
-    This lets the browser render the SVG at native resolution using CSS sizing,
-    avoiding pixelation on high-DPI / Retina displays that occurs when explicit
-    pixel dimensions force rasterization at a fixed size.
+    KiCad SVGs use mm-unit dimensions (e.g. width="28mm") with a tiny viewBox
+    (~28x19 units). Stripping these entirely leaves the browser with a ~28x19px
+    intrinsic size; mobile Safari rasterizes at that size then upscales, causing
+    pixelation. Instead, we set large pixel dimensions (min 800px wide) so the
+    browser rasterizes at high resolution. CSS width:100% handles display sizing.
     """
+    viewbox_match = re.search(r'viewBox="([^"]+)"', svg)
+    if viewbox_match:
+        parts = viewbox_match.group(1).split()
+        if len(parts) == 4:
+            vb_w = float(parts[2])
+            vb_h = float(parts[3])
+            if vb_w > 0 and vb_h > 0:
+                scale = max(1, 800 / vb_w)
+                px_w = int(vb_w * scale)
+                px_h = int(vb_h * scale)
 
+                def replace_dims(match: re.Match) -> str:
+                    tag = match.group(0)
+                    tag = re.sub(r'\s+width="[^"]*"', "", tag)
+                    tag = re.sub(r'\s+height="[^"]*"', "", tag)
+                    tag = tag.rstrip(">")
+                    return f'{tag} width="{px_w}" height="{px_h}">'
+
+                return re.sub(r"<svg[^>]*>", replace_dims, svg, count=1)
+
+    # Fallback: just strip dimensions
     def strip_from_svg_tag(match: re.Match) -> str:
         tag = match.group(0)
         tag = re.sub(r'\s+width="[^"]*"', "", tag)
