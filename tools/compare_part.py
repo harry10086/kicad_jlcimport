@@ -77,7 +77,13 @@ def convert_to_kicad(comp: dict, tmp_dir: str) -> dict:
         origin_y = head.get("y", 0)
         if shapes:
             symbol = parse_symbol_shapes(shapes, origin_x, origin_y)
-            sym_content = write_symbol(symbol, title, prefix=comp.get("prefix", "U"))
+            sym_content = write_symbol(
+                symbol,
+                title,
+                prefix=comp.get("prefix", "U"),
+                include_pin_dots=True,
+                hide_properties=True,
+            )
             sym_lib = write_symbol_library([sym_content])
             sym_file = Path(tmp_dir) / f"{lcsc_id}.kicad_sym"
             sym_file.write_text(sym_lib)
@@ -105,6 +111,71 @@ def convert_to_kicad(comp: dict, tmp_dir: str) -> dict:
             result["pretty_dir"] = str(pretty_dir)
 
     return result
+
+
+def _estimate_footprint_bounds(footprint_content: str) -> tuple:
+    """Estimate footprint bounding box from coordinate values in the content.
+
+    Returns (min_x, min_y, max_x, max_y) or None if no coordinates found.
+    """
+    # Find all coordinate patterns: (at x y), (start x y), (end x y), (xy x y)
+    coords = re.findall(r"\((?:at|start|end|xy)\s+([-\d.]+)\s+([-\d.]+)", footprint_content)
+    if not coords:
+        return None
+    xs = [float(c[0]) for c in coords]
+    ys = [float(c[1]) for c in coords]
+    return (min(xs), min(ys), max(xs), max(ys))
+
+
+def _create_minimal_pcb(footprint_content: str) -> str:
+    """Create a minimal .kicad_pcb containing a footprint for SVG export.
+
+    This allows using 'pcb export svg' which supports --drill-shape-opt
+    for rendering drill holes, unlike 'fp export svg'.
+    """
+    # Calculate Edge.Cuts with 25% padding based on footprint bounds
+    bounds = _estimate_footprint_bounds(footprint_content)
+    edge_cuts = ""
+    if bounds:
+        min_x, min_y, max_x, max_y = bounds
+        width = max_x - min_x
+        height = max_y - min_y
+        pad_x = max(width * 0.25, 1.0)  # At least 1mm padding
+        pad_y = max(height * 0.25, 1.0)
+        edge_cuts = (
+            f"  (gr_rect (start {min_x - pad_x:.4f} {min_y - pad_y:.4f}) "
+            f"(end {max_x + pad_x:.4f} {max_y + pad_y:.4f}) "
+            f'(layer "Edge.Cuts") (stroke (width 0.1) (type solid)))\n'
+        )
+
+    pcb_header = """\
+(kicad_pcb
+  (version 20240108)
+  (generator "kicad_jlcimport")
+  (general
+    (thickness 1.6)
+    (legacy_teardrops no)
+  )
+  (paper "A4")
+  (layers
+    (0 "F.Cu" signal)
+    (31 "B.Cu" signal)
+    (36 "B.SilkS" user "B.Silkscreen")
+    (37 "F.SilkS" user "F.Silkscreen")
+    (38 "B.Mask" user)
+    (39 "F.Mask" user)
+    (44 "Edge.Cuts" user)
+    (46 "B.CrtYd" user "B.Courtyard")
+    (47 "F.CrtYd" user "F.Courtyard")
+    (48 "B.Fab" user)
+    (49 "F.Fab" user)
+  )
+  (setup
+    (pad_to_mask_clearance 0.05)
+  )
+  (net 0 "")
+"""
+    return pcb_header + edge_cuts + footprint_content + "\n)"
 
 
 def render_kicad_svgs(kicad_files: dict, tmp_dir: str) -> dict:
@@ -138,35 +209,73 @@ def render_kicad_svgs(kicad_files: dict, tmp_dir: str) -> dict:
         if not result["symbol_svg"]:
             print(f"  Warning: kicad-cli sym export failed: {proc.stderr.strip()}")
 
-    # Footprint SVG — kicad-cli fp export matches by filename, not the internal
-    # name, so skip --footprint and let it export the single footprint in the dir.
+    # Footprint SVG — use pcb export instead of fp export to get drill holes rendered.
+    # We create a minimal .kicad_pcb containing the footprint and export that.
     if kicad_files.get("fp_file"):
         fp_svg_dir = Path(tmp_dir) / "fp_svg"
         fp_svg_dir.mkdir(exist_ok=True)
+
+        # Create minimal PCB file with the footprint embedded
+        fp_content = Path(kicad_files["fp_file"]).read_text()
+        pcb_content = _create_minimal_pcb(fp_content)
+        pcb_file = Path(tmp_dir) / "footprint.kicad_pcb"
+        pcb_file.write_text(pcb_content)
+
+        svg_output = fp_svg_dir / "footprint.svg"
         cmd = [
             KICAD_CLI,
-            "fp",
+            "pcb",
             "export",
             "svg",
+            "--layers",
+            "F.Mask,F.Cu,F.SilkS,F.Fab",
+            "--drill-shape-opt",
+            "2",
+            "--page-size-mode",
+            "2",
+            "--exclude-drawing-sheet",
+            "--theme",
+            "user",
             "--output",
-            str(fp_svg_dir),
-            kicad_files["pretty_dir"],
+            str(svg_output),
+            str(pcb_file),
         ]
         proc = subprocess.run(cmd, capture_output=True, text=True)
-        if proc.returncode == 0:
-            svg_files = list(fp_svg_dir.glob("*.svg"))
-            if svg_files:
-                result["footprint_svg"] = svg_files[0].read_text()
+        if proc.returncode == 0 and svg_output.exists():
+            svg_content = svg_output.read_text()
+            result["footprint_svg"] = _add_board_background(svg_content)
         if not result["footprint_svg"]:
-            print(f"  Warning: kicad-cli fp export failed: {proc.stderr.strip()}")
+            print(f"  Warning: kicad-cli pcb export failed: {proc.stderr.strip()}")
 
     return result
 
 
 def strip_svg_dimensions(svg: str) -> str:
-    """Remove width/height attributes from SVG, preserving viewBox for responsive sizing."""
-    svg = re.sub(r'\s+width="[^"]*"', "", svg)
-    svg = re.sub(r'\s+height="[^"]*"', "", svg)
+    """Remove width/height attributes from SVG element only, preserving viewBox for responsive sizing."""
+
+    # Only strip width/height from the opening <svg> tag, not from other elements
+    def strip_from_svg_tag(match: re.Match) -> str:
+        tag = match.group(0)
+        tag = re.sub(r'\s+width="[^"]*"', "", tag)
+        tag = re.sub(r'\s+height="[^"]*"', "", tag)
+        return tag
+
+    svg = re.sub(r"<svg[^>]*>", strip_from_svg_tag, svg, count=1)
+    return svg
+
+
+def _add_board_background(svg: str, color: str = "#001023") -> str:
+    """Add a dark board background rect to the SVG based on its viewBox."""
+    match = re.search(r'viewBox="([^"]+)"', svg)
+    if not match:
+        return svg
+    parts = match.group(1).split()
+    if len(parts) != 4:
+        return svg
+    x, y, w, h = parts
+    bg_rect = f'<rect x="{x}" y="{y}" width="{w}" height="{h}" fill="{color}"/>'
+    # Insert after opening svg tag
+    svg = re.sub(r"(</desc>)", rf"\1\n{bg_rect}", svg, count=1)
     return svg
 
 

@@ -331,6 +331,9 @@ def _parse_circle(parts: List[str]) -> EECircle:
         return None
 
     kicad_layer = LAYER_MAP.get(layer, "F.SilkS")
+    # When stroke width >= 2*radius the stroke covers the entire circle,
+    # which is how EasyEDA represents a solid filled circle.
+    filled = width >= 2 * radius and radius > 0
     return EECircle(
         cx=mil_to_mm(cx),
         cy=mil_to_mm(cy),
@@ -338,6 +341,7 @@ def _parse_circle(parts: List[str]) -> EECircle:
         width=mil_to_mm(width),
         layer=kicad_layer,
         flag=flag,
+        filled=filled,
     )
 
 
@@ -687,7 +691,9 @@ def _parse_sym_rect(shape_str: str, origin_x: float, origin_y: float) -> EERecta
     try:
         x = float(parts[1])
         y = float(parts[2])
+        rx = 0.0
         if len(parts) >= 12:
+            rx = float(parts[3]) if parts[3] else 0.0
             w = float(parts[5])
             h = float(parts[6])
         else:
@@ -700,8 +706,9 @@ def _parse_sym_rect(shape_str: str, origin_x: float, origin_y: float) -> EERecta
     ky = -mil_to_mm(y - origin_y)
     kw = mil_to_mm(w)
     kh = mil_to_mm(h)
+    kr = mil_to_mm(rx)
 
-    return EERectangle(x=kx, y=ky, width=kw, height=-kh)
+    return EERectangle(x=kx, y=ky, width=kw, height=-kh, corner_radius=kr)
 
 
 def _parse_sym_circle(shape_str: str, origin_x: float, origin_y: float) -> EECircle:

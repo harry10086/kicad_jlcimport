@@ -55,6 +55,7 @@ class EERectangle:
     width: float
     height: float
     stroke_width: float = 0.0
+    corner_radius: float = 0.0
 
 
 @dataclass
