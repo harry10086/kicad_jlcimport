@@ -129,11 +129,26 @@ def write_footprint(
         size_str = f"(size {_fmt(pad.width)} {_fmt(pad.height)})"
         layers_str = " ".join(f'"{layer}"' for layer in layers)
 
-        pad_line = f'  (pad "{pad.number}" {pad_type} {pad_shape} {at_str} {size_str}'
-        if pad.drill > 0:
-            pad_line += f" (drill {_fmt(pad.drill)})"
-        pad_line += f' (layers {layers_str}) (uuid "{_uuid()}"))'
-        lines.append(pad_line)
+        if pad_shape == "custom" and pad.polygon_points:
+            # Custom pad with polygon primitives.  The polygon vertices
+            # already define the final shape, so omit pad rotation to
+            # avoid double-rotating.
+            custom_at = f"(at {_fmt(pad.x)} {_fmt(pad.y)})"
+            pts = pad.polygon_points
+            pts_str = " ".join(f"(xy {_fmt(pts[i])} {_fmt(pts[i + 1])})" for i in range(0, len(pts) - 1, 2))
+            lines.append(f'  (pad "{pad.number}" {pad_type} {pad_shape} {custom_at} {size_str}')
+            if pad.drill > 0:
+                lines.append(f"    (drill {_fmt(pad.drill)})")
+            lines.append(f"    (layers {layers_str})")
+            lines.append("    (primitives")
+            lines.append(f"      (gr_poly (pts {pts_str}) (width 0) (fill yes))")
+            lines.append(f'    ) (uuid "{_uuid()}"))')
+        else:
+            pad_line = f'  (pad "{pad.number}" {pad_type} {pad_shape} {at_str} {size_str}'
+            if pad.drill > 0:
+                pad_line += f" (drill {_fmt(pad.drill)})"
+            pad_line += f' (layers {layers_str}) (uuid "{_uuid()}"))'
+            lines.append(pad_line)
 
     # Holes (NPTH)
     for hole in footprint.holes:
@@ -172,6 +187,10 @@ def _pad_type_info(pad):
         "POLYGON": "custom",
     }
     pad_shape = shape_map.get(pad.shape, "rect")
+
+    # Only use custom shape if polygon data is available; fall back to rect
+    if pad_shape == "custom" and not pad.polygon_points:
+        pad_shape = "rect"
 
     if pad.layer == "11":
         # Through-hole

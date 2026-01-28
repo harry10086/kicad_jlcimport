@@ -71,6 +71,64 @@ class TestWriteFootprint:
         result = write_footprint(fp, "Test")
         assert "45" in result
 
+    def test_polygon_pad_emits_primitives(self):
+        """POLYGON pad with polygon_points should emit gr_poly primitives."""
+        pad = EEPad(
+            shape="POLYGON",
+            x=0,
+            y=0,
+            width=1,
+            height=1,
+            layer="1",
+            number="1",
+            drill=0,
+            polygon_points=[-0.5, -0.5, 0.5, -0.5, 0.0, 0.5],
+        )
+        fp = _make_footprint(pads=[pad])
+        result = write_footprint(fp, "Test")
+        assert "smd custom" in result
+        assert "(primitives" in result
+        assert "(gr_poly" in result
+        assert "(fill yes)" in result
+
+    def test_polygon_pad_omits_rotation(self):
+        """Custom polygon pad should not include rotation in (at ...) to avoid double-rotation."""
+        pad = EEPad(
+            shape="POLYGON",
+            x=1.0,
+            y=2.0,
+            width=1,
+            height=1,
+            layer="1",
+            number="1",
+            drill=0,
+            rotation=90.0,
+            polygon_points=[-0.5, -0.5, 0.5, -0.5, 0.0, 0.5],
+        )
+        fp = _make_footprint(pads=[pad])
+        result = write_footprint(fp, "Test")
+        # Should use (at x y) without rotation, not (at x y 90)
+        assert "(at 1 2)" in result
+        assert "(at 1 2 90)" not in result
+
+    def test_polygon_pad_without_data_falls_back_to_rect(self):
+        """POLYGON pad with no polygon_points should fall back to rect shape."""
+        pad = EEPad(
+            shape="POLYGON",
+            x=0,
+            y=0,
+            width=1,
+            height=1,
+            layer="1",
+            number="1",
+            drill=0,
+            polygon_points=[],
+        )
+        fp = _make_footprint(pads=[pad])
+        result = write_footprint(fp, "Test")
+        assert "smd rect" in result
+        assert "(primitives" not in result
+
     def test_track_generation(self):
         track = EETrack(width=0.2, layer="F.SilkS", points=[(0, 0), (1, 0), (1, 1)])
         fp = _make_footprint(tracks=[track])

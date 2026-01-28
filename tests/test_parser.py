@@ -122,6 +122,27 @@ class TestParseFootprintShapes:
         assert fp.pads[0].shape == "OVAL"
         assert fp.pads[0].number == "2"
 
+    def test_parse_polygon_pad(self):
+        """POLYGON pad should store center-relative polygon_points in mm."""
+        # Pad at (400, 300) with a triangle polygon: (390,290) (410,290) (400,310)
+        shape = "PAD~POLYGON~400~300~20~20~1~~1~0~390 290 410 290 400 310~0~id3"
+        fp = parse_footprint_shapes([shape], 400, 300)
+        assert len(fp.pads) == 1
+        pad = fp.pads[0]
+        assert pad.shape == "POLYGON"
+        # 3 vertices * 2 coords = 6 floats
+        assert len(pad.polygon_points) == 6
+        # First vertex: (390-400, 290-300) = (-10, -10) in mils -> mm
+        assert abs(pad.polygon_points[0] - mil_to_mm(-10)) < 1e-6
+        assert abs(pad.polygon_points[1] - mil_to_mm(-10)) < 1e-6
+
+    def test_parse_polygon_pad_empty_coords(self):
+        """POLYGON pad with empty polygon string gets empty polygon_points."""
+        shape = "PAD~POLYGON~400~300~20~20~1~~1~0~~0~id3"
+        fp = parse_footprint_shapes([shape], 400, 300)
+        assert len(fp.pads) == 1
+        assert fp.pads[0].polygon_points == []
+
     def test_parse_track(self):
         shape = "TRACK~2~3~id1~100 100 200 200"
         fp = parse_footprint_shapes([shape], 0, 0)
@@ -164,6 +185,55 @@ class TestParseFootprintShapes:
         expected_y = mil_to_mm(300) - mil_to_mm(100)
         assert abs(pad.x - expected_x) < 0.001
         assert abs(pad.y - expected_y) < 0.001
+
+    def test_parse_text_plus_as_tracks(self):
+        """TEXT '+' produces two track segments (vertical + horizontal lines)."""
+        shape = "TEXT~L~100~100~0.8~0~0~3~~4~+~M 98 95 L 98 105 M 93 100 L 103 100~~id1~~0~pinpart"
+        fp = parse_footprint_shapes([shape], 0, 0)
+        assert len(fp.tracks) == 2
+        assert fp.tracks[0].layer == "F.SilkS"
+        assert fp.tracks[1].layer == "F.SilkS"
+        assert len(fp.tracks[0].points) == 2
+        assert len(fp.tracks[1].points) == 2
+
+    def test_parse_text_minus_as_track(self):
+        """TEXT '-' produces a single track segment (one horizontal line)."""
+        shape = "TEXT~L~100~100~0.8~0~0~3~~4~-~M 93 100 L 103 100~~id1~~0~pinpart"
+        fp = parse_footprint_shapes([shape], 0, 0)
+        assert len(fp.tracks) == 1
+        assert fp.tracks[0].layer == "F.SilkS"
+        assert len(fp.tracks[0].points) == 2
+
+    def test_parse_text_stroke_width(self):
+        """TEXT stroke width is converted from mils to mm."""
+        shape = "TEXT~L~100~100~0.8~0~0~3~~4~+~M 98 95 L 98 105 M 93 100 L 103 100~~id1~~0~pinpart"
+        fp = parse_footprint_shapes([shape], 0, 0)
+        assert abs(fp.tracks[0].width - mil_to_mm(0.8)) < 1e-6
+
+    def test_parse_text_unknown_layer_skipped(self):
+        """TEXT on unmapped layer produces no tracks."""
+        shape = "TEXT~L~100~100~0.8~0~0~999~~4~+~M 98 95 L 98 105~~id1~~0~pinpart"
+        fp = parse_footprint_shapes([shape], 0, 0)
+        assert len(fp.tracks) == 0
+
+    def test_parse_text_empty_path_skipped(self):
+        """TEXT with no SVG path produces no tracks."""
+        shape = "TEXT~L~100~100~0.8~0~0~3~~4~+~~~id1~~0~pinpart"
+        fp = parse_footprint_shapes([shape], 0, 0)
+        assert len(fp.tracks) == 0
+
+    def test_parse_text_origin_offset_applied(self):
+        """TEXT track coordinates should have origin offset applied."""
+        shape = "TEXT~L~100~100~0.8~0~0~3~~4~-~M 100 100 L 110 100~~id1~~0~pinpart"
+        fp = parse_footprint_shapes([shape], 50, 50)
+        assert len(fp.tracks) == 1
+        x0, y0 = fp.tracks[0].points[0]
+        x1, y1 = fp.tracks[0].points[1]
+        # After origin offset: (100-50)=50 mils, (110-50)=60 mils
+        assert abs(x0 - mil_to_mm(50)) < 1e-6
+        assert abs(y0 - mil_to_mm(50)) < 1e-6
+        assert abs(x1 - mil_to_mm(60)) < 1e-6
+        assert abs(y1 - mil_to_mm(50)) < 1e-6
 
 
 class TestParseSymbolShapes:
@@ -219,7 +289,9 @@ class TestParseSymbolShapes:
         assert sym.polylines[0].fill is True
 
     def test_parse_pin(self):
-        shape = "P~show~0~1~400~300~0~id1^^section1^^M400,300h10^^1~0~0~0~0~TestPin^^1~0~0~0~0~1"
+        shape = (
+            "P~show~0~1~400~300~0~id1^^section1^^M400,300h10^^1~0~0~0~TestPin~start~~~#0000FF^^1~0~0~0~1~end~~~#0000FF"
+        )
         sym = parse_symbol_shapes([shape], 400, 300)
         assert len(sym.pins) == 1
         pin = sym.pins[0]
@@ -289,6 +361,26 @@ class TestParseSymbolShapes:
         sym = parse_symbol_shapes([shape], 400, 300)
         assert len(sym.pins) == 1
         assert sym.pins[0].rotation == 270
+
+    def test_parse_pin_empty_rotation(self):
+        """Pin with empty rotation field should default to 0, not be dropped."""
+        # Reproduces C6188 pin 4 (TAB) which has no rotation value
+        shape = "P~show~0~4~450~290~~gge45~0^^450~290^^M 450 290 h -20~#880000^^1~428~293~0~TAB~end~~~#0000FF^^1~435~289~0~4~start~~~#0000FF"
+        sym = parse_symbol_shapes([shape], 400, 300)
+        assert len(sym.pins) == 1
+        pin = sym.pins[0]
+        assert pin.number == "4"
+        assert pin.name == "TAB"
+
+    def test_parse_pin_display_number_differs_from_spice_index(self):
+        """Display pin number from section 4 should override SPICE index."""
+        # Reproduces C6188 pin 1 where SPICE index=1 but display number=3
+        shape = "P~show~0~1~350~300~180~gge24~0^^350~300^^M 350 300 h 20~#880000^^1~372~303~0~In~start~~~#0000FF^^1~365~299~0~3~end~~~#0000FF"
+        sym = parse_symbol_shapes([shape], 400, 300)
+        assert len(sym.pins) == 1
+        pin = sym.pins[0]
+        assert pin.number == "3"
+        assert pin.name == "In"
 
     def test_y_inversion_for_symbols(self):
         shape = "E~100~200~10~10~0~0"
@@ -395,12 +487,14 @@ class TestParseSolidRegion:
         assert region.layer == "Edge.Cuts"
         assert region.region_type == "npth"
 
-    def test_document_layer_filtered(self):
-        """Test that document layer (12) regions are filtered out."""
+    def test_fab_layer_imported(self):
+        """Test that fab layer (12) solid regions are imported (e.g., polarity marks)."""
         shape = "SOLIDREGION~12~~M 390 304 L 397 304 L 397 305 L 390 305 Z ~solid~gge104~~~~0"
         parts = shape.split("~")
         region = _parse_solid_region(parts)
-        assert region is None
+        assert region is not None
+        assert region.layer == "F.Fab"
+        assert len(region.points) == 4
 
     def test_path_starting_with_m_digit(self):
         """Test detection of paths starting with M followed immediately by digit."""
