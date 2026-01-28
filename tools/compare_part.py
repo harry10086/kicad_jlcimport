@@ -251,48 +251,10 @@ def render_kicad_svgs(kicad_files: dict, tmp_dir: str) -> dict:
 
 
 def clean_svg_for_inline(svg: str) -> str:
-    """Prepare an SVG for inline embedding in HTML.
-
-    - Strips XML declaration and DOCTYPE (invalid in inline HTML5, can cause
-      browsers to mishandle SVG rendering)
-    - Replaces width/height with large pixel values derived from viewBox so
-      browsers rasterize at high resolution (KiCad SVGs use mm-scale viewBox
-      coordinates like 13x5 which otherwise become the intrinsic pixel size)
-    """
-    # Strip XML declaration and DOCTYPE — these are only valid in standalone
-    # SVG files and cause parse errors when embedded inline in HTML5
+    """Strip XML declaration and DOCTYPE (invalid in inline HTML5)."""
     svg = re.sub(r"<\?xml[^?]*\?>", "", svg)
     svg = re.sub(r"<!DOCTYPE[^>]*>", "", svg)
-    svg = svg.lstrip()
-
-    viewbox_match = re.search(r'viewBox="([^"]+)"', svg)
-    if viewbox_match:
-        parts = viewbox_match.group(1).split()
-        if len(parts) == 4:
-            vb_w = float(parts[2])
-            vb_h = float(parts[3])
-            if vb_w > 0 and vb_h > 0:
-                scale = max(1, 800 / vb_w)
-                px_w = int(vb_w * scale)
-                px_h = int(vb_h * scale)
-
-                def replace_dims(match: re.Match) -> str:
-                    tag = match.group(0)
-                    tag = re.sub(r'\s+width="[^"]*"', "", tag)
-                    tag = re.sub(r'\s+height="[^"]*"', "", tag)
-                    tag = tag.rstrip(">")
-                    return f'{tag} width="{px_w}" height="{px_h}">'
-
-                return re.sub(r"<svg[^>]*>", replace_dims, svg, count=1)
-
-    # Fallback: just strip dimensions
-    def strip_from_svg_tag(match: re.Match) -> str:
-        tag = match.group(0)
-        tag = re.sub(r'\s+width="[^"]*"', "", tag)
-        tag = re.sub(r'\s+height="[^"]*"', "", tag)
-        return tag
-
-    return re.sub(r"<svg[^>]*>", strip_from_svg_tag, svg, count=1)
+    return svg.lstrip()
 
 
 def _add_board_background(svg: str, color: str = "#001023") -> str:
@@ -340,7 +302,22 @@ def generate_html(parts: list) -> str:
         # SVG cells
         def svg_cell(svg, label):
             if svg:
-                return f'<div class="svg-cell">{clean_svg_for_inline(svg)}</div>'
+                cleaned = clean_svg_for_inline(svg)
+                inner = (
+                    "<html><head><style>"
+                    "body{margin:0;display:flex;align-items:center;"
+                    "justify-content:center;width:100vw;height:100vh;overflow:hidden}"
+                    "svg{width:100%;height:100%;}"
+                    "</style></head><body>"
+                    f"{cleaned}</body></html>"
+                )
+                srcdoc = html.escape(inner, quote=True)
+                return (
+                    f'<div class="svg-cell">'
+                    f'<iframe srcdoc="{srcdoc}" '
+                    f'style="width:100%;aspect-ratio:1;border:none;" '
+                    f'scrolling="no"></iframe></div>'
+                )
             return f'<div class="svg-cell empty">{html.escape(label)}</div>'
 
         symbol_row = (
@@ -385,7 +362,8 @@ def generate_html(parts: list) -> str:
   body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
          margin: 1em; background: #f5f5f5; color: #222; }}
   .part {{ background: #fff; border-radius: 8px; padding: 1em; margin-bottom: 1.5em;
-           box-shadow: 0 1px 3px rgba(0,0,0,0.12); }}
+           box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+           content-visibility: auto; contain-intrinsic-size: auto none; }}
   h2 {{ margin: 0 0 0.3em; font-size: 1.2em; }}
   .meta {{ color: #666; margin-bottom: 1em; font-size: 0.85em; }}
   .meta a {{ color: #0066cc; }}
@@ -398,7 +376,6 @@ def generate_html(parts: list) -> str:
   .svg-cell {{ border: 1px solid #ddd; border-radius: 4px; padding: 0.5em;
                text-align: center; min-height: 100px; background: #fafafa;
                display: flex; align-items: center; justify-content: center; }}
-  .svg-cell svg {{ width: 100%; height: auto; display: block; }}
   .svg-cell.empty {{ color: #999; font-style: italic; }}
   @media (max-width: 600px) {{
     .row-pair {{ flex-direction: column; }}
