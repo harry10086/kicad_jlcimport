@@ -140,6 +140,26 @@ class TestParseCircle:
         circle = _parse_circle(parts)
         assert circle is None  # Decorative circles are skipped
 
+    def test_filled_circle_when_stroke_covers_area(self):
+        """Circle is filled when stroke width >= 2 * radius (stroke covers entire circle)."""
+        # radius=50, width=100 -> width >= 2*radius -> filled
+        parts = ["CIRCLE", "100", "200", "50", "100", "3"]
+        circle = _parse_circle(parts)
+        assert circle.filled is True
+
+    def test_hollow_circle_when_stroke_smaller(self):
+        """Circle is hollow when stroke width < 2 * radius."""
+        # radius=50, width=2 -> width < 2*radius -> not filled
+        parts = ["CIRCLE", "100", "200", "50", "2", "3"]
+        circle = _parse_circle(parts)
+        assert circle.filled is False
+
+    def test_zero_radius_circle_not_filled(self):
+        """Zero-radius circle should not be marked as filled (degenerate case)."""
+        parts = ["CIRCLE", "100", "200", "0", "10", "3"]
+        circle = _parse_circle(parts)
+        assert circle.filled is False
+
 
 class TestParseHole:
     """Tests for _parse_hole function."""

@@ -85,10 +85,12 @@ def write_footprint(
     # Circles
     for circle in footprint.circles:
         end_x = circle.cx + circle.radius
+        fill_str = " (fill solid)" if circle.filled else ""
         lines.append(
             f"  (fp_circle (center {_fmt(circle.cx)} {_fmt(circle.cy)})"
             f" (end {_fmt(end_x)} {_fmt(circle.cy)})"
             f" (stroke (width {_fmt(circle.width)}) (type solid))"
+            f"{fill_str}"
             f' (layer "{circle.layer}") (uuid "{_uuid()}"))'
         )
 

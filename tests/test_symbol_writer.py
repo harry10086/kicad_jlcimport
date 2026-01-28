@@ -1,7 +1,15 @@
 """Tests for symbol_writer.py - KiCad symbol generation."""
 
+import re
+
 from kicad_jlcimport.easyeda.ee_types import EECircle, EEPin, EEPolyline, EERectangle, EESymbol
-from kicad_jlcimport.kicad.symbol_writer import _estimate_bottom, _estimate_top, write_symbol, write_symbol_library
+from kicad_jlcimport.kicad.symbol_writer import (
+    _estimate_bottom,
+    _estimate_top,
+    _rounded_rect_points,
+    write_symbol,
+    write_symbol_library,
+)
 from kicad_jlcimport.kicad.version import KICAD_V8, KICAD_V9
 
 
@@ -36,6 +44,34 @@ class TestWriteSymbol:
         sym = _make_symbol()
         result = write_symbol(sym, "My_Resistor")
         assert '(property "Value" "My_Resistor"' in result
+
+    def test_reference_positioned_above_symbol(self):
+        """Reference property must be positioned above the symbol body, not inside it."""
+        rect = EERectangle(x=-5, y=5, width=10, height=-10)  # top=5, bottom=-5
+        sym = _make_symbol(rectangles=[rect])
+        result = write_symbol(sym, "Test", prefix="U")
+
+        # Extract Reference Y position
+        match = re.search(r'\(property "Reference" "U" \(at [\d.-]+ ([\d.-]+)', result)
+        assert match, "Reference property not found"
+        ref_y = float(match.group(1))
+
+        # Reference should be above the symbol top (y=5), so ref_y > 5
+        assert ref_y > 5, f"Reference Y={ref_y} should be above symbol top (5)"
+
+    def test_value_positioned_below_symbol(self):
+        """Value property must be positioned below the symbol body, not inside it."""
+        rect = EERectangle(x=-5, y=5, width=10, height=-10)  # top=5, bottom=-5
+        sym = _make_symbol(rectangles=[rect])
+        result = write_symbol(sym, "TestValue", prefix="U")
+
+        # Extract Value Y position
+        match = re.search(r'\(property "Value" "TestValue" \(at [\d.-]+ ([\d.-]+)', result)
+        assert match, "Value property not found"
+        val_y = float(match.group(1))
+
+        # Value should be below the symbol bottom (y=-5), so val_y < -5
+        assert val_y < -5, f"Value Y={val_y} should be below symbol bottom (-5)"
 
     def test_footprint_property(self):
         sym = _make_symbol()
@@ -140,6 +176,46 @@ class TestWriteSymbol:
         result = write_symbol(sym, "MyPart")
         # Single unit: uses _0_1
         assert '(symbol "MyPart_0_1"' in result
+
+    def test_rounded_rect_produces_closed_polyline(self):
+        """A rounded rectangle must produce a closed polyline (first point == last point).
+
+        Without the closing fix, the polyline would have a gap between the
+        last corner arc and the first corner arc.
+        """
+        rect = EERectangle(x=-5, y=5, width=10, height=-10, corner_radius=1.0)
+        sym = _make_symbol(rectangles=[rect])
+        result = write_symbol(sym, "Test")
+        # Should NOT produce a native (rectangle ...) block
+        assert "(rectangle" not in result
+        # Should produce a (polyline ...) block instead
+        assert "(polyline" in result
+        # Extract all xy points from the polyline
+        xy_matches = re.findall(r"\(xy ([\d.e+-]+) ([\d.e+-]+)\)", result)
+        assert len(xy_matches) > 4, "Rounded rect should have many points"
+        first = (float(xy_matches[0][0]), float(xy_matches[0][1]))
+        last = (float(xy_matches[-1][0]), float(xy_matches[-1][1]))
+        assert first == last, f"Polyline not closed: first={first}, last={last}"
+
+
+class TestRoundedRectPoints:
+    def test_first_and_last_point_match(self):
+        """The generated points list must be closed (first == last)."""
+        points = _rounded_rect_points(-5, -5, 5, 5, 1.0)
+        assert points[0] == points[-1]
+
+    def test_sufficient_point_count(self):
+        """4 corners * 8 segments + closing point = 33 points minimum."""
+        points = _rounded_rect_points(0, 0, 10, 10, 2.0)
+        # First corner has segments+1 points, others have segments each, plus closing
+        # = (8+1) + 8 + 8 + 8 + 1 = 34
+        assert len(points) == 34
+
+    def test_radius_clamped_to_half_dimension(self):
+        """Radius larger than half the smallest side should be clamped."""
+        # 4x10 rect with radius 5 -> clamped to 2 (half of width 4)
+        points = _rounded_rect_points(0, 0, 4, 10, 5.0)
+        assert points[0] == points[-1]
 
 
 class TestEstimateTopBottom:

@@ -1,5 +1,6 @@
 """Generate KiCad .kicad_sym symbol blocks (v8 and v9)."""
 
+import math
 from typing import List
 
 from ..easyeda.ee_types import EESymbol
@@ -7,6 +8,48 @@ from ..easyeda.parser import compute_arc_midpoint
 from ._format import escape_sexpr as _escape
 from ._format import fmt_float as _fmt
 from .version import DEFAULT_KICAD_VERSION, has_generator_version, symbol_format_version
+
+
+def _rounded_rect_points(x1: float, y1: float, x2: float, y2: float, r: float) -> List[tuple]:
+    """Generate points for a rounded rectangle as a closed polyline.
+
+    Uses 8 segments per corner for smooth arcs.
+    """
+    # Ensure r doesn't exceed half the smallest dimension
+    r = min(r, abs(x2 - x1) / 2, abs(y2 - y1) / 2)
+
+    left = min(x1, x2)
+    right = max(x1, x2)
+    top = min(y1, y2)
+    bottom = max(y1, y2)
+
+    segments = 8
+    points = []
+
+    # Top-right corner
+    for i in range(segments + 1):
+        angle = -math.pi / 2 + (math.pi / 2) * i / segments
+        points.append((right - r + r * math.cos(angle), top + r + r * math.sin(angle)))
+
+    # Bottom-right corner
+    for i in range(1, segments + 1):
+        angle = 0 + (math.pi / 2) * i / segments
+        points.append((right - r + r * math.cos(angle), bottom - r + r * math.sin(angle)))
+
+    # Bottom-left corner
+    for i in range(1, segments + 1):
+        angle = math.pi / 2 + (math.pi / 2) * i / segments
+        points.append((left + r + r * math.cos(angle), bottom - r + r * math.sin(angle)))
+
+    # Top-left corner
+    for i in range(1, segments + 1):
+        angle = math.pi + (math.pi / 2) * i / segments
+        points.append((left + r + r * math.cos(angle), top + r + r * math.sin(angle)))
+
+    # Close the path back to the first point
+    points.append(points[0])
+
+    return points
 
 
 def write_symbol(
@@ -21,11 +64,16 @@ def write_symbol(
     manufacturer_part: str = "",
     unit_index: int = 0,
     total_units: int = 1,
+    include_pin_dots: bool = False,
+    hide_properties: bool = False,
 ) -> str:
     """Generate a complete (symbol ...) block.
 
     For multi-unit components, call once per unit with appropriate unit_index.
     If unit_index == 0 and total_units == 1, generates a single-unit symbol.
+    If include_pin_dots is True, adds small circles at pin connection points
+    (useful for visual comparison since kicad-cli SVG export omits these).
+    If hide_properties is True, Reference and Value are hidden.
     """
     lines = []
 
@@ -38,13 +86,14 @@ def write_symbol(
 
         # Properties
         ref_x = 0
-        ref_y = _estimate_top(symbol) - 2.0
+        ref_y = _estimate_top(symbol) + 2.0
+        hide_suffix = " hide" if hide_properties else ""
         lines.append(f'    (property "Reference" "{prefix}" (at {_fmt(ref_x)} {_fmt(ref_y)} 0)')
-        lines.append("      (effects (font (size 1.27 1.27)))")
+        lines.append(f"      (effects (font (size 1.27 1.27)){hide_suffix})")
         lines.append("    )")
-        val_y = _estimate_bottom(symbol) + 2.0
+        val_y = _estimate_bottom(symbol) - 2.0
         lines.append(f'    (property "Value" "{name}" (at {_fmt(ref_x)} {_fmt(val_y)} 0)')
-        lines.append("      (effects (font (size 1.27 1.27)))")
+        lines.append(f"      (effects (font (size 1.27 1.27)){hide_suffix})")
         lines.append("    )")
         if footprint_ref:
             lines.append(f'    (property "Footprint" "{footprint_ref}" (at 0 0 0)')
@@ -79,10 +128,22 @@ def write_symbol(
     for rect in symbol.rectangles:
         x2 = rect.x + rect.width
         y2 = rect.y + rect.height
-        lines.append(f"      (rectangle (start {_fmt(rect.x)} {_fmt(rect.y)}) (end {_fmt(x2)} {_fmt(y2)})")
-        lines.append("        (stroke (width 0.254) (type solid))")
-        lines.append("        (fill (type background))")
-        lines.append("      )")
+        if rect.corner_radius > 0:
+            # Rounded rectangle: draw as closed polyline
+            pts = _rounded_rect_points(rect.x, rect.y, x2, y2, rect.corner_radius)
+            lines.append("      (polyline")
+            lines.append("        (pts")
+            for px, py in pts:
+                lines.append(f"          (xy {_fmt(px)} {_fmt(py)})")
+            lines.append("        )")
+            lines.append("        (stroke (width 0.254) (type solid))")
+            lines.append("        (fill (type background))")
+            lines.append("      )")
+        else:
+            lines.append(f"      (rectangle (start {_fmt(rect.x)} {_fmt(rect.y)}) (end {_fmt(x2)} {_fmt(y2)})")
+            lines.append("        (stroke (width 0.254) (type solid))")
+            lines.append("        (fill (type background))")
+            lines.append("      )")
 
     # Circles
     for circle in symbol.circles:
@@ -147,6 +208,14 @@ def write_symbol(
             num_effects = "(effects (font (size 1.27 1.27)) hide)"
         lines.append(f'        (number "{pin.number}" {num_effects})')
         lines.append("      )")
+
+    # Pin connection point dots (optional, for visual comparison)
+    if include_pin_dots:
+        for pin in symbol.pins:
+            lines.append(f"      (circle (center {_fmt(pin.x)} {_fmt(pin.y)}) (radius 0.254)")
+            lines.append("        (stroke (width 0.127) (type solid))")
+            lines.append("        (fill (type none))")
+            lines.append("      )")
 
     lines.append("    )")  # Close unit sub-symbol
 

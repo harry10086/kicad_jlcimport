@@ -122,9 +122,9 @@ class TestC427602:
         sym = parse_symbol_shapes(component["sym_shapes"], component["sym_origin_x"], component["sym_origin_y"])
         assert len(sym.rectangles) >= 1
 
-        # Verify rectangle appears in output
+        # Verify rectangle appears in output (rounded rects become polylines)
         output = write_symbol(sym, "Test", prefix="U", lcsc_id="C427602")
-        assert "(rectangle" in output
+        assert "(rectangle" in output or "(polyline" in output
 
 
 class TestC2040:
@@ -341,7 +341,9 @@ class TestC5360901:
         # Verify all elements present in output
         assert "(symbol " in output
         assert output.count("(pin ") == len(sym.pins)
-        assert output.count("(rectangle") == len(sym.rectangles)
+        # Rounded rectangles are rendered as polylines
+        sharp_rects = sum(1 for r in sym.rectangles if r.corner_radius == 0)
+        assert output.count("(rectangle") == sharp_rects
 
     def test_symbol_pin1_dot_filled(self, component):
         """Pin 1 indicator circle should be filled, not hollow."""
@@ -459,14 +461,18 @@ class TestC558421:
         output = write_symbol(sym, "C558421_Test", prefix="D", lcsc_id="C558421")
 
         # Verify counts in output match parsed counts
-        assert output.count("(polyline") == len(sym.polylines), (
-            f"Output has {output.count('(polyline')} polylines, expected {len(sym.polylines)}"
+        # Rounded rectangles are rendered as polylines
+        rounded_rects = sum(1 for r in sym.rectangles if r.corner_radius > 0)
+        sharp_rects = sum(1 for r in sym.rectangles if r.corner_radius == 0)
+        assert output.count("(polyline") == len(sym.polylines) + rounded_rects, (
+            f"Output has {output.count('(polyline')} polylines, "
+            f"expected {len(sym.polylines)} + {rounded_rects} rounded rects"
         )
         assert output.count("(pin ") == len(sym.pins), (
             f"Output has {output.count('(pin ')} pins, expected {len(sym.pins)}"
         )
-        assert output.count("(rectangle") == len(sym.rectangles), (
-            f"Output has {output.count('(rectangle')} rectangles, expected {len(sym.rectangles)}"
+        assert output.count("(rectangle") == sharp_rects, (
+            f"Output has {output.count('(rectangle')} rectangles, expected {sharp_rects}"
         )
 
     def test_filled_polylines_use_outline_fill(self, component):
