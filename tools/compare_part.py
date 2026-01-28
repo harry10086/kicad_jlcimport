@@ -374,6 +374,7 @@ def generate_html(parts: list) -> str:
 <html>
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>EasyEDA vs KiCad Comparison</title>
 <style>
   body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
