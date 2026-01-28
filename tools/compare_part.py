@@ -250,44 +250,21 @@ def render_kicad_svgs(kicad_files: dict, tmp_dir: str) -> dict:
     return result
 
 
-def normalize_svg_dimensions(svg: str, target_width: int = 400) -> str:
-    """Set explicit width/height on SVG based on viewBox aspect ratio.
+def strip_svg_dimensions(svg: str) -> str:
+    """Remove width/height attributes from the SVG element, preserving viewBox.
 
-    Safari has issues rendering SVGs without explicit dimensions, especially
-    inside flex containers. This function ensures SVGs have explicit pixel
-    dimensions while maintaining aspect ratio from the viewBox.
+    This lets the browser render the SVG at native resolution using CSS sizing,
+    avoiding pixelation on high-DPI / Retina displays that occurs when explicit
+    pixel dimensions force rasterization at a fixed size.
     """
-    # Extract viewBox to calculate aspect ratio
-    viewbox_match = re.search(r'viewBox="([^"]+)"', svg)
-    if viewbox_match:
-        parts = viewbox_match.group(1).split()
-        if len(parts) == 4:
-            vb_width = float(parts[2])
-            vb_height = float(parts[3])
-            if vb_width > 0:
-                aspect_ratio = vb_height / vb_width
-                target_height = int(target_width * aspect_ratio)
 
-                def set_dimensions(match: re.Match) -> str:
-                    tag = match.group(0)
-                    # Remove existing width/height
-                    tag = re.sub(r'\s+width="[^"]*"', "", tag)
-                    tag = re.sub(r'\s+height="[^"]*"', "", tag)
-                    # Insert new dimensions before the closing >
-                    tag = tag.rstrip(">")
-                    tag = f'{tag} width="{target_width}" height="{target_height}">'
-                    return tag
-
-                return re.sub(r"<svg[^>]*>", set_dimensions, svg, count=1)
-
-    # Fallback: just remove dimensions if no viewBox (shouldn't happen)
-    def strip_dimensions(match: re.Match) -> str:
+    def strip_from_svg_tag(match: re.Match) -> str:
         tag = match.group(0)
         tag = re.sub(r'\s+width="[^"]*"', "", tag)
         tag = re.sub(r'\s+height="[^"]*"', "", tag)
         return tag
 
-    return re.sub(r"<svg[^>]*>", strip_dimensions, svg, count=1)
+    return re.sub(r"<svg[^>]*>", strip_from_svg_tag, svg, count=1)
 
 
 def _add_board_background(svg: str, color: str = "#001023") -> str:
@@ -335,7 +312,7 @@ def generate_html(parts: list) -> str:
         # SVG cells
         def svg_cell(svg, label):
             if svg:
-                return f'<div class="svg-cell">{normalize_svg_dimensions(svg)}</div>'
+                return f'<div class="svg-cell">{strip_svg_dimensions(svg)}</div>'
             return f'<div class="svg-cell empty">{html.escape(label)}</div>'
 
         symbol_row = (
@@ -378,11 +355,11 @@ def generate_html(parts: list) -> str:
 <title>EasyEDA vs KiCad Comparison</title>
 <style>
   body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-         margin: 2em; background: #f5f5f5; color: #222; }}
-  .part {{ background: #fff; border-radius: 8px; padding: 1.5em; margin-bottom: 2em;
+         margin: 1em; background: #f5f5f5; color: #222; }}
+  .part {{ background: #fff; border-radius: 8px; padding: 1em; margin-bottom: 1.5em;
            box-shadow: 0 1px 3px rgba(0,0,0,0.12); }}
-  h2 {{ margin: 0 0 0.3em; }}
-  .meta {{ color: #666; margin-bottom: 1em; font-size: 0.9em; }}
+  h2 {{ margin: 0 0 0.3em; font-size: 1.2em; }}
+  .meta {{ color: #666; margin-bottom: 1em; font-size: 0.85em; }}
   .meta a {{ color: #0066cc; }}
   .compare-row {{ margin-bottom: 1.5em; }}
   .row-label {{ font-weight: 600; font-size: 1.1em; margin-bottom: 0.5em; }}
@@ -390,10 +367,14 @@ def generate_html(parts: list) -> str:
   .col {{ flex: 1; min-width: 0; }}
   .col-label {{ text-align: center; font-size: 0.85em; color: #888;
                 margin-bottom: 0.3em; text-transform: uppercase; letter-spacing: 0.05em; }}
-  .svg-cell {{ border: 1px solid #ddd; border-radius: 4px; padding: 1em;
-               text-align: center; min-height: 150px; background: #fafafa; }}
-  .svg-cell svg {{ max-width: 100%; max-height: 400px; display: block; margin: auto; }}
+  .svg-cell {{ border: 1px solid #ddd; border-radius: 4px; padding: 0.5em;
+               text-align: center; min-height: 100px; background: #fafafa;
+               display: flex; align-items: center; justify-content: center; }}
+  .svg-cell svg {{ width: 100%; height: auto; display: block; }}
   .svg-cell.empty {{ color: #999; font-style: italic; }}
+  @media (max-width: 600px) {{
+    .row-pair {{ flex-direction: column; }}
+  }}
 </style>
 </head>
 <body>
