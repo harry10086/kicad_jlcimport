@@ -254,6 +254,42 @@ class TestParseSymbolShapes:
         assert len(sym.pins) == 1
         assert sym.pins[0].rotation == 270
 
+    def test_parse_pin_body_to_pin_horizontal_right(self):
+        """Test body-to-pin path (h +N, M starts at body edge) -> KiCad 180°."""
+        # Pin position is (420,300), but path starts at body edge (410,300)
+        # Path goes body→pin, so direction flips: h+ becomes 180° not 0°
+        shape = "P~show~0~2~420~300~0~id1^^420~300^^M410,300 h10~#880000^^0~406~300~0~2~end~~~#800^^0~414~296~0~2~start~~~#800"
+        sym = parse_symbol_shapes([shape], 400, 300)
+        assert len(sym.pins) == 1
+        assert sym.pins[0].rotation == 180
+
+    def test_parse_pin_body_to_pin_horizontal_left(self):
+        """Test body-to-pin path (h -N, M starts at body edge) -> KiCad 0°."""
+        # Pin position is (380,300), but path starts at body edge (390,300)
+        # Path goes body→pin, so direction flips: h- becomes 0° not 180°
+        shape = "P~show~0~1~380~300~180~id1^^380~300^^M390,300 h-10~#880000^^0~394~300~0~1~start~~~#800^^0~386~296~0~1~end~~~#800"
+        sym = parse_symbol_shapes([shape], 400, 300)
+        assert len(sym.pins) == 1
+        assert sym.pins[0].rotation == 0
+
+    def test_parse_pin_body_to_pin_vertical_down(self):
+        """Test body-to-pin path (v +N, M starts at body edge) -> KiCad 90°."""
+        # Pin position is (400,340), but path starts at body edge (400,330)
+        # Path goes body→pin downward, so direction flips: v+ becomes 90° not 270°
+        shape = "P~show~0~1~400~340~270~id1^^400~340^^M400,330 v10~#880000^^1~0~0~0~1~start~~#0000FF"
+        sym = parse_symbol_shapes([shape], 400, 300)
+        assert len(sym.pins) == 1
+        assert sym.pins[0].rotation == 90
+
+    def test_parse_pin_body_to_pin_vertical_up(self):
+        """Test body-to-pin path (v -N, M starts at body edge) -> KiCad 270°."""
+        # Pin position is (400,260), but path starts at body edge (400,270)
+        # Path goes body→pin upward, so direction flips: v- becomes 270° not 90°
+        shape = "P~show~0~1~400~260~90~id1^^400~260^^M400,270 v-10~#880000^^1~0~0~0~1~start~~#0000FF"
+        sym = parse_symbol_shapes([shape], 400, 300)
+        assert len(sym.pins) == 1
+        assert sym.pins[0].rotation == 270
+
     def test_y_inversion_for_symbols(self):
         shape = "E~100~200~10~10~0~0"
         sym = parse_symbol_shapes([shape], 0, 0)

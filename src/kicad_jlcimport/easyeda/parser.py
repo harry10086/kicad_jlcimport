@@ -528,28 +528,44 @@ def _parse_pin(shape_str: str, origin_x: float, origin_y: float) -> EEPin:
         return None
 
     # Parse pin length and direction from the path section (section index 2)
-    # The SVG path is the source of truth for pin direction
+    # The SVG path is the source of truth for pin direction.
+    # The path can start at the pin position and go toward the body, OR start
+    # at the body edge and go toward the pin position.  We compare the M start
+    # coordinates with the pin position to determine which case we have.
     length = 10.0  # default
     path_direction = None  # Will be 0, 90, 180, or 270
     if len(sections) > 2:
         path_section = sections[2]
         # Path is like "M360,290h10" or "M 440 310 h -10" or "M400,300v10"
+        m_match = re.match(r"M\s*([-\d.]+)[,\s]+([-\d.]+)", path_section)
         h_match = re.search(r"h\s*([-\d.]+)", path_section)
         v_match = re.search(r"v\s*([-\d.]+)", path_section)
+        # Check whether path M start matches the pin position (both axes).
+        # Default True so we preserve original behaviour when M is unparseable.
+        starts_at_pin = True
+        if m_match:
+            mx = float(m_match.group(1))
+            my = float(m_match.group(2))
+            starts_at_pin = abs(mx - x) < 0.5 and abs(my - y) < 0.5
+
         if h_match:
             val = float(h_match.group(1))
             length = abs(val)
-            # h positive = right = KiCad 0°, h negative = left = KiCad 180°
-            path_direction = 0 if val > 0 else 180
+            if starts_at_pin:
+                # Path goes from pin connection point toward body
+                path_direction = 0 if val > 0 else 180
+            else:
+                # Path goes from body toward pin — flip direction
+                path_direction = 180 if val > 0 else 0
         elif v_match:
             val = float(v_match.group(1))
             length = abs(val)
-            # SVG path goes from body toward connection point
-            # v negative = path goes UP in SVG = connection point is above body
-            #   -> pin extends UP from connection = KiCad 90°
-            # v positive = path goes DOWN in SVG = connection point is below body
-            #   -> pin extends DOWN from connection = KiCad 270°
-            path_direction = 270 if val > 0 else 90
+            if starts_at_pin:
+                # Path goes from pin connection point toward body
+                path_direction = 270 if val > 0 else 90
+            else:
+                # Path goes from body toward pin — flip direction
+                path_direction = 90 if val > 0 else 270
 
     # Parse pin name from section 3 (name display)
     # Format: visible~x~y~rotation~text~alignment~...~color
