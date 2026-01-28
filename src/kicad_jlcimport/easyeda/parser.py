@@ -46,6 +46,8 @@ PIN_TYPES = {
     "4": "power_in",
 }
 
+_SOLID_REGION_LAYERS = {"3", "4", "12"}
+
 
 MILS_TO_MM_DIVISOR = 3.937
 
@@ -127,6 +129,10 @@ def parse_footprint_shapes(shapes: List[str], origin_x: float, origin_y: float) 
             model = _parse_svgnode(parts)
             if model:
                 fp.model = model
+        elif shape_type == "TEXT":
+            tracks = _parse_fp_text(parts)
+            if tracks:
+                fp.tracks.extend(tracks)
         elif shape_type == "RECT":
             track = _parse_rect_as_tracks(parts)
             if track:
@@ -220,12 +226,16 @@ def _parse_pad(parts: List[str]) -> EEPad:
     polygon_str = parts[10] if len(parts) > 10 else ""
     rotation = float(parts[11]) if len(parts) > 11 and parts[11] else 0.0
 
+    poly_points: List[float] = []
     if polygon_str and shape == "POLYGON":
         try:
-            coords = polygon_str.strip().split(" ")
-            [float(c) for c in coords if c]  # validate coords are numeric
+            coords = [float(c) for c in polygon_str.strip().split(" ") if c]
         except ValueError:
             return None  # Reject pad with invalid polygon coordinates
+        # Store as pad-center-relative coordinates in mm (pairs of x, y)
+        for i in range(0, len(coords) - 1, 2):
+            poly_points.append(mil_to_mm(coords[i] - x))
+            poly_points.append(mil_to_mm(coords[i + 1] - y))
 
     return EEPad(
         shape=shape,
@@ -237,6 +247,7 @@ def _parse_pad(parts: List[str]) -> EEPad:
         number=number,
         drill=mil_to_mm(drill * 2),  # Convert radius to diameter, then to mm
         rotation=rotation,
+        polygon_points=poly_points,
     )
 
 
@@ -366,17 +377,18 @@ def _parse_solid_region(parts: List[str]) -> EESolidRegion:
             return None
         return EESolidRegion(layer="Edge.Cuts", points=points, region_type=region_type)
 
-    # For silkscreen (layer 3), import solid regions (e.g., pin 1 dots)
-    if layer == "3" and region_type == "solid":
+    # Import solid regions on silk/fab layers (e.g., pin 1 dots, polarity marks)
+    if layer in _SOLID_REGION_LAYERS and region_type == "solid":
+        kicad_layer = LAYER_MAP.get(layer, "F.SilkS")
         # Check if path contains arc commands - if so, use arc parser
         if " A " in svg_path or "\tA " in svg_path:
             points = _parse_svg_path_with_arcs(svg_path)
             if points:
-                return EESolidRegion(layer="F.SilkS", points=points, region_type=region_type)
+                return EESolidRegion(layer=kicad_layer, points=points, region_type=region_type)
         # Otherwise try to parse as polygon (needs at least 3 points)
         points = _parse_svg_polygon(svg_path)
         if len(points) >= 3:
-            return EESolidRegion(layer="F.SilkS", points=points, region_type=region_type)
+            return EESolidRegion(layer=kicad_layer, points=points, region_type=region_type)
 
     return None
 
@@ -506,6 +518,54 @@ def _parse_rect_as_tracks(parts: List[str]) -> List[EETrack]:
     return [EETrack(width=w, layer=kicad_layer, points=points)]
 
 
+def _parse_fp_text(parts: List[str]) -> List[EETrack]:
+    """Parse footprint TEXT shape as track segments from its SVG stroke path.
+
+    Format: TEXT~type~x~y~stroke_width~rotation~?~layer~~font_size~text~svg_path~...
+    The SVG path contains the actual stroke geometry (M/L commands).
+    """
+    try:
+        width = float(parts[4]) if parts[4] else 0.0
+        layer = parts[7]
+        svg_path = parts[11] if len(parts) > 11 else ""
+    except (ValueError, IndexError):
+        return []
+
+    if not svg_path or layer not in LAYER_MAP:
+        return []
+
+    kicad_layer = LAYER_MAP[layer]
+    w = mil_to_mm(width) if width > 0 else 0.1
+
+    # Split SVG path on M commands to get individual sub-paths
+    # Each sub-path is M x y L x y [L x y ...]
+    tracks = []
+    segments = re.split(r"M\s*", svg_path.strip())
+    for seg in segments:
+        seg = seg.strip()
+        if not seg:
+            continue
+        # Parse all coordinates (M start + L continuations)
+        tokens = re.split(r"L\s*", seg)
+        points = []
+        for token in tokens:
+            token = token.strip()
+            if not token:
+                continue
+            coords = re.split(r"[,\s]+", token)
+            if len(coords) >= 2:
+                try:
+                    px = mil_to_mm(float(coords[0]))
+                    py = mil_to_mm(float(coords[1]))
+                    points.append((px, py))
+                except ValueError:
+                    continue
+        if len(points) >= 2:
+            tracks.append(EETrack(width=w, layer=kicad_layer, points=points))
+
+    return tracks
+
+
 # --- Symbol shape parsers ---
 
 
@@ -516,16 +576,20 @@ def _parse_pin(shape_str: str, origin_x: float, origin_y: float) -> EEPin:
     # First section has the main pin data
     main_parts = sections[0].split("~")
 
-    # P~show~elec_type~number~x~y~rotation~id~...
-    # But format varies - detect by field count
+    # P~show~elec_type~spice_index~x~y~rotation~id~...
+    # Note: main_parts[3] is the SPICE pin index, not the display number.
+    # The actual display pin number is in section 4 (pin number text).
     try:
         elec_code = main_parts[2]
-        number = main_parts[3]
         x = float(main_parts[4])
         y = float(main_parts[5])
-        rotation = float(main_parts[6])
+        rotation_str = main_parts[6] if len(main_parts) > 6 else ""
+        rotation = float(rotation_str) if rotation_str else 0.0
     except (ValueError, IndexError):
         return None
+
+    # Default to SPICE index; overridden below by display number if available
+    number = main_parts[3]
 
     # Parse pin length and direction from the path section (section index 2)
     # The SVG path is the source of truth for pin direction.
@@ -580,12 +644,15 @@ def _parse_pin(shape_str: str, origin_x: float, origin_y: float) -> EEPin:
         if name_parts and name_parts[0] == "0":
             name_visible = False
 
-    # Parse pin number visibility from section 4
+    # Parse pin number text and visibility from section 4
+    # Format: visible~x~y~rotation~number_text~alignment~...~color
     number_visible = True
     if len(sections) > 4:
         num_parts = sections[4].split("~")
         if num_parts and num_parts[0] == "0":
             number_visible = False
+        if len(num_parts) > 4 and num_parts[4]:
+            number = num_parts[4]
 
     # Use path direction if available, otherwise fall back to rotation field with +180
     if path_direction is not None:
