@@ -204,7 +204,11 @@ The plugin automatically creates and updates `sym-lib-table` and `fp-lib-table` 
 
 For a detailed look at the architecture, data flow, module responsibilities, and external APIs, see the [Architecture Documentation](docs/architecture.md).
 
+### Visual Comparison
+
 A [visual comparison](https://jvanderberg.github.io/kicad_jlcimport/) of EasyEDA source renderings vs KiCad conversion output is published on each release, covering 100 parts across ICs, passives, LEDs, transistors, and connectors.
+
+The footprint conversion is generally quite good, though you may occasionally find small differences. The 3D model placement uses heuristics to replicate EasyEDA's undocumented behavior and works well for most parts, but some edge cases may need manual tweaking. Note that some parts are actually wrong in EasyEDA itself, which we can't automatically fix.
 
 ## Requirements
 

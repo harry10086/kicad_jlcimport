@@ -10,15 +10,19 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import webbrowser
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from kicad_jlcimport.easyeda.api import fetch_component_uuids, fetch_full_component
+from kicad_jlcimport.easyeda.api import download_wrl_source, fetch_component_uuids, fetch_full_component
 from kicad_jlcimport.easyeda.parser import parse_footprint_shapes, parse_symbol_shapes
 from kicad_jlcimport.kicad.footprint_writer import write_footprint
 from kicad_jlcimport.kicad.library import sanitize_name
+from kicad_jlcimport.kicad.model3d import compute_model_transform, convert_to_vrml
 from kicad_jlcimport.kicad.symbol_writer import write_symbol, write_symbol_library
 
 KICAD_CLI = shutil.which("kicad-cli") or "/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli"
@@ -175,7 +179,15 @@ def _create_minimal_pcb(footprint_content: str) -> str:
   )
   (net 0 "")
 """
-    return pcb_header + edge_cuts + footprint_content + "\n)"
+    # Inject (at 0 0 0) into the footprint to make it a placed footprint
+    # This ensures kicad-cli renders it the same as the interactive viewer
+    footprint_with_at = footprint_content.replace('(footprint "', '(footprint "', 1)
+    # Find the first line break after (footprint and insert (at 0 0 0)
+    import re
+
+    footprint_with_at = re.sub(r'(\(footprint "[^"]*"\s*\n)', r"\1  (at 0 0 0)\n", footprint_content, count=1)
+
+    return pcb_header + edge_cuts + footprint_with_at + "\n)"
 
 
 def render_kicad_svgs(kicad_files: dict, tmp_dir: str) -> dict:
@@ -275,6 +287,98 @@ def _add_board_background(svg: str, color: str = "#001023") -> str:
     return svg
 
 
+def render_3d_model(
+    footprint_content: str,
+    vrml_path: str,
+    tmp_dir: str,
+    model_offset: tuple,
+    model_rotation: tuple,
+    view: str = "oblique",
+) -> Optional[str]:
+    """Render 3D model snapshot using kicad-cli.
+
+    Args:
+        footprint_content: KiCad footprint content
+        vrml_path: Path to VRML model file
+        tmp_dir: Temporary directory for intermediate files
+        model_offset: (x, y, z) offset tuple
+        model_rotation: (x, y, z) rotation tuple
+        view: View type - "top", "bottom", or "oblique" (default)
+
+    Returns base64-encoded PNG data or None if rendering fails.
+    """
+    try:
+        # Parse footprint to inject 3D model reference
+        # Look for closing parenthesis before the end of the footprint
+        if "(model " not in footprint_content:
+            # Insert model reference with computed offsets before the final closing paren
+            model_ref = f"""  (model "{vrml_path}"
+    (offset (xyz {model_offset[0]} {model_offset[1]} {model_offset[2]}))
+    (scale (xyz 1 1 1))
+    (rotate (xyz {model_rotation[0]} {model_rotation[1]} {model_rotation[2]}))
+  )
+"""
+            # Find the last closing paren and insert before it
+            last_paren = footprint_content.rfind(")")
+            if last_paren != -1:
+                footprint_content = footprint_content[:last_paren] + model_ref + footprint_content[last_paren:]
+
+        # Create minimal PCB with the footprint (including 3D model)
+        pcb_content = _create_minimal_pcb(footprint_content)
+        pcb_file = Path(tmp_dir) / f"render_3d_{view}.kicad_pcb"
+        pcb_file.write_text(pcb_content)
+
+        # Determine rotation based on view
+        # All views use oblique angle from investigation, just from different sides
+        if view == "top":
+            rotation = "120,180,30"  # Oblique view from top (from investigation)
+        elif view == "bottom":
+            rotation = "120,0,30"  # Oblique view from bottom (flip Y axis)
+        else:  # oblique (default top)
+            rotation = "120,180,30"  # Oblique view from investigation
+
+        # Render with optimal settings from investigation
+        png_output = Path(tmp_dir) / f"render_3d_{view}.png"
+        cmd = [
+            KICAD_CLI,
+            "pcb",
+            "render",
+            str(pcb_file),
+            "--output",
+            str(png_output),
+            "--rotate",
+            rotation,
+            "--width",
+            "800",
+            "--height",
+            "600",
+            "--background",
+            "transparent",
+            "--quality",
+            "high",
+            "--preset",
+            "follow_pcb_editor",
+            "--floor",
+            "--zoom",
+            "1.2",
+        ]
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+
+        if proc.returncode == 0 and png_output.exists():
+            # Read PNG and convert to base64 data URI
+            import base64
+
+            png_data = png_output.read_bytes()
+            b64_data = base64.b64encode(png_data).decode("utf-8")
+            return f"data:image/png;base64,{b64_data}"
+        else:
+            print(f"  Warning: 3D render ({view}) failed: {proc.stderr.strip()}")
+            return None
+    except Exception as e:
+        print(f"  Error rendering 3D model ({view}): {e}")
+        return None
+
+
 def generate_html(parts: list) -> str:
     """Build an HTML comparison page for all parts."""
     rows = []
@@ -342,11 +446,29 @@ def generate_html(parts: list) -> str:
             f"</div></div>"
         )
 
+        # 3D Model row (top and bottom views)
+        model_3d = kicad.get("model_3d")
+        model_row = ""
+        if model_3d and isinstance(model_3d, dict):
+            model_top = model_3d.get("top")
+            model_bottom = model_3d.get("bottom")
+            if model_top and model_bottom:
+                model_row = (
+                    f'<div class="compare-row">'
+                    f'<div class="row-label">3D Model</div>'
+                    f'<div class="row-pair">'
+                    f'<div class="col"><div class="col-label">Top View</div>'
+                    f'<div class="svg-cell"><img src="{model_top}" style="width:100%;height:auto;" alt="3D Model Top"></div></div>'
+                    f'<div class="col"><div class="col-label">Bottom View</div>'
+                    f'<div class="svg-cell"><img src="{model_bottom}" style="width:100%;height:auto;" alt="3D Model Bottom"></div></div>'
+                    f"</div></div>"
+                )
+
         rows.append(
             f'<div class="part">'
             f"<h2>{title_text}</h2>"
             f'<div class="meta">{meta_line}</div>'
-            f"{symbol_row}{footprint_row}"
+            f"{symbol_row}{footprint_row}{model_row}"
             f"</div>"
         )
 
@@ -389,24 +511,30 @@ def generate_html(parts: list) -> str:
 </html>"""
 
 
-def compare_part(lcsc_id: str, tmp_dir: str) -> dict:
+def compare_part(lcsc_id: str, tmp_dir: str, verbose: bool = False) -> dict:
     """Fetch, convert, and render a single part for comparison."""
-    print(f"\n--- {lcsc_id} ---")
+    start_time = time.time()
+    if verbose:
+        print(f"\n--- {lcsc_id} ---")
 
     # Fetch EasyEDA preview SVGs
-    print("  Fetching EasyEDA SVGs...")
+    if verbose:
+        print("  Fetching EasyEDA SVGs...")
     try:
         easyeda_svgs = fetch_easyeda_svgs(lcsc_id)
     except Exception as e:
-        print(f"  Error fetching EasyEDA SVGs: {e}")
+        if verbose:
+            print(f"  Error fetching EasyEDA SVGs: {e}")
         easyeda_svgs = {"symbol_svg": None, "footprint_svg": None}
 
     # Fetch full component and convert to KiCad
-    print("  Fetching component data...")
+    if verbose:
+        print("  Fetching component data...")
     try:
         comp = fetch_full_component(lcsc_id)
     except Exception as e:
-        print(f"  Error fetching component: {e}")
+        if verbose:
+            print(f"  Error fetching component: {e}")
         return {
             "metadata": {"lcsc_id": lcsc_id, "title": lcsc_id},
             "easyeda_svgs": easyeda_svgs,
@@ -416,12 +544,90 @@ def compare_part(lcsc_id: str, tmp_dir: str) -> dict:
     part_dir = os.path.join(tmp_dir, lcsc_id)
     os.makedirs(part_dir, exist_ok=True)
 
-    print("  Converting to KiCad...")
+    if verbose:
+        print("  Converting to KiCad...")
     kicad_files = convert_to_kicad(comp, part_dir)
 
     # Render KiCad SVGs
-    print("  Rendering KiCad SVGs...")
+    if verbose:
+        print("  Rendering KiCad SVGs...")
     kicad_svgs = render_kicad_svgs(kicad_files, part_dir)
+
+    # Render 3D model if available
+    if verbose:
+        print("  Checking for 3D model...")
+    model_3d = None
+    try:
+        # Get uuid_3d from parsed footprint (same as importer does)
+        # The parser extracts uuid from SVGNODE shapes
+        fp_data = comp.get("footprint_data", {})
+        if fp_data:
+            ds = fp_data.get("dataStr", {})
+            if isinstance(ds, str):
+                ds = json.loads(ds)
+            shapes = ds.get("shape", [])
+            origin_x = ds.get("head", {}).get("x", 0)
+            origin_y = ds.get("head", {}).get("y", 0)
+
+            # Parse footprint to get the model UUID
+            footprint = parse_footprint_shapes(shapes, origin_x, origin_y)
+            uuid_3d = footprint.model.uuid if footprint.model else ""
+
+            if uuid_3d:
+                if verbose:
+                    print(f"  Found 3D model: {uuid_3d}")
+                # Download OBJ source
+                obj_source = download_wrl_source(uuid_3d)
+                if obj_source:
+                    if verbose:
+                        print("  Converting to VRML...")
+                    vrml_content = convert_to_vrml(obj_source)
+                    if vrml_content:
+                        # Save VRML file
+                        vrml_path = Path(part_dir) / "model.wrl"
+                        vrml_path.write_text(vrml_content)
+
+                        # Compute model transform (same as importer)
+                        if verbose:
+                            print("  Computing 3D model offsets...")
+                        model_offset, model_rotation = compute_model_transform(
+                            footprint.model, origin_x, origin_y, obj_source
+                        )
+                        if verbose:
+                            print(f"    Offset: ({model_offset[0]:.3f}, {model_offset[1]:.3f}, {model_offset[2]:.3f})")
+
+                        # Render 3D model (top and bottom views)
+                        if kicad_files.get("fp_file"):
+                            if verbose:
+                                print("  Rendering 3D snapshots (top and bottom views)...")
+                            fp_content = Path(kicad_files["fp_file"]).read_text()
+                            model_3d_top = render_3d_model(
+                                fp_content, str(vrml_path), part_dir, model_offset, model_rotation, "top"
+                            )
+                            model_3d_bottom = render_3d_model(
+                                fp_content, str(vrml_path), part_dir, model_offset, model_rotation, "bottom"
+                            )
+                            if model_3d_top and model_3d_bottom:
+                                model_3d = {"top": model_3d_top, "bottom": model_3d_bottom}
+                                if verbose:
+                                    print("  3D models rendered successfully")
+                            else:
+                                if verbose:
+                                    print("  Warning: Some 3D renders failed")
+                    else:
+                        if verbose:
+                            print("  Warning: VRML conversion failed")
+                else:
+                    if verbose:
+                        print("  Warning: Failed to download 3D model")
+            else:
+                if verbose:
+                    print("  No 3D model found")
+    except Exception as e:
+        if verbose:
+            print(f"  Error processing 3D model: {e}")
+
+    kicad_svgs["model_3d"] = model_3d
 
     metadata = {
         "lcsc_id": lcsc_id,
@@ -432,10 +638,12 @@ def compare_part(lcsc_id: str, tmp_dir: str) -> dict:
         "datasheet": kicad_files["datasheet"],
     }
 
+    elapsed = time.time() - start_time
     return {
         "metadata": metadata,
         "easyeda_svgs": easyeda_svgs,
         "kicad_svgs": kicad_svgs,
+        "_elapsed": elapsed,
     }
 
 
@@ -444,6 +652,8 @@ def main():
     parser.add_argument("part_ids", nargs="+", help="LCSC part numbers (e.g. C427602)")
     parser.add_argument("--no-open", action="store_true", help="Don't open the HTML in a browser")
     parser.add_argument("--output-dir", help="Write HTML to this directory instead of a temp dir")
+    parser.add_argument("--workers", type=int, default=20, help="Number of parallel workers (default: 20)")
+    parser.add_argument("--verbose", action="store_true", help="Show detailed progress for each part")
     args = parser.parse_args()
 
     # Check kicad-cli exists
@@ -453,11 +663,49 @@ def main():
 
     tmp_dir = tempfile.mkdtemp(prefix="kicad_compare_")
     print(f"Working directory: {tmp_dir}")
+    print(f"Processing {len(args.part_ids)} parts with {args.workers} workers...")
 
-    parts = []
-    for part_id in args.part_ids:
-        result = compare_part(part_id, tmp_dir)
-        parts.append(result)
+    if len(args.part_ids) > args.workers:
+        batches = (len(args.part_ids) + args.workers - 1) // args.workers
+        print(f"(will process in ~{batches} batches)")
+
+    # Process parts in parallel
+    parts = [None] * len(args.part_ids)  # Preserve order
+    overall_start = time.time()
+
+    with ThreadPoolExecutor(max_workers=args.workers) as executor:
+        # Submit all jobs
+        future_to_idx = {
+            executor.submit(compare_part, part_id, tmp_dir, args.verbose): idx
+            for idx, part_id in enumerate(args.part_ids)
+        }
+        print(f"Started {len(args.part_ids)} jobs...")
+
+        # Collect results as they complete
+        completed = 0
+        for future in as_completed(future_to_idx):
+            idx = future_to_idx[future]
+            part_id = args.part_ids[idx]
+            try:
+                result = future.result()
+                parts[idx] = result
+                completed += 1
+                elapsed = result.get("_elapsed", 0)
+                if not args.verbose:
+                    print(f"  [{completed}/{len(args.part_ids)}] {part_id} ({elapsed:.1f}s)")
+            except Exception as e:
+                print(f"  [{completed}/{len(args.part_ids)}] Error: {part_id}: {e}")
+                parts[idx] = {
+                    "metadata": {"lcsc_id": part_id, "title": part_id},
+                    "easyeda_svgs": {"symbol_svg": None, "footprint_svg": None},
+                    "kicad_svgs": {"symbol_svg": None, "footprint_svg": None},
+                }
+                completed += 1
+
+    total_elapsed = time.time() - overall_start
+    print(
+        f"\nCompleted {len(args.part_ids)} parts in {total_elapsed:.1f}s ({total_elapsed / len(args.part_ids):.1f}s avg)"
+    )
 
     # Generate HTML
     html_content = generate_html(parts)

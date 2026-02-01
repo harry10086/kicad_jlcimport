@@ -1,5 +1,6 @@
 """3D model transforms, WRL conversion, and file saving."""
 
+import math
 import os
 from typing import Optional, Tuple
 
@@ -35,51 +36,120 @@ def compute_model_transform(
     if obj_source is not None:
         cx, cy, z_min, z_max = _obj_bounding_box(obj_source)
 
-    # Detect THT parts by checking if model origin differs from footprint origin
-    # EasyEDA coordinates are in mils, convert to mm for comparison
+    # Check if model origin differs from footprint origin
     _MILS_TO_MM = 3.937
     model_origin_diff_y = (model.origin_y - fp_origin_y) / _MILS_TO_MM
-    is_tht_connector = abs(model_origin_diff_y) > 0.01  # > 0.01mm difference
+
+    # Calculate height for relative thresholds
+    height = z_max - z_min if obj_source else 0.0
+
+    # Spurious offset detection - filter EasyEDA data errors
+    is_spurious = False
+    if abs(model_origin_diff_y) < 0.5:
+        # Small offsets < 0.5mm are noise/measurement errors
+        is_spurious = True
+    elif height > 0 and height < 3.0 and abs(model_origin_diff_y) > 0.4 * height:
+        # Physically unreasonable: offset > 40% of height for short parts
+        is_spurious = True
+    elif abs(model_origin_diff_y) > 50.0:
+        # Outliers > 50mm are EasyEDA data errors
+        is_spurious = True
+
+    # Connector detection: cy/height > 5% AND has depth
+    is_connector = False
+    if obj_source and height > 0:
+        cy_ratio = abs(cy) / height
+        is_connector = cy_ratio > 0.05 and z_min < -0.001
+
+    # Origin offset detection (after spurious filtering)
+    has_origin_offset = not is_spurious and abs(model_origin_diff_y) > 0.5
+
+    # Check if rotation transformation will be applied
+    has_rotation_transform = abs(abs(model.rotation[2]) - 180.0) < 0.1
 
     if obj_source is not None:
-        # When OBJ data is available, compute z-offset from geometry
-        # Check if part extends significantly below PCB surface
-        extends_below_pcb = z_max < abs(z_min)
-
-        if is_tht_connector or extends_below_pcb:
-            # For THT connectors or parts extending below PCB
-            # Y offset: Include model origin offset for THT connectors
-            if is_tht_connector:
-                if abs(cy) < 0.5:
-                    # When OBJ center is near zero, use only model origin difference
-                    y_offset = -model_origin_diff_y
-                else:
-                    # When OBJ is significantly off-center, combine both
-                    y_offset = -cy - model_origin_diff_y
+        # Y offset calculation
+        if is_connector:
+            # Connector: use cy with optional model origin adjustment
+            if abs(model_origin_diff_y) > 0.5 and abs(cy) < 0.5:
+                y_offset = -model_origin_diff_y
+            elif abs(model_origin_diff_y) > 0.5:
+                y_offset = -cy - model_origin_diff_y
             else:
-                # Not a THT connector, use standard y offset
                 y_offset = -cy
+        elif has_origin_offset:
+            # Origin offset: use model origin difference
+            if abs(cy) < 0.5:
+                # Sign depends on whether rotation transformation will be applied
+                if has_rotation_transform:
+                    y_offset = model_origin_diff_y
+                else:
+                    y_offset = -model_origin_diff_y
+            else:
+                y_offset = -cy - model_origin_diff_y
+        else:
+            # Regular: use cy only if significant (> 5% of height)
+            if height > 0 and abs(cy) / height > 0.05:
+                y_offset = -cy
+            else:
+                # cy is insignificant, likely modeling error
+                y_offset = 0.0
 
-            # Z offset: Use heuristic based on geometry
-            if extends_below_pcb:
-                # Part extends more below than above, use top surface
+        # Z offset calculation
+        is_symmetric = z_min < 0 and abs(z_max - abs(z_min)) < 0.01
+
+        if is_symmetric:
+            # Distinguish THT from SMD using model.z (THT parts have non-zero z)
+            if abs(model.z) < 0.01:
+                # SMD part (model.z ≈ 0): place bottom on PCB
                 z_offset = z_max
             else:
-                # Part extends more above, use half of depth
+                # THT part (model.z ≠ 0, e.g., through-hole crystal): sit flat
+                z_offset = 0.0
+        elif z_min >= 0:
+            # Flat parts on surface
+            z_offset = model.z / _EE_3D_UNITS_PER_MM
+        elif is_connector or has_origin_offset:
+            # Connectors and parts with origin offset
+            if z_max > 2 * abs(z_min):
+                # Mainly extends above PCB
+                z_offset = 0.0
+            elif z_max < abs(z_min):
+                # Extends mainly below PCB
+                z_offset = z_max
+            else:
+                # Balanced
                 z_offset = -z_min / 2
-
-            offset = (-cx, y_offset, z_offset)
         else:
-            # SMD parts that don't extend below: use standard calculation
-            offset = (
-                -cx,
-                -cy,
-                model.z / _EE_3D_UNITS_PER_MM,
-            )
+            # Regular SMD/THT parts
+            if z_max < 0.5 * abs(z_min):
+                # DIP packages extending far below
+                z_offset = z_max
+            elif z_max > 3 * abs(z_min):
+                # Mainly extends above (e.g., horizontal TO-220)
+                z_offset = 0.0
+            elif z_max > 5.0 and abs(z_min) > 1.0:
+                # Tall headers with depth
+                z_offset = model.z / _EE_3D_UNITS_PER_MM
+            else:
+                # Normal THT parts
+                z_offset = 0.0
+
+        offset = (-cx, y_offset, z_offset)
     else:
-        # No OBJ data available: default z-offset to 0
-        # The model.z value is unreliable without geometry context
+        # No OBJ data: default z-offset to 0 (model.z is unreliable)
         offset = (-cx, -cy, 0.0)
+
+    # Apply Z-rotation transformation for ±180° rotations
+    rz = model.rotation[2]
+    if abs(abs(rz) - 180.0) < 0.1:
+        # Apply 2D rotation to XY offset
+        rz_rad = math.radians(rz)
+        cos_rz = math.cos(rz_rad)
+        sin_rz = math.sin(rz_rad)
+        offset_x_rot = offset[0] * cos_rz - offset[1] * sin_rz
+        offset_y_rot = offset[0] * sin_rz + offset[1] * cos_rz
+        offset = (offset_x_rot, offset_y_rot, offset[2])
 
     return offset, model.rotation
 
