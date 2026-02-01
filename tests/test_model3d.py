@@ -411,6 +411,18 @@ class TestTHTConnectorOffsets:
         assert offset[1] == pytest.approx(0.0, abs=0.01)
         assert offset[2] == pytest.approx(0.0, abs=0.01)
 
+    def test_c7519_sot23_6(self):
+        """C7519 (SOT-23-6) - spurious model origin offset should be ignored."""
+        model, fp_origin_x, fp_origin_y, obj_source = self._load_test_data("C7519")
+
+        offset, _ = compute_model_transform(model, fp_origin_x, fp_origin_y, obj_source)
+
+        # User verified: x=0, y=0, z=0 (SMD part with spurious 0.965mm origin offset)
+        # Currently failing: produces y=-0.965 due to origin offset detection
+        assert offset[0] == pytest.approx(0.0, abs=0.01)
+        assert offset[1] == pytest.approx(0.0, abs=0.01)
+        assert offset[2] == pytest.approx(0.0, abs=0.01)
+
     def test_c2316_xh3a_with_rotation(self):
         """C2316 (XH-3A) - connector with Z-rotation=-180° requires offset transformation."""
         model, fp_origin_x, fp_origin_y, obj_source = self._load_test_data("C2316")

@@ -22,6 +22,7 @@ Analysis of 3D model offset calculations with threshold removed (0.001mm).
 | C2078   | SOT-89 | -0.000mm | 0.000mm | 1.610mm | N/A | (-0.3, 0, 0) | ✅ PASS rot=-180° |
 | C2203   | HC-49US Crystal | 0.000mm | 0.000mm | 7.000mm | 1.00 | (0, 0, 0) | ❌ FAIL (0, 0, 3.5) symmetric |
 | C2316   | XH-3A | -0.000mm | 2.251mm | 9.500mm | 1.21 | (2.5, 2.25, ?) | ✅ PASS rot=-180° |
+| C7519   | SOT-23-6 | 0.965mm | 0.000mm | 1.649mm | 32.69 | (0, 0, 0) | ❌ FAIL (0, -0.965, 0) spurious |
 | C2318   | XH-5A | 2.416mm | 2.250mm | 5.700mm | 1.38 | (5.0, 2.7, 1.8) rot=(0,0,180) | ❌ FAIL (5.0, -0.166, 1.2) rot=(-270,0,-180) |
 | C5206   | DIP-8 | 0.000mm | 0.000mm | N/A | N/A | (0, 0, ~2.0) | ✅ PASS |
 
