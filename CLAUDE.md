@@ -23,6 +23,10 @@ pytest tests/ -q --cov=kicad_jlcimport --cov-fail-under=80
 
 ALL THREE must pass with zero errors before any commit or push.
 
+## GIT WORKFLOW
+
+**NEVER push directly to main.** Always create a feature branch and open a PR. Do not push to or modify main without explicit user permission. Do not revert commits on main without explicit user permission.
+
 ## PROJECT STRUCTURE
 
 This project uses the standard **src layout**. The package source lives in `src/kicad_jlcimport/`.

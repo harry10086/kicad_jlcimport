@@ -26,13 +26,23 @@ class TestComputeModelTransform:
         assert offset == (0.0, 0.0, 0.0)
         assert rotation == (0, 0, 0)
 
-    def test_z_offset(self):
-        """Z offset is converted from 3D units (100/mm) to mm."""
+    def test_z_offset_with_obj(self):
+        """Z offset is converted from 3D units when OBJ data is provided."""
+        obj = "v 0 0 0\nv 1.0 1.0 1.0\n"
+        model = EE3DModel(uuid="test", origin_x=0, origin_y=0, z=50, rotation=(0, 0, 90))
+        offset, rotation = compute_model_transform(model, 0, 0, obj_source=obj)
+        assert offset[0] == pytest.approx(-0.5)
+        assert offset[1] == pytest.approx(-0.5)
+        assert offset[2] == pytest.approx(0.5)
+        assert rotation == (0, 0, 90)
+
+    def test_z_offset_without_obj(self):
+        """Without OBJ data, z-offset defaults to 0 (model.z is unreliable)."""
         model = EE3DModel(uuid="test", origin_x=200, origin_y=300, z=50, rotation=(0, 0, 90))
         offset, rotation = compute_model_transform(model, 100, 100)
         assert offset[0] == 0.0
         assert offset[1] == 0.0
-        assert offset[2] == pytest.approx(0.5)
+        assert offset[2] == 0.0
         assert rotation == (0, 0, 90)
 
     def test_rotation_preserved(self):
@@ -244,6 +254,51 @@ class TestTHTConnectorOffsets:
         assert offset[0] == pytest.approx(0.0, abs=0.01)
         assert offset[1] == pytest.approx(-8.9, abs=0.25)  # -cy - model_origin_diff
         assert offset[2] == pytest.approx(4.2, abs=0.1)  # -z_min/2
+
+    def test_c5206_dip_package(self):
+        """C5206 (DIP-8) - uses z_max for parts extending below PCB, even with matching origins."""
+        model, fp_origin_x, fp_origin_y, obj_source = self._load_test_data("C5206")
+
+        offset, _ = compute_model_transform(model, fp_origin_x, fp_origin_y, obj_source)
+
+        # User verified: x=good, y=good, z≈2mm
+        assert offset[0] == pytest.approx(0.0, abs=0.01)
+        assert offset[1] == pytest.approx(0.0, abs=0.01)
+        assert offset[2] == pytest.approx(2.0, abs=0.3)  # z_max
+
+
+class TestPartsWithoutOBJData:
+    """Test parts where 3D model OBJ data is not available.
+
+    For these parts, z-offset should default to 0 as model.z is unreliable.
+    """
+
+    def test_parts_without_obj_default_to_zero_z(self):
+        """Parts without OBJ data should have z-offset = 0."""
+        test_parts = ["C5213", "C3794", "C8852", "C18901", "C10081", "C138392"]
+
+        for part_id in test_parts:
+            fp_path = os.path.join(TESTDATA_DIR, f"{part_id}_footprint.json")
+            if not os.path.exists(fp_path):
+                continue  # Skip if test data not available
+
+            with open(fp_path) as f:
+                fp_data = json.load(f)
+
+            fp_head = fp_data["dataStr"]["head"]
+            fp_origin_x = fp_head["x"]
+            fp_origin_y = fp_head["y"]
+            fp_shapes = fp_data["dataStr"]["shape"]
+            footprint = parse_footprint_shapes(fp_shapes, fp_origin_x, fp_origin_y)
+
+            if not footprint.model:
+                continue  # Skip if no 3D model
+
+            # No OBJ file available
+            offset, _ = compute_model_transform(footprint.model, fp_origin_x, fp_origin_y, obj_source=None)
+
+            # User verified: z should be 0 for all these parts
+            assert offset[2] == 0.0, f"{part_id} should have z-offset=0, got {offset[2]:.3f}"
 
 
 class TestSaveModels:

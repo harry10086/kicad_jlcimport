@@ -41,32 +41,45 @@ def compute_model_transform(
     model_origin_diff_y = (model.origin_y - fp_origin_y) / _MILS_TO_MM
     is_tht_connector = abs(model_origin_diff_y) > 0.01  # > 0.01mm difference
 
-    if is_tht_connector and obj_source is not None:
-        # For THT connectors, use special offset calculation
-        # Y offset: Include model origin offset
-        if abs(cy) < 0.5:
-            # When OBJ center is near zero, use only model origin difference
-            y_offset = -model_origin_diff_y
-        else:
-            # When OBJ is significantly off-center, combine both
-            y_offset = -cy - model_origin_diff_y
+    if obj_source is not None:
+        # When OBJ data is available, compute z-offset from geometry
+        # Check if part extends significantly below PCB surface
+        extends_below_pcb = z_max < abs(z_min)
 
-        # Z offset: Use heuristic based on geometry
-        if z_max < abs(z_min):
-            # Part extends more below than above, use top surface
-            z_offset = z_max
-        else:
-            # Part extends more above, use half of depth
-            z_offset = -z_min / 2
+        if is_tht_connector or extends_below_pcb:
+            # For THT connectors or parts extending below PCB
+            # Y offset: Include model origin offset for THT connectors
+            if is_tht_connector:
+                if abs(cy) < 0.5:
+                    # When OBJ center is near zero, use only model origin difference
+                    y_offset = -model_origin_diff_y
+                else:
+                    # When OBJ is significantly off-center, combine both
+                    y_offset = -cy - model_origin_diff_y
+            else:
+                # Not a THT connector, use standard y offset
+                y_offset = -cy
 
-        offset = (-cx, y_offset, z_offset)
+            # Z offset: Use heuristic based on geometry
+            if extends_below_pcb:
+                # Part extends more below than above, use top surface
+                z_offset = z_max
+            else:
+                # Part extends more above, use half of depth
+                z_offset = -z_min / 2
+
+            offset = (-cx, y_offset, z_offset)
+        else:
+            # SMD parts that don't extend below: use standard calculation
+            offset = (
+                -cx,
+                -cy,
+                model.z / _EE_3D_UNITS_PER_MM,
+            )
     else:
-        # SMD parts or THT without origin difference: use standard calculation
-        offset = (
-            -cx,
-            -cy,
-            model.z / _EE_3D_UNITS_PER_MM,
-        )
+        # No OBJ data available: default z-offset to 0
+        # The model.z value is unreliable without geometry context
+        offset = (-cx, -cy, 0.0)
 
     return offset, model.rotation
 
