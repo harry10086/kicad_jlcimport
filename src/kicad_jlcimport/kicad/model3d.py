@@ -48,8 +48,8 @@ def compute_model_transform(
     if abs(model_origin_diff_y) < 0.5:
         # Small offsets < 0.5mm are noise/measurement errors
         is_spurious = True
-    elif height > 0 and height < 2.0 and abs(model_origin_diff_y) > height:
-        # Physically unreasonable: offset > height for short parts
+    elif height > 0 and height < 3.0 and abs(model_origin_diff_y) > 0.4 * height:
+        # Physically unreasonable: offset > 40% of height for short parts
         is_spurious = True
     elif abs(model_origin_diff_y) > 50.0:
         # Outliers > 50mm are EasyEDA data errors
@@ -64,6 +64,9 @@ def compute_model_transform(
     # Origin offset detection (after spurious filtering)
     has_origin_offset = not is_spurious and abs(model_origin_diff_y) > 0.5
 
+    # Check if rotation transformation will be applied
+    has_rotation_transform = abs(abs(model.rotation[2]) - 180.0) < 0.1
+
     if obj_source is not None:
         # Y offset calculation
         if is_connector:
@@ -77,7 +80,11 @@ def compute_model_transform(
         elif has_origin_offset:
             # Origin offset: use model origin difference
             if abs(cy) < 0.5:
-                y_offset = -model_origin_diff_y
+                # Sign depends on whether rotation transformation will be applied
+                if has_rotation_transform:
+                    y_offset = model_origin_diff_y
+                else:
+                    y_offset = -model_origin_diff_y
             else:
                 y_offset = -cy - model_origin_diff_y
         else:
@@ -92,8 +99,13 @@ def compute_model_transform(
         is_symmetric = z_min < 0 and abs(z_max - abs(z_min)) < 0.01
 
         if is_symmetric:
-            # Symmetric SMD: place bottom on PCB
-            z_offset = z_max
+            # Distinguish THT from SMD using model.z (THT parts have non-zero z)
+            if abs(model.z) < 0.01:
+                # SMD part (model.z ≈ 0): place bottom on PCB
+                z_offset = z_max
+            else:
+                # THT part (model.z ≠ 0, e.g., through-hole crystal): sit flat
+                z_offset = 0.0
         elif z_min >= 0:
             # Flat parts on surface
             z_offset = model.z / _EE_3D_UNITS_PER_MM

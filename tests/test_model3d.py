@@ -266,6 +266,17 @@ class TestTHTConnectorOffsets:
         assert offset[1] == pytest.approx(0.0, abs=0.01)
         assert offset[2] == pytest.approx(0.254, abs=0.01)
 
+    def test_c3116_symmetric_smd_taller(self):
+        """C3116 - taller symmetric SMD part should use z_max for offset."""
+        model, fp_origin_x, fp_origin_y, obj_source = self._load_test_data("C3116")
+
+        offset, _ = compute_model_transform(model, fp_origin_x, fp_origin_y, obj_source)
+
+        # User verified: x=0, y=0, z=2.6 (symmetric SMD, use z_max)
+        assert offset[0] == pytest.approx(0.0, abs=0.01)
+        assert offset[1] == pytest.approx(0.0, abs=0.01)
+        assert offset[2] == pytest.approx(2.6, abs=0.01)
+
     def test_c385834_rj45_connector(self):
         """C385834 (RJ45) - uses z_max for parts extending below PCB."""
         model, fp_origin_x, fp_origin_y, obj_source = self._load_test_data("C385834")
@@ -433,6 +444,18 @@ class TestTHTConnectorOffsets:
         assert offset[0] == pytest.approx(2.5, abs=0.01)
         assert offset[1] == pytest.approx(2.25, abs=0.01)
         assert offset[2] == pytest.approx(2.15, abs=0.15)
+        assert rotation[2] == pytest.approx(-180.0, abs=0.01)
+
+    def test_c386758_with_rotation_and_offset(self):
+        """C386758 - THT part with origin offset and Z-rotation=-180° requires correct sign."""
+        model, fp_origin_x, fp_origin_y, obj_source = self._load_test_data("C386758")
+
+        offset, rotation = compute_model_transform(model, fp_origin_x, fp_origin_y, obj_source)
+
+        # User verified: x=0, y=1.587, z=0 after Z-rotation transformation
+        assert offset[0] == pytest.approx(0.0, abs=0.01)
+        assert offset[1] == pytest.approx(1.587, abs=0.01)
+        assert offset[2] == pytest.approx(0.0, abs=0.01)
         assert rotation[2] == pytest.approx(-180.0, abs=0.01)
 
 
