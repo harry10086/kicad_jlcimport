@@ -35,47 +35,63 @@ def compute_model_transform(
     if obj_source is not None:
         cx, cy, z_min, z_max = _obj_bounding_box(obj_source)
 
-    # Detect THT parts by checking if model origin differs from footprint origin
-    # EasyEDA coordinates are in mils, convert to mm for comparison
+    # Detect connectors by checking if the OBJ model is off-center AND has depth
+    # Regular THT/SMD parts have cy ≈ 0
+    # Connectors have cy != 0 and z_min < 0 (have depth)
+    # Unit tests have cy != 0 but z_min = 0 (flat models)
+    is_connector = abs(cy) > 0.1 and z_min < -0.001
+
+    # For connectors, also check if model origin differs from footprint origin
     _MILS_TO_MM = 3.937
     model_origin_diff_y = (model.origin_y - fp_origin_y) / _MILS_TO_MM
-    is_tht_connector = abs(model_origin_diff_y) > 0.01  # > 0.01mm difference
 
     if obj_source is not None:
         # When OBJ data is available, compute z-offset from geometry
-        # Check if part extends significantly below PCB surface
-        extends_below_pcb = z_max < abs(z_min)
 
-        if is_tht_connector or extends_below_pcb:
-            # For THT connectors or parts extending below PCB
-            # Y offset: Include model origin offset for THT connectors
-            if is_tht_connector:
-                if abs(cy) < 0.5:
-                    # When OBJ center is near zero, use only model origin difference
-                    y_offset = -model_origin_diff_y
-                else:
-                    # When OBJ is significantly off-center, combine both
-                    y_offset = -cy - model_origin_diff_y
+        if is_connector:
+            # For connectors with off-center OBJ models
+            # If model origin differs significantly from footprint origin, use it
+            if abs(model_origin_diff_y) > 0.5 and abs(cy) < 0.5:
+                # Small OBJ offset but large origin difference
+                y_offset = -model_origin_diff_y
+            elif abs(model_origin_diff_y) > 0.5:
+                # Both OBJ and origin are off-center: combine
+                y_offset = -cy - model_origin_diff_y
             else:
-                # Not a THT connector, use standard y offset
+                # Only OBJ is off-center: use it
                 y_offset = -cy
 
-            # Z offset: Use heuristic based on geometry
+            # Z offset based on geometry (connectors use standard threshold)
+            extends_below_pcb = z_max < abs(z_min)
             if extends_below_pcb:
-                # Part extends more below than above, use top surface
                 z_offset = z_max
             else:
-                # Part extends more above, use half of depth
                 z_offset = -z_min / 2
 
             offset = (-cx, y_offset, z_offset)
         else:
-            # SMD parts that don't extend below: use standard calculation
-            offset = (
-                -cx,
-                -cy,
-                model.z / _EE_3D_UNITS_PER_MM,
-            )
+            # For non-connectors, check geometry to determine z-offset
+            if z_min >= 0:
+                # Flat SMD parts on PCB surface: use model.z
+                z_offset = model.z / _EE_3D_UNITS_PER_MM
+                offset = (-cx, -cy, z_offset)
+            else:
+                # Has depth below PCB: use stricter threshold for extends_below
+                # Only DIP packages that extend FAR below should use z_max
+                extends_below_pcb = z_max < 0.5 * abs(z_min)
+
+                if extends_below_pcb:
+                    # DIP packages and similar: use top surface for z
+                    y_offset = -cy
+                    z_offset = z_max
+                    offset = (-cx, y_offset, z_offset)
+                elif z_max > 5.0:
+                    # Tall headers/connectors extending above PCB: use model.z
+                    z_offset = model.z / _EE_3D_UNITS_PER_MM
+                    offset = (-cx, -cy, z_offset)
+                else:
+                    # Normal THT parts: use z=0 (model.z is unreliable)
+                    offset = (-cx, -cy, 0.0)
     else:
         # No OBJ data available: default z-offset to 0
         # The model.z value is unreliable without geometry context
