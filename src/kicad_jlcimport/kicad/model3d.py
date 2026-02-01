@@ -8,21 +8,29 @@ from ..easyeda.ee_types import EE3DModel
 # EasyEDA 3D coordinates use 100 units per mm
 _EE_3D_UNITS_PER_MM = 100.0
 
+# EasyEDA canvas coordinates are in mils (1 mil = 0.0254 mm)
+_MIL_TO_MM = 0.0254
+
+
+def _mil_to_mm(mil: float) -> float:
+    return mil * _MIL_TO_MM
+
 
 def compute_model_transform(
     model: EE3DModel, fp_origin_x: float, fp_origin_y: float
 ) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
     """Compute 3D model offset and rotation from footprint model data.
 
-    The c_origin in EasyEDA is just the canvas position - not relevant for KiCad.
-    The footprint and 3D model are already aligned at their origins.
-    Only Z offset needs to be applied.
+    The c_origin in EasyEDA is the 3D model's position on the canvas.
+    Footprint geometry is recentered by subtracting fp_origin (in mils),
+    so the 3D model needs the same treatment: its canvas position minus
+    the footprint origin, converted from mils to mm.
 
     Returns (offset, rotation) tuples in mm.
     """
     offset = (
-        0.0,
-        0.0,
+        _mil_to_mm(model.origin_x - fp_origin_x),
+        _mil_to_mm(model.origin_y - fp_origin_y),
         model.z / _EE_3D_UNITS_PER_MM,
     )
     return offset, model.rotation

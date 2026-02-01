@@ -7,20 +7,20 @@ from kicad_jlcimport.kicad.model3d import compute_model_transform, convert_to_vr
 
 
 class TestComputeModelTransform:
-    def test_zero_z(self):
-        """X/Y offset is always 0 - only Z is used."""
+    def test_zero_offset(self):
+        """When c_origin matches fp_origin, XY offset is zero."""
         model = EE3DModel(uuid="test", origin_x=0, origin_y=0, z=0, rotation=(0, 0, 0))
         offset, rotation = compute_model_transform(model, 0, 0)
         assert offset == (0.0, 0.0, 0.0)
         assert rotation == (0, 0, 0)
 
-    def test_z_offset(self):
-        """Z offset is converted from 3D units (100/mm) to mm."""
+    def test_xy_offset_from_origin_difference(self):
+        """XY offset is (c_origin - fp_origin) converted from mils to mm."""
         model = EE3DModel(uuid="test", origin_x=200, origin_y=300, z=50, rotation=(0, 0, 90))
         offset, rotation = compute_model_transform(model, 100, 100)
-        # X/Y are always 0 - c_origin is just canvas position, not offset
-        assert offset[0] == 0.0
-        assert offset[1] == 0.0
+        # (200-100)*0.0254 = 2.54, (300-100)*0.0254 = 5.08
+        assert offset[0] == pytest.approx(2.54)
+        assert offset[1] == pytest.approx(5.08)
         # z: 50/100 = 0.5 mm
         assert offset[2] == pytest.approx(0.5)
         assert rotation == (0, 0, 90)
@@ -29,9 +29,17 @@ class TestComputeModelTransform:
         """Rotation tuple is passed through unchanged."""
         model = EE3DModel(uuid="test", origin_x=50, origin_y=50, z=0, rotation=(10, 20, 30))
         offset, rotation = compute_model_transform(model, 100, 100)
-        assert offset[0] == 0.0
-        assert offset[1] == 0.0
+        # (50-100)*0.0254 = -1.27
+        assert offset[0] == pytest.approx(-1.27)
+        assert offset[1] == pytest.approx(-1.27)
         assert rotation == (10, 20, 30)
+
+    def test_same_origin_no_xy_offset(self):
+        """When c_origin equals fp_origin, XY offset is zero."""
+        model = EE3DModel(uuid="test", origin_x=400, origin_y=400, z=0, rotation=(0, 0, 0))
+        offset, _ = compute_model_transform(model, 400, 400)
+        assert offset[0] == pytest.approx(0.0)
+        assert offset[1] == pytest.approx(0.0)
 
 
 class TestConvertToVrml:
