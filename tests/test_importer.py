@@ -211,8 +211,8 @@ class TestImportComponent:
         (models_dir / "TestPart.step").write_text("existing")
         (models_dir / "TestPart.wrl").write_text("existing")
 
-        def _should_not_download(_):
-            raise AssertionError("download should be skipped for existing files")
+        def _step_should_not_download(_):
+            raise AssertionError("STEP download should be skipped for existing files")
 
         def fake_save(dir, name, step_data=None, wrl_source=None):
             step_path = os.path.join(dir, f"{name}.step")
@@ -222,8 +222,9 @@ class TestImportComponent:
         monkeypatch.setattr(importer, "fetch_full_component", lambda _: fake_comp)
         monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *a, **k: fake_fp)
         monkeypatch.setattr(importer, "write_footprint", lambda *a, **k: "(footprint TestPart)\n")
-        monkeypatch.setattr(importer, "download_step", _should_not_download)
-        monkeypatch.setattr(importer, "download_wrl_source", _should_not_download)
+        monkeypatch.setattr(importer, "download_step", _step_should_not_download)
+        # WRL source is always fetched for 3D model offset computation
+        monkeypatch.setattr(importer, "download_wrl_source", lambda _: "v 0 0 0\n")
         monkeypatch.setattr(importer, "save_models", fake_save)
 
         importer.import_component(

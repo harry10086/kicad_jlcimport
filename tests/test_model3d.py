@@ -1,14 +1,26 @@
 """Tests for model3d.py - VRML conversion and model transforms."""
 
+import json
+import os
+
 import pytest
 
 from kicad_jlcimport.easyeda.ee_types import EE3DModel
-from kicad_jlcimport.kicad.model3d import compute_model_transform, convert_to_vrml, save_models
+from kicad_jlcimport.easyeda.parser import parse_footprint_shapes
+from kicad_jlcimport.kicad.model3d import (
+    _obj_xy_center,
+    compute_model_transform,
+    convert_to_vrml,
+    save_models,
+)
+
+# Path to test data directory
+TESTDATA_DIR = os.path.join(os.path.dirname(__file__), "..", "testdata")
 
 
 class TestComputeModelTransform:
-    def test_zero_z(self):
-        """X/Y offset is always 0 - only Z is used."""
+    def test_no_obj_source(self):
+        """Without OBJ data, XY offset is zero; only Z is used."""
         model = EE3DModel(uuid="test", origin_x=0, origin_y=0, z=0, rotation=(0, 0, 0))
         offset, rotation = compute_model_transform(model, 0, 0)
         assert offset == (0.0, 0.0, 0.0)
@@ -18,10 +30,8 @@ class TestComputeModelTransform:
         """Z offset is converted from 3D units (100/mm) to mm."""
         model = EE3DModel(uuid="test", origin_x=200, origin_y=300, z=50, rotation=(0, 0, 90))
         offset, rotation = compute_model_transform(model, 100, 100)
-        # X/Y are always 0 - c_origin is just canvas position, not offset
         assert offset[0] == 0.0
         assert offset[1] == 0.0
-        # z: 50/100 = 0.5 mm
         assert offset[2] == pytest.approx(0.5)
         assert rotation == (0, 0, 90)
 
@@ -29,9 +39,52 @@ class TestComputeModelTransform:
         """Rotation tuple is passed through unchanged."""
         model = EE3DModel(uuid="test", origin_x=50, origin_y=50, z=0, rotation=(10, 20, 30))
         offset, rotation = compute_model_transform(model, 100, 100)
-        assert offset[0] == 0.0
-        assert offset[1] == 0.0
         assert rotation == (10, 20, 30)
+
+    def test_obj_source_recenters_xy(self):
+        """OBJ bounding-box centre is negated to recenter the model."""
+        obj = "v 1.0 2.0 0.0\nv 3.0 4.0 1.0\n"
+        model = EE3DModel(uuid="test", origin_x=0, origin_y=0, z=0, rotation=(0, 0, 0))
+        offset, _ = compute_model_transform(model, 0, 0, obj_source=obj)
+        # center = (2.0, 3.0); offset = (-2.0, -3.0)
+        assert offset[0] == pytest.approx(-2.0)
+        assert offset[1] == pytest.approx(-3.0)
+        assert offset[2] == 0.0
+
+    def test_obj_source_with_z_offset(self):
+        """OBJ XY correction and Z offset combine correctly."""
+        obj = "v -1.0 0.0 0.0\nv 5.0 2.0 1.0\n"
+        model = EE3DModel(uuid="test", origin_x=0, origin_y=0, z=50, rotation=(0, 0, 0))
+        offset, _ = compute_model_transform(model, 0, 0, obj_source=obj)
+        assert offset[0] == pytest.approx(-2.0)
+        assert offset[1] == pytest.approx(-1.0)
+        assert offset[2] == pytest.approx(0.5)
+
+
+class TestObjXyCenter:
+    def test_simple_vertices(self):
+        obj = "v 0 0 0\nv 4.0 6.0 1.0\n"
+        cx, cy = _obj_xy_center(obj)
+        assert cx == pytest.approx(2.0)
+        assert cy == pytest.approx(3.0)
+
+    def test_empty_returns_zero(self):
+        assert _obj_xy_center("") == (0.0, 0.0)
+
+    def test_no_vertex_lines(self):
+        assert _obj_xy_center("f 1 2 3\nusemtl foo\n") == (0.0, 0.0)
+
+    def test_ignores_vn_vt(self):
+        obj = "vn 1 0 0\nvt 0.5 0.5\nv 2 4 0\nv 6 8 0\n"
+        cx, cy = _obj_xy_center(obj)
+        assert cx == pytest.approx(4.0)
+        assert cy == pytest.approx(6.0)
+
+    def test_centered_model_returns_zero(self):
+        obj = "v -3 -2 0\nv 3 2 0\n"
+        cx, cy = _obj_xy_center(obj)
+        assert cx == pytest.approx(0.0)
+        assert cy == pytest.approx(0.0)
 
 
 class TestConvertToVrml:
@@ -117,6 +170,80 @@ class TestConvertToVrml:
         result = convert_to_vrml(source)
         lines = result.strip().split("\n")
         assert lines[0] == "#VRML V2.0 utf8"
+
+
+class TestTHTConnectorOffsets:
+    """Test THT connector offset calculations with real component data.
+
+    Uses actual footprint and OBJ data from testdata/ to verify against
+    user-validated offset values.
+    """
+
+    def _load_test_data(self, lcsc_id):
+        """Load footprint and OBJ data for a test part."""
+        # Load footprint data
+        fp_path = os.path.join(TESTDATA_DIR, f"{lcsc_id}_footprint.json")
+        with open(fp_path) as f:
+            fp_data = json.load(f)
+
+        # Parse footprint to get model data
+        fp_head = fp_data["dataStr"]["head"]
+        fp_origin_x = fp_head["x"]
+        fp_origin_y = fp_head["y"]
+
+        fp_shapes = fp_data["dataStr"]["shape"]
+        footprint = parse_footprint_shapes(fp_shapes, fp_origin_x, fp_origin_y)
+
+        # Load OBJ data
+        obj_path = os.path.join(TESTDATA_DIR, f"{lcsc_id}_model.obj")
+        with open(obj_path) as f:
+            obj_source = f.read()
+
+        return footprint.model, fp_origin_x, fp_origin_y, obj_source
+
+    def test_c160404_smd_connector(self):
+        """C160404 (SM04B-SRSS-TB) - SMD connector that started issue #29."""
+        model, fp_origin_x, fp_origin_y, obj_source = self._load_test_data("C160404")
+
+        offset, _ = compute_model_transform(model, fp_origin_x, fp_origin_y, obj_source)
+
+        # User verified: x=-1.5, y=-0.35, z=0.0
+        assert offset[0] == pytest.approx(-1.5, abs=0.01)
+        assert offset[1] == pytest.approx(-0.35, abs=0.01)
+        assert offset[2] == pytest.approx(0.0, abs=0.01)
+
+    def test_c668119_coincident_origins(self):
+        """C668119 (4-pin header) - model and footprint origins coincide."""
+        model, fp_origin_x, fp_origin_y, obj_source = self._load_test_data("C668119")
+
+        offset, _ = compute_model_transform(model, fp_origin_x, fp_origin_y, obj_source)
+
+        # User verified: x=0, y=0, z=-0.134
+        assert offset[0] == pytest.approx(0.0, abs=0.01)
+        assert offset[1] == pytest.approx(0.0, abs=0.01)
+        assert offset[2] == pytest.approx(-0.134, abs=0.01)
+
+    def test_c385834_rj45_connector(self):
+        """C385834 (RJ45) - uses z_max for parts extending below PCB."""
+        model, fp_origin_x, fp_origin_y, obj_source = self._load_test_data("C385834")
+
+        offset, _ = compute_model_transform(model, fp_origin_x, fp_origin_y, obj_source)
+
+        # User verified: x=0, y=-1.08, z=6.45
+        assert offset[0] == pytest.approx(0.0, abs=0.01)
+        assert offset[1] == pytest.approx(-1.08, abs=0.05)
+        assert offset[2] == pytest.approx(6.35, abs=0.15)  # z_max
+
+    def test_c395958_terminal_block(self):
+        """C395958 (2-pin terminal) - uses -z_min/2 for parts extending above PCB."""
+        model, fp_origin_x, fp_origin_y, obj_source = self._load_test_data("C395958")
+
+        offset, _ = compute_model_transform(model, fp_origin_x, fp_origin_y, obj_source)
+
+        # User verified: x=-0.00005, y=-8.9, z=4.2
+        assert offset[0] == pytest.approx(0.0, abs=0.01)
+        assert offset[1] == pytest.approx(-8.9, abs=0.25)  # -cy - model_origin_diff
+        assert offset[2] == pytest.approx(4.2, abs=0.1)  # -z_min/2
 
 
 class TestSaveModels:

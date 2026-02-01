@@ -10,22 +10,104 @@ _EE_3D_UNITS_PER_MM = 100.0
 
 
 def compute_model_transform(
-    model: EE3DModel, fp_origin_x: float, fp_origin_y: float
+    model: EE3DModel,
+    fp_origin_x: float,
+    fp_origin_y: float,
+    obj_source: Optional[str] = None,
 ) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
     """Compute 3D model offset and rotation from footprint model data.
 
-    The c_origin in EasyEDA is just the canvas position - not relevant for KiCad.
-    The footprint and 3D model are already aligned at their origins.
-    Only Z offset needs to be applied.
+    When *obj_source* is provided the XY bounding-box centre of the OBJ
+    vertex data is used to correct the model origin.  The EasyEDA OBJ
+    coordinates are in **mm** and the centre tells us how far the
+    model's geometry is from (0, 0).  Negating the centre recentres the
+    model on the footprint origin.
+
+    For through-hole parts (detected when model origin differs from
+    footprint origin), special offset calculations are applied to
+    account for the model placement in EasyEDA.
 
     Returns (offset, rotation) tuples in mm.
     """
-    offset = (
-        0.0,
-        0.0,
-        model.z / _EE_3D_UNITS_PER_MM,
-    )
+    cx, cy = 0.0, 0.0
+    z_min, z_max = 0.0, 0.0
+
+    if obj_source is not None:
+        cx, cy, z_min, z_max = _obj_bounding_box(obj_source)
+
+    # Detect THT parts by checking if model origin differs from footprint origin
+    # EasyEDA coordinates are in mils, convert to mm for comparison
+    _MILS_TO_MM = 3.937
+    model_origin_diff_y = (model.origin_y - fp_origin_y) / _MILS_TO_MM
+    is_tht_connector = abs(model_origin_diff_y) > 0.01  # > 0.01mm difference
+
+    if is_tht_connector and obj_source is not None:
+        # For THT connectors, use special offset calculation
+        # Y offset: Include model origin offset
+        if abs(cy) < 0.5:
+            # When OBJ center is near zero, use only model origin difference
+            y_offset = -model_origin_diff_y
+        else:
+            # When OBJ is significantly off-center, combine both
+            y_offset = -cy - model_origin_diff_y
+
+        # Z offset: Use heuristic based on geometry
+        if z_max < abs(z_min):
+            # Part extends more below than above, use top surface
+            z_offset = z_max
+        else:
+            # Part extends more above, use half of depth
+            z_offset = -z_min / 2
+
+        offset = (-cx, y_offset, z_offset)
+    else:
+        # SMD parts or THT without origin difference: use standard calculation
+        offset = (
+            -cx,
+            -cy,
+            model.z / _EE_3D_UNITS_PER_MM,
+        )
+
     return offset, model.rotation
+
+
+def _obj_bounding_box(obj_source: str) -> Tuple[float, float, float, float]:
+    """Return XY center and Z range of OBJ vertex data (cx, cy, z_min, z_max in mm)."""
+    min_x = min_y = min_z = float("inf")
+    max_x = max_y = max_z = float("-inf")
+    found = False
+
+    for line in obj_source.split("\n"):
+        line = line.strip()
+        if not line.startswith("v ") or line.startswith("vn") or line.startswith("vt"):
+            continue
+        parts = line.split()
+        if len(parts) < 4:
+            continue
+        try:
+            x, y, z = float(parts[1]), float(parts[2]), float(parts[3])
+        except ValueError:
+            continue
+        min_x, max_x = min(min_x, x), max(max_x, x)
+        min_y, max_y = min(min_y, y), max(max_y, y)
+        min_z, max_z = min(min_z, z), max(max_z, z)
+        found = True
+
+    if not found:
+        return 0.0, 0.0, 0.0, 0.0
+
+    cx = (min_x + max_x) / 2
+    cy = (min_y + max_y) / 2
+    return cx, cy, min_z, max_z
+
+
+def _obj_xy_center(obj_source: str) -> Tuple[float, float]:
+    """Return the XY bounding-box centre of OBJ vertex data (in mm).
+
+    Deprecated: Use _obj_bounding_box for new code.
+    """
+    cx, cy, _, _ = _obj_bounding_box(obj_source)
+    return cx, cy
 
 
 def save_models(

@@ -62,13 +62,17 @@ def import_component(
     model_offset = (0.0, 0.0, 0.0)
     model_rotation = (0.0, 0.0, 0.0)
     uuid_3d = ""
+    wrl_source = None
     if footprint.model:
         uuid_3d = footprint.model.uuid
-        model_offset, model_rotation = compute_model_transform(
-            footprint.model, comp["fp_origin_x"], comp["fp_origin_y"]
-        )
     if not uuid_3d:
         uuid_3d = comp.get("uuid_3d", "")
+    if uuid_3d:
+        wrl_source = download_wrl_source(uuid_3d)
+    if footprint.model:
+        model_offset, model_rotation = compute_model_transform(
+            footprint.model, comp["fp_origin_x"], comp["fp_origin_y"], wrl_source
+        )
 
     # Parse symbol
     sym_content = ""
@@ -109,6 +113,7 @@ def import_component(
             title,
             log,
             kicad_version,
+            wrl_source,
         )
 
     return _import_to_library(
@@ -127,6 +132,7 @@ def import_component(
         title,
         log,
         kicad_version,
+        wrl_source,
     )
 
 
@@ -144,6 +150,7 @@ def _export_only(
     title,
     log,
     kicad_version,
+    wrl_source=None,
 ):
     """Write raw .kicad_mod, .kicad_sym, and 3D models to a flat directory."""
     os.makedirs(out_dir, exist_ok=True)
@@ -183,7 +190,8 @@ def _export_only(
     if uuid_3d:
         models_dir = os.path.join(out_dir, "3dmodels")
         step_data = download_step(uuid_3d)
-        wrl_source = download_wrl_source(uuid_3d)
+        if wrl_source is None:
+            wrl_source = download_wrl_source(uuid_3d)
         step_path, wrl_path = save_models(models_dir, name, step_data, wrl_source)
         if step_path:
             log(f"  Saved: {step_path}")
@@ -209,6 +217,7 @@ def _import_to_library(
     title,
     log,
     kicad_version,
+    wrl_source=None,
 ):
     """Import into KiCad library structure with lib-table updates."""
     log(f"Destination: {lib_dir}")
@@ -225,7 +234,8 @@ def _import_to_library(
 
         log("Downloading 3D model...")
         step_data = download_step(uuid_3d) if overwrite or not step_existed else None
-        wrl_source = download_wrl_source(uuid_3d) if overwrite or not wrl_existed else None
+        if wrl_source is None and (overwrite or not wrl_existed):
+            wrl_source = download_wrl_source(uuid_3d)
         step_path, wrl_path = save_models(paths["models_dir"], name, step_data, wrl_source)
         if step_path:
             if use_global:
