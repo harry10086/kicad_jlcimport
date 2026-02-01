@@ -172,7 +172,9 @@ def test_cli_import_project_skips_existing_3d_models_without_overwrite(tmp_path,
     cli.cmd_import(args)
     out = capsys.readouterr().out
 
-    assert calls == {"step": 1, "wrl": 1}
+    # STEP is skipped on second import; WRL is fetched each time for offset computation
+    assert calls["step"] == 1
+    assert calls["wrl"] == 2
     assert "Skipped:" in out
     assert ".step" in out
     assert ".wrl" in out

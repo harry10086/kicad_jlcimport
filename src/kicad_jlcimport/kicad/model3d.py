@@ -10,22 +10,63 @@ _EE_3D_UNITS_PER_MM = 100.0
 
 
 def compute_model_transform(
-    model: EE3DModel, fp_origin_x: float, fp_origin_y: float
+    model: EE3DModel,
+    fp_origin_x: float,
+    fp_origin_y: float,
+    obj_source: Optional[str] = None,
 ) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
     """Compute 3D model offset and rotation from footprint model data.
 
-    The c_origin in EasyEDA is just the canvas position - not relevant for KiCad.
-    The footprint and 3D model are already aligned at their origins.
-    Only Z offset needs to be applied.
+    When *obj_source* is provided the XY bounding-box centre of the OBJ
+    vertex data is used to correct the model origin.  The EasyEDA OBJ
+    coordinates are in **mm** and the centre tells us how far the
+    model's geometry is from (0, 0).  Negating the centre recentres the
+    model on the footprint origin.
 
     Returns (offset, rotation) tuples in mm.
     """
+    cx, cy = 0.0, 0.0
+    if obj_source is not None:
+        cx, cy = _obj_xy_center(obj_source)
+
     offset = (
-        0.0,
-        0.0,
+        -cx,
+        -cy,
         model.z / _EE_3D_UNITS_PER_MM,
     )
     return offset, model.rotation
+
+
+def _obj_xy_center(obj_source: str) -> Tuple[float, float]:
+    """Return the XY bounding-box centre of OBJ vertex data (in mm)."""
+    min_x = min_y = float("inf")
+    max_x = max_y = float("-inf")
+    found = False
+
+    for line in obj_source.split("\n"):
+        line = line.strip()
+        if not line.startswith("v ") or line.startswith("vn") or line.startswith("vt"):
+            continue
+        parts = line.split()
+        if len(parts) < 4:
+            continue
+        try:
+            x, y = float(parts[1]), float(parts[2])
+        except ValueError:
+            continue
+        if x < min_x:
+            min_x = x
+        if x > max_x:
+            max_x = x
+        if y < min_y:
+            min_y = y
+        if y > max_y:
+            max_y = y
+        found = True
+
+    if not found:
+        return 0.0, 0.0
+    return (min_x + max_x) / 2, (min_y + max_y) / 2
 
 
 def save_models(

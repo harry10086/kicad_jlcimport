@@ -3,12 +3,17 @@
 import pytest
 
 from kicad_jlcimport.easyeda.ee_types import EE3DModel
-from kicad_jlcimport.kicad.model3d import compute_model_transform, convert_to_vrml, save_models
+from kicad_jlcimport.kicad.model3d import (
+    _obj_xy_center,
+    compute_model_transform,
+    convert_to_vrml,
+    save_models,
+)
 
 
 class TestComputeModelTransform:
-    def test_zero_z(self):
-        """X/Y offset is always 0 - only Z is used."""
+    def test_no_obj_source(self):
+        """Without OBJ data, XY offset is zero; only Z is used."""
         model = EE3DModel(uuid="test", origin_x=0, origin_y=0, z=0, rotation=(0, 0, 0))
         offset, rotation = compute_model_transform(model, 0, 0)
         assert offset == (0.0, 0.0, 0.0)
@@ -18,10 +23,8 @@ class TestComputeModelTransform:
         """Z offset is converted from 3D units (100/mm) to mm."""
         model = EE3DModel(uuid="test", origin_x=200, origin_y=300, z=50, rotation=(0, 0, 90))
         offset, rotation = compute_model_transform(model, 100, 100)
-        # X/Y are always 0 - c_origin is just canvas position, not offset
         assert offset[0] == 0.0
         assert offset[1] == 0.0
-        # z: 50/100 = 0.5 mm
         assert offset[2] == pytest.approx(0.5)
         assert rotation == (0, 0, 90)
 
@@ -29,9 +32,52 @@ class TestComputeModelTransform:
         """Rotation tuple is passed through unchanged."""
         model = EE3DModel(uuid="test", origin_x=50, origin_y=50, z=0, rotation=(10, 20, 30))
         offset, rotation = compute_model_transform(model, 100, 100)
-        assert offset[0] == 0.0
-        assert offset[1] == 0.0
         assert rotation == (10, 20, 30)
+
+    def test_obj_source_recenters_xy(self):
+        """OBJ bounding-box centre is negated to recenter the model."""
+        obj = "v 1.0 2.0 0.0\nv 3.0 4.0 1.0\n"
+        model = EE3DModel(uuid="test", origin_x=0, origin_y=0, z=0, rotation=(0, 0, 0))
+        offset, _ = compute_model_transform(model, 0, 0, obj_source=obj)
+        # center = (2.0, 3.0); offset = (-2.0, -3.0)
+        assert offset[0] == pytest.approx(-2.0)
+        assert offset[1] == pytest.approx(-3.0)
+        assert offset[2] == 0.0
+
+    def test_obj_source_with_z_offset(self):
+        """OBJ XY correction and Z offset combine correctly."""
+        obj = "v -1.0 0.0 0.0\nv 5.0 2.0 1.0\n"
+        model = EE3DModel(uuid="test", origin_x=0, origin_y=0, z=50, rotation=(0, 0, 0))
+        offset, _ = compute_model_transform(model, 0, 0, obj_source=obj)
+        assert offset[0] == pytest.approx(-2.0)
+        assert offset[1] == pytest.approx(-1.0)
+        assert offset[2] == pytest.approx(0.5)
+
+
+class TestObjXyCenter:
+    def test_simple_vertices(self):
+        obj = "v 0 0 0\nv 4.0 6.0 1.0\n"
+        cx, cy = _obj_xy_center(obj)
+        assert cx == pytest.approx(2.0)
+        assert cy == pytest.approx(3.0)
+
+    def test_empty_returns_zero(self):
+        assert _obj_xy_center("") == (0.0, 0.0)
+
+    def test_no_vertex_lines(self):
+        assert _obj_xy_center("f 1 2 3\nusemtl foo\n") == (0.0, 0.0)
+
+    def test_ignores_vn_vt(self):
+        obj = "vn 1 0 0\nvt 0.5 0.5\nv 2 4 0\nv 6 8 0\n"
+        cx, cy = _obj_xy_center(obj)
+        assert cx == pytest.approx(4.0)
+        assert cy == pytest.approx(6.0)
+
+    def test_centered_model_returns_zero(self):
+        obj = "v -3 -2 0\nv 3 2 0\n"
+        cx, cy = _obj_xy_center(obj)
+        assert cx == pytest.approx(0.0)
+        assert cy == pytest.approx(0.0)
 
 
 class TestConvertToVrml:
