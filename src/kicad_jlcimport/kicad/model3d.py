@@ -1,5 +1,6 @@
 """3D model transforms, WRL conversion, and file saving."""
 
+import math
 import os
 from typing import Optional, Tuple
 
@@ -39,89 +40,104 @@ def compute_model_transform(
     _MILS_TO_MM = 3.937
     model_origin_diff_y = (model.origin_y - fp_origin_y) / _MILS_TO_MM
 
-    # Detect connectors and THT parts with model origin offset
-    # 1. Connectors: OBJ off-center AND has depth
-    # 2. THT parts with significant origin offset (e.g., ESP32-WROOM-32)
-    #    Use 3mm threshold to distinguish intentional offsets from measurement errors
-    #    Use 50mm max threshold to reject outliers (EasyEDA data errors)
-    is_connector = abs(cy) > 0.1 and z_min < -0.001
-    is_outlier_offset = abs(model_origin_diff_y) > 50.0
-    has_origin_offset = abs(model_origin_diff_y) > 3.0 and not is_outlier_offset
+    # Calculate height for relative thresholds
+    height = z_max - z_min if obj_source else 0.0
+
+    # Spurious offset detection - filter EasyEDA data errors
+    is_spurious = False
+    if abs(model_origin_diff_y) < 0.5:
+        # Small offsets < 0.5mm are noise/measurement errors
+        is_spurious = True
+    elif height > 0 and height < 2.0 and abs(model_origin_diff_y) > height:
+        # Physically unreasonable: offset > height for short parts
+        is_spurious = True
+    elif abs(model_origin_diff_y) > 50.0:
+        # Outliers > 50mm are EasyEDA data errors
+        is_spurious = True
+
+    # Connector detection: cy/height > 5% AND has depth
+    is_connector = False
+    if obj_source and height > 0:
+        cy_ratio = abs(cy) / height
+        is_connector = cy_ratio > 0.05 and z_min < -0.001
+
+    # Origin offset detection (after spurious filtering)
+    has_origin_offset = not is_spurious and abs(model_origin_diff_y) > 0.5
 
     if obj_source is not None:
-        # When OBJ data is available, compute z-offset from geometry
-
-        if is_connector or has_origin_offset:
-            # For connectors and THT parts with model origin offset
-            # Calculate Y offset based on OBJ center and model origin
-            if is_connector:
-                # Connectors: check if model origin also differs (use lower threshold)
-                if abs(model_origin_diff_y) > 0.5 and abs(cy) < 0.5:
-                    # Small OBJ offset but large origin difference
-                    y_offset = -model_origin_diff_y
-                elif abs(model_origin_diff_y) > 0.5:
-                    # Both OBJ and origin are off-center: combine
-                    y_offset = -cy - model_origin_diff_y
-                else:
-                    # Only OBJ is off-center: use it
-                    y_offset = -cy
-            elif has_origin_offset:
-                # Non-connector with large origin offset (e.g., ESP32)
-                if abs(cy) < 0.5:
-                    # OBJ is centered, use only model origin difference
-                    y_offset = -model_origin_diff_y
-                else:
-                    # OBJ is off-center, combine both
-                    y_offset = -cy - model_origin_diff_y
+        # Y offset calculation
+        if is_connector:
+            # Connector: use cy with optional model origin adjustment
+            if abs(model_origin_diff_y) > 0.5 and abs(cy) < 0.5:
+                y_offset = -model_origin_diff_y
+            elif abs(model_origin_diff_y) > 0.5:
+                y_offset = -cy - model_origin_diff_y
             else:
-                # Should not reach here
                 y_offset = -cy
+        elif has_origin_offset:
+            # Origin offset: use model origin difference
+            if abs(cy) < 0.5:
+                y_offset = -model_origin_diff_y
+            else:
+                y_offset = -cy - model_origin_diff_y
+        else:
+            # Regular: use cy only if significant (> 5% of height)
+            if height > 0 and abs(cy) / height > 0.05:
+                y_offset = -cy
+            else:
+                # cy is insignificant, likely modeling error
+                y_offset = 0.0
 
-            # Z offset based on geometry
-            extends_below_pcb = z_max < abs(z_min)
-            if extends_below_pcb:
+        # Z offset calculation
+        is_symmetric = z_min < 0 and abs(z_max - abs(z_min)) < 0.01
+
+        if is_symmetric:
+            # Symmetric SMD: place bottom on PCB
+            z_offset = z_max
+        elif z_min >= 0:
+            # Flat parts on surface
+            z_offset = model.z / _EE_3D_UNITS_PER_MM
+        elif is_connector or has_origin_offset:
+            # Connectors and parts with origin offset
+            if z_max > 2 * abs(z_min):
+                # Mainly extends above PCB
+                z_offset = 0.0
+            elif z_max < abs(z_min):
+                # Extends mainly below PCB
                 z_offset = z_max
             else:
+                # Balanced
                 z_offset = -z_min / 2
-
-            offset = (-cx, y_offset, z_offset)
         else:
-            # For non-connectors, check geometry to determine z-offset
-            if z_min >= 0:
-                # Flat SMD parts on PCB surface: use model.z
+            # Regular SMD/THT parts
+            if z_max < 0.5 * abs(z_min):
+                # DIP packages extending far below
+                z_offset = z_max
+            elif z_max > 3 * abs(z_min):
+                # Mainly extends above (e.g., horizontal TO-220)
+                z_offset = 0.0
+            elif z_max > 5.0 and abs(z_min) > 1.0:
+                # Tall headers with depth
                 z_offset = model.z / _EE_3D_UNITS_PER_MM
-                offset = (-cx, -cy, z_offset)
             else:
-                # Has depth below PCB: check if symmetric or asymmetric
-                # Symmetric SMD parts (z_max ≈ |z_min|) should use z_max to place bottom on PCB
-                is_symmetric = abs(z_max - abs(z_min)) < 0.01
+                # Normal THT parts
+                z_offset = 0.0
 
-                if is_symmetric:
-                    # Symmetric SMD parts (e.g., 0603 inductors): use z_max
-                    # This places the bottom surface on the PCB
-                    z_offset = z_max
-                    offset = (-cx, -cy, z_offset)
-                else:
-                    # Asymmetric parts: use stricter threshold for extends_below
-                    # Only DIP packages that extend FAR below should use z_max
-                    extends_below_pcb = z_max < 0.5 * abs(z_min)
-
-                    if extends_below_pcb:
-                        # DIP packages and similar: use top surface for z
-                        y_offset = -cy
-                        z_offset = z_max
-                        offset = (-cx, y_offset, z_offset)
-                    elif z_max > 5.0:
-                        # Tall headers/connectors extending above PCB: use model.z
-                        z_offset = model.z / _EE_3D_UNITS_PER_MM
-                        offset = (-cx, -cy, z_offset)
-                    else:
-                        # Normal THT parts: use z=0 (model.z is unreliable)
-                        offset = (-cx, -cy, 0.0)
+        offset = (-cx, y_offset, z_offset)
     else:
-        # No OBJ data available: default z-offset to 0
-        # The model.z value is unreliable without geometry context
+        # No OBJ data: default z-offset to 0 (model.z is unreliable)
         offset = (-cx, -cy, 0.0)
+
+    # Apply Z-rotation transformation for ±180° rotations
+    rz = model.rotation[2]
+    if abs(abs(rz) - 180.0) < 0.1:
+        # Apply 2D rotation to XY offset
+        rz_rad = math.radians(rz)
+        cos_rz = math.cos(rz_rad)
+        sin_rz = math.sin(rz_rad)
+        offset_x_rot = offset[0] * cos_rz - offset[1] * sin_rz
+        offset_y_rot = offset[0] * sin_rz + offset[1] * cos_rz
+        offset = (offset_x_rot, offset_y_rot, offset[2])
 
     return offset, model.rotation
 

@@ -299,6 +299,118 @@ class TestTHTConnectorOffsets:
         assert offset[1] == pytest.approx(0.0, abs=0.01)
         assert offset[2] == pytest.approx(2.0, abs=0.3)  # z_max
 
+    def test_c6186_spurious_offset(self):
+        """C6186 (SOT-223-3) - spurious model origin offset should be ignored."""
+        model, fp_origin_x, fp_origin_y, obj_source = self._load_test_data("C6186")
+
+        offset, _ = compute_model_transform(model, fp_origin_x, fp_origin_y, obj_source)
+
+        # User verified: x=0, y=0, z=0 (2.921mm offset is spurious)
+        assert offset[0] == pytest.approx(0.0, abs=0.01)
+        assert offset[1] == pytest.approx(0.0, abs=0.01)
+        assert offset[2] == pytest.approx(0.0, abs=0.01)
+
+    def test_c5213_spurious_offset(self):
+        """C5213 (SOT-89) - small spurious model origin offset should be ignored."""
+        model, fp_origin_x, fp_origin_y, obj_source = self._load_test_data("C5213")
+
+        offset, _ = compute_model_transform(model, fp_origin_x, fp_origin_y, obj_source)
+
+        # User verified: x=0, y=0, z=0 (0.127mm offset is spurious)
+        assert offset[0] == pytest.approx(0.0, abs=0.01)
+        assert offset[1] == pytest.approx(0.0, abs=0.01)
+        assert offset[2] == pytest.approx(0.0, abs=0.01)
+
+    def test_c3794_to220_vertical(self):
+        """C3794 (TO-220-3 vertical) - uses intentional y offset, z=0 for mainly-above part."""
+        model, fp_origin_x, fp_origin_y, obj_source = self._load_test_data("C3794")
+
+        offset, _ = compute_model_transform(model, fp_origin_x, fp_origin_y, obj_source)
+
+        # User verified: x=0, y=0.65, z=0
+        assert offset[0] == pytest.approx(0.0, abs=0.01)
+        assert offset[1] == pytest.approx(0.65, abs=0.01)
+        assert offset[2] == pytest.approx(0.0, abs=0.01)
+
+    def test_c10081_th_resistor(self):
+        """C10081 (TH Resistor) - no offset needed."""
+        model, fp_origin_x, fp_origin_y, obj_source = self._load_test_data("C10081")
+
+        offset, _ = compute_model_transform(model, fp_origin_x, fp_origin_y, obj_source)
+
+        # User verified: x=0, y=0, z=0
+        assert offset[0] == pytest.approx(0.0, abs=0.01)
+        assert offset[1] == pytest.approx(0.0, abs=0.01)
+        assert offset[2] == pytest.approx(0.0, abs=0.01)
+
+    def test_c2474_do41_diode(self):
+        """C2474 (DO-41 Diode) - no offset needed."""
+        model, fp_origin_x, fp_origin_y, obj_source = self._load_test_data("C2474")
+
+        offset, _ = compute_model_transform(model, fp_origin_x, fp_origin_y, obj_source)
+
+        # User verified: x=0, y=0, z=0
+        assert offset[0] == pytest.approx(0.0, abs=0.01)
+        assert offset[1] == pytest.approx(0.0, abs=0.01)
+        assert offset[2] == pytest.approx(0.0, abs=0.01)
+
+    def test_c2562_to220_horizontal(self):
+        """C2562 (TO-220-3 horizontal) - cy/height < 5% is ignored, uses z=0 for mainly-above part."""
+        model, fp_origin_x, fp_origin_y, obj_source = self._load_test_data("C2562")
+
+        offset, _ = compute_model_transform(model, fp_origin_x, fp_origin_y, obj_source)
+
+        # User verified: x=0, y=0, z=0 (cy=0.45mm is only 2.1% of height=21.9mm)
+        assert offset[0] == pytest.approx(0.0, abs=0.01)
+        assert offset[1] == pytest.approx(0.0, abs=0.01)
+        assert offset[2] == pytest.approx(0.0, abs=0.01)
+
+    def test_c138392_rj45_tht(self):
+        """C138392 (RJ45-TH) - THT connector with intentional origin offset, z=0 for mainly-above."""
+        model, fp_origin_x, fp_origin_y, obj_source = self._load_test_data("C138392")
+
+        offset, _ = compute_model_transform(model, fp_origin_x, fp_origin_y, obj_source)
+
+        # User verified: x=0, y=-3.35, z=0 (cy/height=0.5%, z_max/|z_min|=3.24)
+        assert offset[0] == pytest.approx(0.0, abs=0.01)
+        assert offset[1] == pytest.approx(-3.35, abs=0.01)
+        assert offset[2] == pytest.approx(0.0, abs=0.01)
+
+    def test_c386757_rj45_tht(self):
+        """C386757 (RJ45-TH) - connector with significant cy, z=0 for mainly-above."""
+        model, fp_origin_x, fp_origin_y, obj_source = self._load_test_data("C386757")
+
+        offset, _ = compute_model_transform(model, fp_origin_x, fp_origin_y, obj_source)
+
+        # User verified: x=0, y=-5.82, z=0 (cy/height=15.5%, z_max/|z_min|=3.55)
+        assert offset[0] == pytest.approx(0.0, abs=0.01)
+        assert offset[1] == pytest.approx(-5.82, abs=0.01)
+        assert offset[2] == pytest.approx(0.0, abs=0.01)
+
+    def test_c2078_sot89_with_rotation(self):
+        """C2078 (SOT-89) - Z-rotation=-180° requires offset transformation."""
+        model, fp_origin_x, fp_origin_y, obj_source = self._load_test_data("C2078")
+
+        offset, rotation = compute_model_transform(model, fp_origin_x, fp_origin_y, obj_source)
+
+        # User verified: x=-0.3, y=0, z=0 after Z-rotation transformation
+        assert offset[0] == pytest.approx(-0.3, abs=0.01)
+        assert offset[1] == pytest.approx(0.0, abs=0.01)
+        assert offset[2] == pytest.approx(0.0, abs=0.01)
+        assert rotation[2] == pytest.approx(-180.0, abs=0.01)
+
+    def test_c2316_xh3a_with_rotation(self):
+        """C2316 (XH-3A) - connector with Z-rotation=-180° requires offset transformation."""
+        model, fp_origin_x, fp_origin_y, obj_source = self._load_test_data("C2316")
+
+        offset, rotation = compute_model_transform(model, fp_origin_x, fp_origin_y, obj_source)
+
+        # User verified: x=2.5, y=2.25, z=2.15 after Z-rotation transformation
+        assert offset[0] == pytest.approx(2.5, abs=0.01)
+        assert offset[1] == pytest.approx(2.25, abs=0.01)
+        assert offset[2] == pytest.approx(2.15, abs=0.15)
+        assert rotation[2] == pytest.approx(-180.0, abs=0.01)
+
 
 class TestPartsWithoutOBJData:
     """Test parts where 3D model OBJ data is not available.
