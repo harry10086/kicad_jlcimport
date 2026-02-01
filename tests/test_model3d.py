@@ -399,6 +399,18 @@ class TestTHTConnectorOffsets:
         assert offset[2] == pytest.approx(0.0, abs=0.01)
         assert rotation[2] == pytest.approx(-180.0, abs=0.01)
 
+    def test_c2203_hc49us_crystal(self):
+        """C2203 (HC-49US Crystal) - symmetric THT crystal should use z=0, not z_max."""
+        model, fp_origin_x, fp_origin_y, obj_source = self._load_test_data("C2203")
+
+        offset, _ = compute_model_transform(model, fp_origin_x, fp_origin_y, obj_source)
+
+        # User verified: x=0, y=0, z=0 (symmetric THT crystal should sit flat)
+        # Currently failing: produces z=3.5 due to symmetric SMD detection
+        assert offset[0] == pytest.approx(0.0, abs=0.01)
+        assert offset[1] == pytest.approx(0.0, abs=0.01)
+        assert offset[2] == pytest.approx(0.0, abs=0.01)
+
     def test_c2316_xh3a_with_rotation(self):
         """C2316 (XH-3A) - connector with Z-rotation=-180° requires offset transformation."""
         model, fp_origin_x, fp_origin_y, obj_source = self._load_test_data("C2316")
