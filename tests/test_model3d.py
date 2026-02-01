@@ -233,6 +233,39 @@ class TestTHTConnectorOffsets:
         assert offset[1] == pytest.approx(0.0, abs=0.01)
         assert offset[2] == pytest.approx(-0.134, abs=0.01)
 
+    def test_c82899_esp32_module(self):
+        """C82899 (ESP32-WROOM-32) - SMD module with model origin offset."""
+        model, fp_origin_x, fp_origin_y, obj_source = self._load_test_data("C82899")
+
+        offset, _ = compute_model_transform(model, fp_origin_x, fp_origin_y, obj_source)
+
+        # User verified: x=0, y=3.743, z=0.005
+        assert offset[0] == pytest.approx(0.0, abs=0.01)
+        assert offset[1] == pytest.approx(3.743, abs=0.01)
+        assert offset[2] == pytest.approx(0.005, abs=0.01)
+
+    def test_c33696_outlier_offset(self):
+        """C33696 - part with erroneous 798mm origin offset should default to zero."""
+        model, fp_origin_x, fp_origin_y, obj_source = self._load_test_data("C33696")
+
+        offset, _ = compute_model_transform(model, fp_origin_x, fp_origin_y, obj_source)
+
+        # User verified: should be x=0, y=0, z=0 (798mm offset is EasyEDA data error)
+        assert offset[0] == pytest.approx(0.0, abs=0.01)
+        assert offset[1] == pytest.approx(0.0, abs=0.01)
+        assert offset[2] == pytest.approx(0.0, abs=0.01)
+
+    def test_c1027_symmetric_smd(self):
+        """C1027 (L0603 inductor) - symmetric SMD part should use z_max for offset."""
+        model, fp_origin_x, fp_origin_y, obj_source = self._load_test_data("C1027")
+
+        offset, _ = compute_model_transform(model, fp_origin_x, fp_origin_y, obj_source)
+
+        # User verified: x=0, y=0, z=0.254 (symmetric SMD, use z_max)
+        assert offset[0] == pytest.approx(0.0, abs=0.01)
+        assert offset[1] == pytest.approx(0.0, abs=0.01)
+        assert offset[2] == pytest.approx(0.254, abs=0.01)
+
     def test_c385834_rj45_connector(self):
         """C385834 (RJ45) - uses z_max for parts extending below PCB."""
         model, fp_origin_x, fp_origin_y, obj_source = self._load_test_data("C385834")
