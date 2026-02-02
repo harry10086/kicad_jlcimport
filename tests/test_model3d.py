@@ -31,7 +31,10 @@ class TestComputeModelTransform:
         obj = "v 0 0 0\nv 1.0 1.0 1.0\n"
         model = EE3DModel(uuid="test", origin_x=0, origin_y=0, z=50, rotation=(0, 0, 90))
         offset, rotation = compute_model_transform(model, 0, 0, obj_source=obj)
-        assert offset[0] == pytest.approx(-0.5)
+        # With 90° rotation, geometry offset (-cx, -cy) = (-0.5, -0.5) transforms to (0.5, -0.5)
+        # x' = -0.5*cos(90°) - (-0.5)*sin(90°) = -0.5*0 - (-0.5)*1 = 0.5
+        # y' = -0.5*sin(90°) + (-0.5)*cos(90°) = -0.5*1 + (-0.5)*0 = -0.5
+        assert offset[0] == pytest.approx(0.5)
         assert offset[1] == pytest.approx(-0.5)
         # z_offset = -z_min + (model.z / 3.937) = -0 + (50 / 3.937) = 12.7mm
         assert offset[2] == pytest.approx(12.7, abs=0.01)

@@ -90,7 +90,15 @@ def _is_spurious_offset(model_origin_diff_y: float, height: float) -> bool:
 
 
 def _apply_rotation_transform(offset: Tuple[float, float, float], rotation_z: float) -> Tuple[float, float, float]:
-    """Apply 2D rotation transformation to XY offset for ±180° rotations.
+    """Apply Z-axis rotation transformation to XY offset.
+
+    In KiCad, model offsets are applied in the footprint coordinate system (after model rotation).
+    However, geometry offsets (like -cx, -cy from the OBJ bounding box) are measured in the
+    model's local coordinate system and need to be transformed to footprint space.
+
+    For Z-axis rotations of ±90° and ±180°, we transform the XY components of the geometry offset.
+    X and Y axis rotations are NOT transformed here - they affect the model's 3D orientation
+    which KiCad handles separately.
 
     Uses standard 2D rotation matrix:
         x' = x*cos(θ) - y*sin(θ)
@@ -103,7 +111,9 @@ def _apply_rotation_transform(offset: Tuple[float, float, float], rotation_z: fl
     Returns:
         Transformed (x, y, z) offset in mm
     """
-    if abs(abs(rotation_z) - 180.0) >= _ROTATION_180_TOLERANCE_DEG:
+    # Only transform for common Z-axis rotation angles: ±90° and ±180°
+    abs_rot = abs(rotation_z)
+    if not (abs(abs_rot - 90.0) < 0.1 or abs(abs_rot - 180.0) < 0.1):
         return offset
 
     rz_rad = math.radians(rotation_z)
@@ -135,9 +145,10 @@ def compute_model_transform(
        bounding-box not being centered at the origin. This is in *model* space,
        so it must be rotated together with the model.
 
-    2. **Origin offset** (0, -diff_y, 0) — compensates for the EasyEDA model
+    2. **Origin offset** (-diff_x, -diff_y, 0) — compensates for the EasyEDA model
        origin differing from the footprint origin. This is in *footprint* space,
-       so it must NOT be rotated.
+       so it must NOT be rotated. Both X and Y components are considered to handle
+       rotated models where the offset may be in any direction.
 
     Separating these two concerns eliminates special-case sign handling for
     rotated parts: the rotation transform is applied only to the geometry
@@ -164,18 +175,24 @@ def compute_model_transform(
     # --- Effective cy: only use if significant relative to part height ---
     cy_eff = cy if (height > 0 and abs(cy) / height > _SIGNIFICANT_CY_HEIGHT_RATIO) else 0.0
 
-    # --- Effective origin diff: zero out spurious offsets ---
+    # --- Effective origin diff: zero out spurious offsets (check both X and Y) ---
+    model_origin_diff_x = (model.origin_x - fp_origin_x) / _EE_UNITS_TO_MM
     model_origin_diff_y = (model.origin_y - fp_origin_y) / _EE_UNITS_TO_MM
-    diff_eff = 0.0 if _is_spurious_offset(model_origin_diff_y, height) else model_origin_diff_y
+    # Use magnitude of offset vector to determine if spurious
+    origin_diff_magnitude = (model_origin_diff_x**2 + model_origin_diff_y**2) ** 0.5
+    is_spurious = _is_spurious_offset(origin_diff_magnitude, height)
+    diff_eff_x = 0.0 if is_spurious else model_origin_diff_x
+    diff_eff_y = 0.0 if is_spurious else model_origin_diff_y
 
     # --- Z offset (universal formula) ---
     z_offset = -z_min + (model.z / _Z_EE_UNITS_TO_MM)
 
     # --- Geometry offset: rotates with the model ---
+    # Only apply Z-axis rotation - X/Y rotations are handled by KiCad's model orientation
     geometry = _apply_rotation_transform((-cx, -cy_eff, z_offset), model.rotation[2])
 
     # --- Origin offset: stays in footprint space (not rotated) ---
-    offset = (geometry[0], geometry[1] - diff_eff, geometry[2])
+    offset = (geometry[0] - diff_eff_x, geometry[1] - diff_eff_y, geometry[2])
 
     return offset, model.rotation
 
