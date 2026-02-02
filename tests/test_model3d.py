@@ -462,6 +462,56 @@ class TestTHTConnectorOffsets:
         assert offset[2] == pytest.approx(-0.55, abs=0.01)
         assert rotation[2] == pytest.approx(-180.0, abs=0.01)
 
+    def test_c2320_x_origin_offset_with_rotation(self):
+        """C2320 (PH-3A) - connector with X-axis origin offset and -90° Z-rotation.
+
+        This part has model origin offset in the X direction (0.65mm), which was
+        previously ignored. With -90° rotation, the geometry offset must be rotated
+        but the origin offset must NOT be rotated (stays in footprint space).
+        """
+        model, fp_origin_x, fp_origin_y, obj_source = self._load_test_data("C2320")
+
+        offset, rotation = compute_model_transform(model, fp_origin_x, fp_origin_y, obj_source)
+
+        # Expected: centered at (0, 0) after X-offset is properly handled
+        assert offset[0] == pytest.approx(0.0, abs=0.1)
+        assert offset[1] == pytest.approx(0.0, abs=0.1)
+        assert offset[2] == pytest.approx(0.0, abs=0.1)
+        assert rotation[2] == pytest.approx(-90.0, abs=0.01)
+
+    def test_c2321_no_rotation_x_offset(self):
+        """C2321 (PH-4A) - connector with significant X-offset in geometry (cx=3.0mm).
+
+        This part has no rotation but significant X offset in the OBJ geometry.
+        The Y origin offset cancels out the cy offset, resulting in only X offset.
+        """
+        model, fp_origin_x, fp_origin_y, obj_source = self._load_test_data("C2321")
+
+        offset, rotation = compute_model_transform(model, fp_origin_x, fp_origin_y, obj_source)
+
+        # Expected: X offset of -3.0mm (from -cx), Y and Z centered
+        assert offset[0] == pytest.approx(-3.0, abs=0.1)
+        assert offset[1] == pytest.approx(0.0, abs=0.1)
+        assert offset[2] == pytest.approx(0.0, abs=0.1)
+        assert rotation[2] == pytest.approx(0.0, abs=0.01)
+
+    def test_c33478_x_origin_offset_with_rotation(self):
+        """C33478 (PH-6A) - connector with X-axis origin offset and -90° Z-rotation.
+
+        Similar to C2320, this validates that X-axis origin offsets are properly
+        handled for rotated parts. The X offset (0.63mm) should be applied in
+        footprint space after the geometry offset is rotated.
+        """
+        model, fp_origin_x, fp_origin_y, obj_source = self._load_test_data("C33478")
+
+        offset, rotation = compute_model_transform(model, fp_origin_x, fp_origin_y, obj_source)
+
+        # Expected: nearly centered (small X offset due to rounding: 0.02mm)
+        assert offset[0] == pytest.approx(0.0, abs=0.1)
+        assert offset[1] == pytest.approx(0.0, abs=0.1)
+        assert offset[2] == pytest.approx(0.0, abs=0.1)
+        assert rotation[2] == pytest.approx(-90.0, abs=0.01)
+
 
 class TestPartsWithoutOBJData:
     """Test parts where 3D model OBJ data is not available.

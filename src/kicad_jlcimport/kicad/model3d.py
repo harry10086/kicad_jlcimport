@@ -1,4 +1,17 @@
-"""3D model transforms, WRL conversion, and file saving."""
+"""3D model transforms, WRL conversion, and file saving.
+
+Why WRL instead of STEP for KiCad model references:
+----------------------------------------------------
+EasyEDA provides 3D models in OBJ format, which we convert to both WRL (VRML) and STEP.
+Our offset calculations are based on analyzing the OBJ/WRL geometry (bounding box, center point).
+The WRL files maintain the exact same geometry and coordinate system as the OBJ source.
+
+STEP files can have different origins/orientations after conversion, leading to mismatches
+between calculated offsets and actual model placement. Using WRL ensures consistency
+between offset calculations and the model geometry KiCad will render.
+
+Both files are still saved for compatibility, but KiCad footprints reference the WRL.
+"""
 
 import math
 import os
