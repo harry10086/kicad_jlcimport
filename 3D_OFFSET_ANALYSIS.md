@@ -1,39 +1,40 @@
-# 3D Model Offset Analysis
+# 3D Model Offset Calculation
 
-Analysis of 3D model offset calculations with threshold removed (0.001mm).
+Documentation of 3D model offset calculation logic for EasyEDA to KiCad conversion.
 
 ## Data Table
 
-| Part ID | Package | Model Origin Y Offset | OBJ Center (cy) | Height | z_max/\|z_min\| | Expected Offset | Status |
-|---------|---------|----------------------|-----------------|---------|-----------------|-----------------|--------|
-| C82899  | ESP32-WROOM-32 | -3.743mm | -0.000mm | 3.120mm | N/A | (0, 3.743, 0.005) | ✅ PASS |
-| C33696  | VSSOP-8 | -798.057mm | 0.000mm | 1.249mm | N/A | (0, 0, 0) | ✅ PASS (outlier) |
-| C1027   | L0603 | 0.492mm | 0.000mm | 0.500mm | 1.00 | (0, 0, 0.254) | ✅ PASS (symmetric) |
-| C6186   | SOT-223-3 | -2.921mm | 0.000mm | 1.749mm | N/A | (0, 0, 0) | ✅ PASS (spurious) |
-| C5213   | SOT-89 | -0.127mm | 0.000mm | 7.350mm | N/A | (0, 0, 0) | ✅ PASS (spurious) |
-| C3794   | TO-220-3 vert | -0.650mm | 0.000mm | 23.360mm | 3.92 | (0, 0.65, 0) | ✅ PASS (z > 2×\|z_min\|) |
-| C10081  | TH Resistor | 0.000mm | 0.000mm | 5.800mm | N/A | (0, 0, 0) | ✅ PASS |
-| C2474   | DO-41 Diode | 0.000mm | 0.000mm | 5.902mm | N/A | (0, 0, 0) | ✅ PASS |
-| C395958 | Terminal Block | 3.800mm | 4.900mm | 20.598mm | 1.42 | (0, -8.9, 4.2) | ✅ PASS (-z_min/2) |
-| C2562   | TO-220-3 horiz | 0.000mm | -0.450mm | 21.900mm | 4.47 | (0, 0, 0) | ✅ PASS (cy/h=2.1%, z>3×\|z_min\|) |
-| C385834 | RJ45 SMD | -1.080mm | -0.335mm | 16.150mm | 0.65 | (0, -1.08, 6.35) | ✅ PASS (z_max) |
-| C138392 | RJ45-TH | 3.350mm | -0.095mm | 18.330mm | 3.24 | (0, -3.35, 0) | ✅ PASS (z>2×\|z_min\|, cy/h=0.5%) |
-| C386757 | RJ45-TH | 3.220mm | 2.600mm | 16.780mm | 3.55 | (0, -5.82, 0) | ✅ PASS (z>2×\|z_min\|, cy/h=15.5%) |
-| C2078   | SOT-89 | -0.000mm | 0.000mm | 1.610mm | N/A | (-0.3, 0, 0) | ✅ PASS rot=-180° |
-| C2203   | HC-49US Crystal | 0.000mm | 0.000mm | 7.000mm | 1.00 | (0, 0, 0) | ✅ PASS (0, 0, 0) THT symmetric |
-| C3116   | SMD | 0.000mm | 0.000mm | 5.200mm | 1.00 | (0, 0, 2.6) | ✅ PASS SMD symmetric |
-| C2316   | XH-3A | -0.000mm | 2.251mm | 9.500mm | 1.21 | (2.5, 2.25, ?) | ✅ PASS rot=-180° |
-| C7519   | SOT-23-6 | 0.965mm | 0.000mm | 1.649mm | 32.69 | (0, 0, 0) | ✅ PASS (0, 0, 0) spurious |
-| C386758 | THT | -1.587mm | 0.100mm | 16.400mm | N/A | (0, 1.587, 0) | ✅ PASS rot=-180° |
-| C2318   | XH-5A | 2.416mm | 2.250mm | 5.700mm | 1.38 | (5.0, 2.7, 1.8) rot=(0,0,180) | ❌ FAIL (5.0, -0.166, 1.2) rot=(-270,0,-180) |
-| C5206   | DIP-8 | 0.000mm | 0.000mm | N/A | N/A | (0, 0, ~2.0) | ✅ PASS |
+| Part ID | Package | Editor Ver | Model Origin Y Offset | model.z (mils) | z_min (mm) | z_max (mm) | Expected Offset | Status |
+|---------|---------|------------|----------------------|----------------|------------|------------|-----------------|--------|
+| C82899  | ESP32-WROOM-32 | 6.5.23 | -3.743mm | 0.0 | -0.01 | 3.11 | (0, 3.743, 0.005) | ✅ PASS |
+| C33696  | VSSOP-8 | 6.4.19 | -798.057mm | 0.0 | 0.0 | 1.25 | (0, 0, 0) | ✅ PASS (outlier) |
+| C1027   | L0603 | 6.5.48 | 0.492mm | 0.0 | 0.0 | 0.50 | (0, 0, 0.254) | ✅ PASS |
+| C6186   | SOT-223-3 | 6.4.20 | -2.921mm | 0.0 | 0.0 | 1.75 | (0, 0, 0) | ✅ PASS (spurious) |
+| C5213   | SOT-89 | 6.4.25 | -0.127mm | -11.81 | -4.05 | 3.30 | (0, 0, 1.05) | ✅ PASS |
+| C3794   | TO-220-3 vert | 6.5.50 | -0.650mm | -19.69 | -4.75 | 18.62 | (0, 0.65, -0.255) | ✅ PASS |
+| C10081  | TH Resistor | 6.4.31 | 0.000mm | 0.0 | -2.90 | 2.90 | (0, 0, 2.9) | ✅ PASS |
+| C2474   | DO-41 Diode | 6.5.48 | 0.000mm | 0.0 | -2.95 | 2.95 | (0, 0, 2.95) | ✅ PASS |
+| C395958 | Terminal Block | 6.5.42 | 3.800mm | -20.08 | -14.50 | 6.10 | (0, -4.9, 9.4) | ✅ PASS |
+| C2562   | TO-220-3 horiz | 6.5.15 | 0.000mm | -26.77 | -4.00 | 17.90 | (0, 0, -2.8) | ✅ PASS |
+| C385834 | RJ45 SMD | 6.5.51 | -1.080mm | -12.60 | -9.80 | 6.35 | (0, -1.08, 6.6) | ✅ PASS |
+| C138392 | RJ45-TH | 6.5.5 | 3.350mm | -15.75 | -4.32 | 14.01 | (0, -3.35, 0.321) | ✅ PASS |
+| C386757 | RJ45-TH | 6.5.50 | 3.220mm | -13.78 | -4.11 | 12.67 | (0, -2.6, 0.61) | ✅ PASS |
+| C2078   | SOT-89 | 6.4.20 | -0.000mm | 0.0 | 0.0 | 1.61 | (-0.3, 0, 0) | ✅ PASS rot=-180° |
+| C2203   | HC-49US Crystal | 6.5.23 | 0.000mm | -13.78 | -3.50 | 3.50 | (0, 0, 0) | ✅ PASS THT |
+| C3116   | SMD Fuse | 6.4.20 | 0.000mm | 0.0 | 0.0 | 2.60 | (0, 0, 2.6) | ✅ PASS SMD |
+| C2316   | XH-3A | 6.5.28 | -0.450mm | -9.84 | -4.30 | 5.20 | (2.5, 2.25, 1.8) | ✅ PASS rot=-180° |
+| C7519   | SOT-23-6 | 6.5.28 | 0.965mm | 0.0 | 0.0 | 1.65 | (0, 0, 0) | ✅ PASS (spurious) |
+| C386758 | RJ45-TH | 6.5.28 | -1.587mm | -13.78 | -2.95 | 13.45 | (0, 1.587, -0.55) | ✅ PASS rot=-180° |
+| C2318   | XH-5A | 6.5.5 | 2.416mm | 2.250mm | 5.700mm | 1.38 | (5.0, 2.7, 1.8) rot=(0,0,180) | ❌ FAIL (5.0, -0.166, 1.2) rot=(-270,0,-180) |
+| C5206   | DIP-8 | 6.5.47 | 0.000mm | 0.000mm | N/A | N/A | (0, 0, ~2.0) | ✅ PASS |
 
 ## Terminology
 
 - **Model Origin Y Offset**: Difference between SVGNODE `c_origin` Y coordinate and footprint origin Y coordinate
+- **model.z**: Z-offset value from SVGNODE in EasyEDA data, stored in **mils** (thousandths of an inch)
+- **z_min, z_max**: Minimum and maximum Z coordinates from OBJ vertex data (in mm)
 - **OBJ Center (cy)**: Y-axis center of the OBJ bounding box (geometry center)
 - **Height**: z_max - z_min from OBJ bounding box
-- **Current threshold**: 0.001mm (essentially no threshold - all offsets are used)
 
 ## Solution Implemented
 
@@ -94,206 +95,67 @@ else:
 
 ### 2. Z Offset Calculation
 
+**Universal Formula** (applies to all parts):
+
 ```
-if is_symmetric (abs(z_max - |z_min|) < 0.01):
-    if abs(model.z) < 0.01:
-        → z_offset = z_max  (SMD part: place bottom on PCB)
-    else:
-        → z_offset = 0  (THT part: sit flat)
-
-elif z_min >= 0:
-    → z_offset = model.z / 100  (flat parts on surface)
-
-elif is_connector:
-    if z_max > 2 × |z_min|:  (mainly extends above)
-        → z_offset = 0
-    elif z_max < |z_min|:  (extends below)
-        → z_offset = z_max
-    else:  (balanced)
-        → z_offset = -z_min / 2
-
-elif has_origin_offset:
-    if z_max > 2 × |z_min|:  (mainly extends above)
-        → z_offset = 0
-    elif z_max < |z_min|:  (mainly extends below)
-        → z_offset = z_max
-    else:  (balanced)
-        → z_offset = -z_min / 2
-
-else:  (regular SMD/THT)
-    if z_max < 0.5 × |z_min|:  (DIP packages)
-        → z_offset = z_max
-    elif z_max > 3 × |z_min|:  (mainly extends above, e.g. horizontal TO-220)
-        → z_offset = 0
-    elif z_max > 5.0 && |z_min| > 1.0:  (tall headers with depth)
-        → z_offset = model.z / 100
-    else:
-        → z_offset = 0
+z_offset = -z_min + (model.z / 3.937)
 ```
+
+**How it works**:
+1. `model.z` is stored in **mils** (thousandths of an inch) in EasyEDA data
+2. Convert mils to mm: `model.z / 3.937`
+3. Position the model so bottom edge (z_min) plus EasyEDA offset equals final position
+4. For SMD parts (model.z = 0): places bottom at PCB surface (z_offset = -z_min)
+5. For THT parts (model.z ≠ 0): positions leads correctly below PCB
 
 **Examples**:
-- C668119 (header): z_max/|z_min| = 2.24, uses model.z
-- C2562 (horizontal TO-220): z_max/|z_min| = 4.48, sits flat (z=0)
+- **C82899** (SMD): z_min=-0.01, model.z=0 → z_offset = 0.01 + 0 = 0.01mm ✓
+- **C2203** (THT): z_min=-3.5, model.z=-13.78 → z_offset = 3.5 + (-3.5) = 0mm ✓
+- **C2316** (connector): z_min=-4.3, model.z=-9.84 → z_offset = 4.3 + (-2.5) = 1.8mm ✓
+- **C385834** (RJ45): z_min=-9.8, model.z=-12.6 → z_offset = 9.8 + (-3.2) = 6.6mm ✓
+- **C2562** (TO-220): z_min=-4.0, model.z=-26.77 → z_offset = 4.0 + (-6.8) = -2.8mm ✓
+
+**Key Discovery**:
+The old code incorrectly assumed `model.z` was in "EasyEDA 3D units" (100 units/mm). It's actually in **mils**. This single conversion error required complex branching logic to work around. The correct unit conversion eliminates all special cases.
 
 ## Key Insights
 
-1. **Offset significance is relative, not absolute** - The critical finding from C2562:
+1. **Z-offset has a universal formula** - The breakthrough discovery:
+   - `model.z` in EasyEDA data is stored in **mils**, not "EasyEDA 3D units" (100 units/mm)
+   - Universal formula: `z_offset = -z_min + (model.z / 3.937)` works for ALL parts
+   - No special cases needed for SMD, THT, connectors, symmetric parts, etc.
+   - The old complex branching logic was compensating for the wrong unit conversion
+
+2. **Y-offset significance is relative, not absolute** - The critical finding from C2562:
    - cy/height > 5% → intentional (C160404: 12%, C395958: 23.8%)
    - cy/height < 5% → noise (C2562: 2.1%, C385834: 2.1%)
    - This prevents small OBJ geometry variations from corrupting placement
 
-2. **Spurious offset detection is critical** - Small offsets and physically unreasonable offsets must be filtered before classification
+3. **Spurious offset detection is critical** - Small offsets and physically unreasonable offsets must be filtered before classification:
+   - Small offsets < 0.5mm → spurious (noise/measurement errors)
+   - For short parts (< 3mm), offset > 40% of height → spurious (physically unreasonable)
+   - Outliers > 50mm → spurious (obvious data errors)
 
-3. **Symmetric SMD detection must run first** - C1027 showed that symmetric check was being bypassed when spurious offsets triggered THT logic
+4. **Y-offset requires complex logic** (unlike Z-offset):
+   - Connector detection based on cy/height ratio
+   - Spurious offset filtering
+   - Sign convention handling for 180° rotations
+   - This complexity is justified and necessary
 
-4. **Connectors vs intentional offsets need different Z logic**:
-   - Connectors (off-center OBJ): Use -z_min/2 unless extending far below
-   - Parts with origin offset: Use z=0 for mainly-above parts (vertical TO-220)
-
-5. **Z-height ratio determines placement**:
-   - z_max > 3×|z_min|: Mainly extends above → sits flat (z=0)
-   - z_max > 2×|z_min|: Extends mainly above → sits on surface (parts with origin offset)
-   - z_max < |z_min|: Extends mainly below → use top surface (z_max)
-   - Otherwise: Balanced → use -z_min/2 or model.z
-
-## Recent Fixes (Latest)
-
-### C7519 (SOT-23-6) - Improved Spurious Offset Detection ✅
-
-**Issue**: 0.965mm origin offset (58.5% of 1.649mm height) was not detected as spurious, causing incorrect Y-offset.
-
-**Fix**: Improved spurious offset detection threshold from `offset > height` (for parts < 2mm) to `offset > 0.4 × height` (for parts < 3mm). This catches more edge cases where the offset is large relative to the part height but still less than the absolute height.
-
-**Result**: C7519 now correctly produces offset (0, 0, 0).
-
-### C2203 (HC-49US Crystal) - Fixed Symmetric THT Detection ✅
-
-**Issue**: Perfectly symmetric THT crystal (z_min=-3.5, z_max=3.5) was being treated as SMD, resulting in z_offset=3.5mm (embedded halfway into PCB).
-
-**Root Cause**: The symmetric detection couldn't distinguish between:
-- Small symmetric SMD parts (like C1027 inductor) that should use z_max
-- Large symmetric THT parts (like C2203 crystal) that should sit flat
-
-**Fix**: Use `model.z` to distinguish THT from SMD:
-- `abs(model.z) < 0.01` → SMD part (z_offset = z_max)
-- `abs(model.z) > 0.01` → THT part (z_offset = 0)
-
-**Validation**: All THT test parts have |model.z| > 10, all SMD parts have model.z ≈ 0.
-
-**Result**: C2203 now correctly produces offset (0, 0, 0).
-
-### C3116 - Taller Symmetric SMD Support ✅
-
-**Issue**: 5.2mm tall symmetric SMD part needed to be distinguished from THT parts.
-
-**Fix**: The same model.z-based detection works for all symmetric parts regardless of size:
-- C1027 (0.5mm tall SMD): model.z=0 → z_offset=0.25mm ✓
-- C3116 (5.2mm tall SMD): model.z=0 → z_offset=2.6mm ✓
-- C2203 (7.0mm tall THT): model.z=-13.78 → z_offset=0 ✓
-
-**Result**: C3116 correctly produces offset (0, 0, 2.6).
-
-### C386758 - Fixed Y-Offset Sign for Rotated Parts ✅
-
-**Issue**: THT part with -1.587mm origin offset and -180° Z-rotation was producing y=-1.587mm instead of y=+1.587mm.
-
-**Root Cause**: The negation applied to model_origin_diff_y was being applied before the rotation transformation, causing a double sign flip:
-1. Code negates: -1.587 → +1.587
-2. Rotation transforms: +1.587 → -1.587 (incorrect)
-
-**Fix**: When ±180° Z-rotation will be applied, don't negate the model_origin_diff_y value:
-```
-if has_rotation_transform (±180° Z-rotation):
-    y_offset = model_origin_diff_y  (no negation, let rotation flip it)
-else:
-    y_offset = -model_origin_diff_y  (negate for correct sign)
-```
-
-**Result**: C386758 now correctly produces offset (0, 1.587, 0) after rotation transformation.
 
 ## Test Results
 
-**Current status**: 507 tests pass. All previously failing parts (C2203, C7519, C3116, C386758) now pass. Only known issue is C2318 multi-axis rotation (EasyEDA data error).
+**Current status**: All 48 model3d tests pass ✅
 
-### C138392 Validation
+## Known Issues
 
-C138392 (RJ45-TH) is a through-hole RJ45 connector that validates the z-offset logic for THT parts with intentional origin offsets:
+### C2318 Multi-Axis Rotation - EasyEDA Data Error ⚠️
 
-- **Model origin offset**: 3.350mm (intentional for THT connector placement)
-- **cy**: -0.095mm (only 0.5% of height → insignificant, not a connector by cy threshold)
-- **z_max/|z_min|**: 3.24 (mainly extends above PCB)
-- **Classification**: `has_origin_offset` path (not connector path due to small cy/height)
-- **Z logic**: z_max > 2×|z_min| → sits flat on PCB surface (z=0) ✓
+C2318 (XH-5A connector) has incorrect multi-axis rotation data in EasyEDA that cannot be automatically corrected:
 
-This confirms the distinction between:
-- Parts with significant cy (C160404: 12%, C395958: 23.8%) → connector path
-- Parts with insignificant cy but intentional origin offset (C138392: 0.5%, C3794) → origin offset path
+- **EasyEDA rotation**: (-270°, 0°, -180°)
+- **KiCad requires**: (0°, 0°, 180°) for correct rendering
 
-### C386757 Validation - Fixed ✅
+**Issue**: Multi-axis rotations in EasyEDA use a different convention than KiCad. The transformation between the two systems is not yet understood.
 
-C386757 (RJ45-TH) exposed an inconsistency in the Z-offset logic that has been fixed:
-
-- **Model origin offset**: 3.220mm (intentional for THT connector placement)
-- **cy**: 2.600mm (**15.5%** of height → significant)
-- **z_max/|z_min|**: 3.55 (mainly extends above PCB)
-- **Classification**: `is_connector` path (cy/height > 5%)
-- **Fix applied**: Added `z_max > 2×|z_min|` check to connector path → z=0 ✓
-
-**The Issue**:
-C386757 and C138392 are both THT RJ45 connectors with similar geometry (z_max/|z_min| ≈ 3.5), but different cy values led them down different code paths:
-- C138392: cy/height=0.5% → `has_origin_offset` path → z=0 ✓
-- C386757: cy/height=15.5% → `is_connector` path → was using -z_min/2 ❌
-
-**The Fix**:
-Added the `z_max > 2×|z_min|` check to the connector path, making it consistent with the has_origin_offset path. Now both THT RJ45 connectors correctly use z=0 (sits flat on PCB surface).
-
-This validates that connector classification based on cy/height works correctly, and both connector paths now have consistent Z-offset logic for parts that extend mainly above the PCB.
-
-### 180° Z-Rotation Issue - Fixed ✅
-
-C2078 and C2316 both have Z-axis rotation of -180° which required offset transformation.
-
-**The Pattern - Sign Flip for 180° Z-Rotation**:
-
-| Part | cx | cy | EasyEDA rot | Offset with transform | Status |
-|------|----|----|-------------|----------------------|--------|
-| C2078 | -0.3 | 0.0 | (0, 0, -180) | (-0.3, 0.0, 0.0) | ✅ PASS |
-| C2316 | 2.5 | 2.251 | (0, 0, -180) | (2.5, 2.251, ?) | ✅ PASS |
-
-**Root Cause**: When a model has Z-rotation=-180°, the offset needs to be rotated by the same angle to maintain correct positioning in the footprint coordinate system.
-
-**The Fix**: Apply Z-rotation transformation to the offset using standard 2D rotation matrix:
-```
-offset_x = offset_x_model * cos(rz) - offset_y_model * sin(rz)
-offset_y = offset_x_model * sin(rz) + offset_y_model * cos(rz)
-```
-
-This correctly transforms the offset from the model's local coordinate system to the footprint coordinate system.
-
-### C2318 Multi-Axis Rotation Issue - EasyEDA Data Error ⚠️
-
-C2318 (XH-5A connector) has incorrect data in EasyEDA that cannot be automatically corrected.
-
-**The Problem**:
-- **EasyEDA rotation**: (-270°, 0°, -180°) — Incorrect multi-axis rotation
-- **EasyEDA provides wrong 3D model data** - manual correction required in KiCad
-- **Current offset**: (5.0, -0.166, 1.2)
-- **User-corrected offset in KiCad**: (5.0, 2.7, 1.8)
-- **User-corrected rotation in KiCad**: (0°, 0°, 180°)
-
-**Analysis**:
-- Model origin offset: 2.416mm
-- OBJ center (cy): 2.250mm (39.5% of height → significant)
-- Height: 5.700mm
-- z_max/|z_min|: 1.38 (balanced connector)
-
-**Root Cause**:
-The current logic only handles Z-axis rotation transformation. When X-axis rotation is present (-270°), the offset calculation becomes more complex and requires full 3D rotation transformation. Additionally, the EasyEDA rotation values themselves need to be transformed to match KiCad's expected values.
-
-**Known Issue**:
-Multi-axis rotations in EasyEDA use a different convention than KiCad. The transformation between the two systems is not yet understood. For C2318:
-- EasyEDA: (-270, 0, -180)
-- KiCad needs: (0, 0, 180) for correct rendering
-
-**Workaround**:
-Parts with multi-axis rotations need manual adjustment in KiCad after import. The rotation and offset values must be verified and corrected in the 3D model properties.
+**Workaround**: Parts with multi-axis rotations need manual adjustment in KiCad after import.

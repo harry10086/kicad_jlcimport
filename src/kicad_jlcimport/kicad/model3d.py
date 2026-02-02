@@ -10,11 +10,12 @@ from ..easyeda.ee_types import EE3DModel
 # Unit Conversion Constants
 # ============================================================================
 
-# EasyEDA 3D coordinates use 100 units per mm (for model.z values)
-_EE_3D_UNITS_PER_MM = 100.0
-
 # EasyEDA footprint coordinates are in mils, convert to mm
 _MILS_TO_MM = 3.937
+
+# SVGNODE z field is also in mils (not the "100 units per mm" we thought)
+# This was discovered by comparing EasyEDA UI values with raw data
+_Z_MILS_TO_MM = 3.937
 
 # ============================================================================
 # Spurious Offset Detection Thresholds
@@ -320,7 +321,7 @@ def _calculate_z_offset_regular(z_max: float, z_min: float, model_z: float) -> f
         return 0.0
     elif z_max > _TALL_HEADER_MIN_HEIGHT_MM and abs(z_min) > _TALL_HEADER_MIN_DEPTH_MM:
         # Tall headers with depth (e.g., C668119)
-        return model_z / _EE_3D_UNITS_PER_MM
+        return model_z / _Z_MILS_TO_MM
     else:
         # Normal THT parts
         return 0.0
@@ -421,21 +422,11 @@ def compute_model_transform(
         else:
             y_offset = _calculate_y_offset_regular(cy, height)
 
-        # Calculate Z offset based on part geometry
-        is_symmetric = z_min < 0 and abs(z_max - abs(z_min)) < _SYMMETRIC_Z_TOLERANCE_MM
-
-        if is_symmetric:
-            # Symmetric parts: use model.z to distinguish THT from SMD
-            z_offset = _calculate_z_offset_symmetric(model.z, z_max)
-        elif z_min >= 0:
-            # Flat parts sitting on PCB surface
-            z_offset = model.z / _EE_3D_UNITS_PER_MM
-        elif connector or origin_offset:
-            # Connectors and parts with intentional origin offset
-            z_offset = _calculate_z_offset_connector_or_origin(z_max, z_min)
-        else:
-            # Regular SMD/THT parts
-            z_offset = _calculate_z_offset_regular(z_max, z_min, model.z)
+        # Calculate Z offset using universal formula
+        # Places model so that: bottom of model (z_min) + EasyEDA offset = final position
+        # For THT parts: positions leads correctly below PCB
+        # For SMD parts (model.z=0): places bottom at PCB surface
+        z_offset = -z_min + (model.z / _Z_MILS_TO_MM)
 
         # Combine X (from OBJ center), Y (calculated), and Z (calculated)
         offset = (-cx, y_offset, z_offset)
