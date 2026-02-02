@@ -156,7 +156,8 @@ def _export_only(
     os.makedirs(out_dir, exist_ok=True)
 
     # Model path for export is relative within the output dir
-    model_path = f"3dmodels/{name}.step" if uuid_3d else ""
+    # Use WRL instead of STEP for consistency with offset calculations (which use OBJ/WRL geometry)
+    model_path = f"3dmodels/{name}.wrl" if uuid_3d else ""
 
     fp_content = write_footprint(
         footprint,
@@ -237,20 +238,22 @@ def _import_to_library(
         if wrl_source is None and (overwrite or not wrl_existed):
             wrl_source = download_wrl_source(uuid_3d)
         step_path, wrl_path = save_models(paths["models_dir"], name, step_data, wrl_source)
-        if step_path:
-            if use_global:
-                model_path = os.path.join(paths["models_dir"], f"{name}.step")
-            else:
-                model_path = f"${{KIPRJMOD}}/{lib_name}.3dshapes/{name}.step"
-            if step_existed and not overwrite:
-                log(f"  STEP skipped: {step_path} (exists, overwrite=off)")
-            else:
-                log(f"  STEP saved: {step_path}")
+
+        # Use WRL instead of STEP for consistency with offset calculations (which use OBJ/WRL geometry)
         if wrl_path:
+            if use_global:
+                model_path = os.path.join(paths["models_dir"], f"{name}.wrl")
+            else:
+                model_path = f"${{KIPRJMOD}}/{lib_name}.3dshapes/{name}.wrl"
             if wrl_existed and not overwrite:
                 log(f"  WRL skipped: {wrl_path} (exists, overwrite=off)")
             else:
                 log(f"  WRL saved: {wrl_path}")
+        if step_path:
+            if step_existed and not overwrite:
+                log(f"  STEP skipped: {step_path} (exists, overwrite=off)")
+            else:
+                log(f"  STEP saved: {step_path}")
     else:
         log("No 3D model available")
 

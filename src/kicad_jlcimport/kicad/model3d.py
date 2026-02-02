@@ -1,4 +1,17 @@
-"""3D model transforms, WRL conversion, and file saving."""
+"""3D model transforms, WRL conversion, and file saving.
+
+Why WRL instead of STEP for KiCad model references:
+----------------------------------------------------
+EasyEDA provides 3D models in OBJ format, which we convert to both WRL (VRML) and STEP.
+Our offset calculations are based on analyzing the OBJ/WRL geometry (bounding box, center point).
+The WRL files maintain the exact same geometry and coordinate system as the OBJ source.
+
+STEP files can have different origins/orientations after conversion, leading to mismatches
+between calculated offsets and actual model placement. Using WRL ensures consistency
+between offset calculations and the model geometry KiCad will render.
+
+Both files are still saved for compatibility, but KiCad footprints reference the WRL.
+"""
 
 import math
 import os
@@ -38,46 +51,13 @@ _SPURIOUS_OFFSET_HEIGHT_RATIO = 0.4
 _SPURIOUS_OFFSET_MAX_MM = 50.0
 
 # ============================================================================
-# Connector Detection Thresholds
+# Geometry Offset Thresholds
 # ============================================================================
 
-# If OBJ center (cy) is more than this fraction of part height, it's a connector
-# (Empirically derived: C160404 @ 12%, C395958 @ 23.8% are connectors,
+# If OBJ center (cy) is more than this fraction of part height, it's significant
+# (Empirically derived: C160404 @ 12%, C395958 @ 23.8% are significant,
 #  C2562 @ 2.1%, C385834 @ 2.1% are not)
-_CONNECTOR_CY_HEIGHT_RATIO = 0.05
-
-# Minimum depth below PCB to be considered a connector (mm)
-_CONNECTOR_MIN_DEPTH_MM = 0.001
-
-# Threshold for "small" cy values that should be ignored (mm)
-_SMALL_CY_THRESHOLD_MM = 0.5
-
-# ============================================================================
-# Symmetric Part Detection Thresholds
-# ============================================================================
-
-# If z_max and |z_min| differ by less than this, part is symmetric (mm)
-_SYMMETRIC_Z_TOLERANCE_MM = 0.01
-
-# If model.z is less than this, part is SMD (not THT)
-# Note: model.z is in EasyEDA 3D units, so this is 0.01 * 100 = 1 unit
-# Empirically: THT parts have |model.z| > 10 units, SMD have ~0 units
-_SMD_MODEL_Z_THRESHOLD = 0.01
-
-# ============================================================================
-# Z-Offset Calculation Thresholds
-# ============================================================================
-
-# If z_max > this ratio × |z_min|, part mainly extends above PCB
-_Z_MAINLY_ABOVE_RATIO_CONNECTOR = 2.0  # For connectors and origin offset parts
-_Z_MAINLY_ABOVE_RATIO_REGULAR = 3.0  # For regular parts
-
-# If z_max < this ratio × |z_min|, part mainly extends below PCB (DIP packages)
-_Z_MAINLY_BELOW_RATIO = 0.5
-
-# Tall headers: if z_max > this and |z_min| > min_depth, use model.z
-_TALL_HEADER_MIN_HEIGHT_MM = 5.0
-_TALL_HEADER_MIN_DEPTH_MM = 1.0
+_SIGNIFICANT_CY_HEIGHT_RATIO = 0.05
 
 # ============================================================================
 # Rotation Transformation Thresholds
@@ -100,9 +80,6 @@ def _is_spurious_offset(model_origin_diff_y: float, height: float) -> bool:
     2. Physically unreasonable offsets for short parts (offset > 40% of height)
     3. Absurdly large offsets (> 50mm) - obvious data errors
 
-    These checks run in sequence; once an offset is flagged as spurious,
-    no further checks are needed (hence the if/elif structure).
-
     Args:
         model_origin_diff_y: Y offset between model origin and footprint origin (mm)
         height: Part height from OBJ bounding box (z_max - z_min, mm)
@@ -112,144 +89,29 @@ def _is_spurious_offset(model_origin_diff_y: float, height: float) -> bool:
     """
     abs_offset = abs(model_origin_diff_y)
 
-    # Check 1: Small offsets are noise
     if abs_offset < _SPURIOUS_OFFSET_MIN_MM:
         return True
 
-    # Check 2: For short parts, offset > 40% of height is unreasonable
-    # (e.g., 0.965mm offset on 1.649mm tall SOT-23-6 is 58.5% - clearly wrong)
     if height > 0 and height < _SHORT_PART_HEIGHT_MM:
         if abs_offset > _SPURIOUS_OFFSET_HEIGHT_RATIO * height:
             return True
 
-    # Check 3: Absurdly large offsets are EasyEDA data errors
-    # (e.g., 798mm offset on C33696)
     if abs_offset > _SPURIOUS_OFFSET_MAX_MM:
         return True
 
     return False
 
 
-def _is_connector(cy: float, height: float, z_min: float) -> bool:
-    """Check if part is a connector based on OBJ geometry.
-
-    Connectors are identified by:
-    1. Off-center geometry (cy/height > 5%)
-    2. Depth below PCB (z_min < 0)
-
-    Args:
-        cy: Y-axis center of OBJ bounding box (mm)
-        height: Part height (z_max - z_min, mm)
-        z_min: Minimum Z coordinate from OBJ (mm)
-
-    Returns:
-        True if part should be classified as a connector
-    """
-    if height <= 0:
-        return False
-
-    cy_ratio = abs(cy) / height
-    has_depth = z_min < -_CONNECTOR_MIN_DEPTH_MM
-
-    return cy_ratio > _CONNECTOR_CY_HEIGHT_RATIO and has_depth
-
-
-def _has_180_degree_rotation(rotation_z: float) -> bool:
-    """Check if model has ±180° Z-rotation.
-
-    Args:
-        rotation_z: Z-axis rotation in degrees
-
-    Returns:
-        True if rotation is within tolerance of ±180°
-    """
-    return abs(abs(rotation_z) - 180.0) < _ROTATION_180_TOLERANCE_DEG
-
-
-def _calculate_y_offset_connector(cy: float, model_origin_diff_y: float) -> float:
-    """Calculate Y offset for connector parts.
-
-    Connectors use OBJ center (cy) as the primary offset source,
-    with optional model origin adjustment.
-
-    Args:
-        cy: Y-axis center of OBJ bounding box (mm)
-        model_origin_diff_y: Y offset between model and footprint origins (mm)
-
-    Returns:
-        Y offset in mm
-    """
-    has_origin_offset = abs(model_origin_diff_y) > _SPURIOUS_OFFSET_MIN_MM
-    cy_is_small = abs(cy) < _SMALL_CY_THRESHOLD_MM
-
-    if has_origin_offset and cy_is_small:
-        # Use model origin offset when cy is negligible
-        return -model_origin_diff_y
-    elif has_origin_offset:
-        # Combine both offsets
-        return -cy - model_origin_diff_y
-    else:
-        # Use cy only
-        return -cy
-
-
-def _calculate_y_offset_origin_offset(cy: float, model_origin_diff_y: float, has_180_rotation: bool) -> float:
-    """Calculate Y offset for parts with intentional model origin offset.
-
-    The sign convention depends on whether a ±180° rotation will be applied:
-    - With rotation: use offset as-is (rotation will flip it)
-    - Without rotation: negate offset (standard convention)
-
-    This prevents double-negation when rotation transformation is applied later.
-
-    Args:
-        cy: Y-axis center of OBJ bounding box (mm)
-        model_origin_diff_y: Y offset between model and footprint origins (mm)
-        has_180_rotation: Whether model has ±180° Z-rotation
-
-    Returns:
-        Y offset in mm
-    """
-    cy_is_small = abs(cy) < _SMALL_CY_THRESHOLD_MM
-
-    if cy_is_small:
-        # cy is negligible, use model origin offset only
-        # Sign convention: if ±180° rotation will be applied, don't negate
-        # (the rotation matrix will handle the sign flip)
-        if has_180_rotation:
-            return model_origin_diff_y
-        else:
-            return -model_origin_diff_y
-    else:
-        # Combine cy and model origin offset
-        return -cy - model_origin_diff_y
-
-
-def _calculate_y_offset_regular(cy: float, height: float) -> float:
-    """Calculate Y offset for regular parts (not connectors, no origin offset).
-
-    Only use cy if it's significant (> 5% of height), otherwise treat as
-    modeling error and ignore.
-
-    Args:
-        cy: Y-axis center of OBJ bounding box (mm)
-        height: Part height (z_max - z_min, mm)
-
-    Returns:
-        Y offset in mm
-    """
-    if height > 0 and abs(cy) / height > _CONNECTOR_CY_HEIGHT_RATIO:
-        return -cy
-    else:
-        # cy is insignificant relative to height, likely modeling error
-        return 0.0
-
-
 def _apply_rotation_transform(offset: Tuple[float, float, float], rotation_z: float) -> Tuple[float, float, float]:
-    """Apply 2D rotation transformation to XY offset for ±180° rotations.
+    """Apply Z-axis rotation transformation to XY offset.
 
-    When a model has Z-rotation of ±180°, the offset must be rotated by the
-    same angle to maintain correct positioning in the footprint coordinate system.
+    In KiCad, model offsets are applied in the footprint coordinate system (after model rotation).
+    However, geometry offsets (like -cx, -cy from the OBJ bounding box) are measured in the
+    model's local coordinate system and need to be transformed to footprint space.
+
+    For Z-axis rotations of ±90° and ±180°, we transform the XY components of the geometry offset.
+    X and Y axis rotations are NOT transformed here - they affect the model's 3D orientation
+    which KiCad handles separately.
 
     Uses standard 2D rotation matrix:
         x' = x*cos(θ) - y*sin(θ)
@@ -262,7 +124,9 @@ def _apply_rotation_transform(offset: Tuple[float, float, float], rotation_z: fl
     Returns:
         Transformed (x, y, z) offset in mm
     """
-    if not _has_180_degree_rotation(rotation_z):
+    # Only transform for common Z-axis rotation angles: ±90° and ±180°
+    abs_rot = abs(rotation_z)
+    if not (abs(abs_rot - 90.0) < 0.1 or abs(abs_rot - 180.0) < 0.1):
         return offset
 
     rz_rad = math.radians(rotation_z)
@@ -288,15 +152,20 @@ def compute_model_transform(
 ) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
     """Compute 3D model offset and rotation from footprint model data.
 
-    This function calculates the translation offset and rotation needed to
-    correctly position a 3D model in KiCad based on EasyEDA model data.
+    The offset has two independent components:
 
-    The calculation involves:
-    1. Parsing OBJ bounding box to determine model geometry
-    2. Detecting spurious offsets (EasyEDA data errors)
-    3. Classifying part type (connector, origin offset, symmetric, regular)
-    4. Calculating Y and Z offsets based on classification
-    5. Applying rotation transformation for ±180° rotations
+    1. **Geometry offset** (-cx, -cy_eff, z) — compensates for the 3D model's
+       bounding-box not being centered at the origin. This is in *model* space,
+       so it must be rotated together with the model.
+
+    2. **Origin offset** (-diff_x, -diff_y, 0) — compensates for the EasyEDA model
+       origin differing from the footprint origin. This is in *footprint* space,
+       so it must NOT be rotated. Both X and Y components are considered to handle
+       rotated models where the offset may be in any direction.
+
+    Separating these two concerns eliminates special-case sign handling for
+    rotated parts: the rotation transform is applied only to the geometry
+    offset, then the origin offset is added afterwards.
 
     Args:
         model: EasyEDA 3D model data (contains origin, z-offset, rotation)
@@ -309,52 +178,34 @@ def compute_model_transform(
         - offset: (x, y, z) translation in mm
         - rotation: (rx, ry, rz) rotation in degrees
     """
-    # Parse OBJ geometry if available
-    cx, cy = 0.0, 0.0
-    z_min, z_max = 0.0, 0.0
+    if obj_source is None:
+        return (0.0, 0.0, 0.0), model.rotation
 
-    if obj_source is not None:
-        cx, cy, z_min, z_max = _obj_bounding_box(obj_source)
+    # Parse OBJ geometry
+    cx, cy, z_min, z_max = _obj_bounding_box(obj_source)
+    height = z_max - z_min
 
-    # Calculate model origin difference (convert from EasyEDA units to mm)
+    # --- Effective cy: only use if significant relative to part height ---
+    cy_eff = cy if (height > 0 and abs(cy) / height > _SIGNIFICANT_CY_HEIGHT_RATIO) else 0.0
+
+    # --- Effective origin diff: zero out spurious offsets (check both X and Y) ---
+    model_origin_diff_x = (model.origin_x - fp_origin_x) / _EE_UNITS_TO_MM
     model_origin_diff_y = (model.origin_y - fp_origin_y) / _EE_UNITS_TO_MM
+    # Use magnitude of offset vector to determine if spurious
+    origin_diff_magnitude = (model_origin_diff_x**2 + model_origin_diff_y**2) ** 0.5
+    is_spurious = _is_spurious_offset(origin_diff_magnitude, height)
+    diff_eff_x = 0.0 if is_spurious else model_origin_diff_x
+    diff_eff_y = 0.0 if is_spurious else model_origin_diff_y
 
-    # Calculate part height for relative threshold checks
-    height = z_max - z_min if obj_source else 0.0
+    # --- Z offset (universal formula) ---
+    z_offset = -z_min + (model.z / _Z_EE_UNITS_TO_MM)
 
-    # Classify part and calculate offsets
-    if obj_source is not None:
-        # Detect spurious offsets (EasyEDA data errors)
-        spurious = _is_spurious_offset(model_origin_diff_y, height)
+    # --- Geometry offset: rotates with the model ---
+    # Only apply Z-axis rotation - X/Y rotations are handled by KiCad's model orientation
+    geometry = _apply_rotation_transform((-cx, -cy_eff, z_offset), model.rotation[2])
 
-        # Classify part type
-        connector = _is_connector(cy, height, z_min)
-        origin_offset = not spurious and abs(model_origin_diff_y) > _SPURIOUS_OFFSET_MIN_MM
-        has_180_rot = _has_180_degree_rotation(model.rotation[2])
-
-        # Calculate Y offset based on classification
-        if connector:
-            y_offset = _calculate_y_offset_connector(cy, model_origin_diff_y)
-        elif origin_offset:
-            y_offset = _calculate_y_offset_origin_offset(cy, model_origin_diff_y, has_180_rot)
-        else:
-            y_offset = _calculate_y_offset_regular(cy, height)
-
-        # Calculate Z offset using universal formula
-        # Places model so that: bottom of model (z_min) + EasyEDA offset = final position
-        # For THT parts: positions leads correctly below PCB
-        # For SMD parts (model.z=0): places bottom at PCB surface
-        z_offset = -z_min + (model.z / _Z_EE_UNITS_TO_MM)
-
-        # Combine X (from OBJ center), Y (calculated), and Z (calculated)
-        offset = (-cx, y_offset, z_offset)
-    else:
-        # No OBJ data: use simple offset calculation
-        # Note: z-offset defaults to 0 as model.z is unreliable without OBJ data
-        offset = (-cx, -cy, 0.0)
-
-    # Apply rotation transformation for ±180° Z-rotations
-    offset = _apply_rotation_transform(offset, model.rotation[2])
+    # --- Origin offset: stays in footprint space (not rotated) ---
+    offset = (geometry[0] - diff_eff_x, geometry[1] - diff_eff_y, geometry[2])
 
     return offset, model.rotation
 
