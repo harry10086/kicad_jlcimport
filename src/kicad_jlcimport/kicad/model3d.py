@@ -10,12 +10,15 @@ from ..easyeda.ee_types import EE3DModel
 # Unit Conversion Constants
 # ============================================================================
 
-# EasyEDA footprint coordinates are in mils, convert to mm
-_MILS_TO_MM = 3.937
+# EasyEDA uses a coordinate system where 1 unit = 10 mils = 0.254mm
+# Conversion factor: 1 / 0.254 = 3.937 (to convert EasyEDA units to mm)
+# Note: 1 mil = 0.001 inch = 0.0254mm, so 10 mils = 0.254mm
+_EE_UNITS_TO_MM = 3.937
 
-# SVGNODE z field is also in mils (not the "100 units per mm" we thought)
+# SVGNODE z field uses the same unit system (10 mils = 0.254mm per unit)
 # This was discovered by comparing EasyEDA UI values with raw data
-_Z_MILS_TO_MM = 3.937
+# Example: z=-13.7795 EasyEDA units = -13.7795 × 0.254mm = -3.5mm
+_Z_EE_UNITS_TO_MM = 3.937
 
 # ============================================================================
 # Spurious Offset Detection Thresholds
@@ -242,91 +245,6 @@ def _calculate_y_offset_regular(cy: float, height: float) -> float:
         return 0.0
 
 
-def _calculate_z_offset_symmetric(model_z: float, z_max: float) -> float:
-    """Calculate Z offset for symmetric parts (z_max ≈ |z_min|).
-
-    Distinguish THT from SMD using model.z:
-    - SMD parts (model.z ≈ 0 in EasyEDA units): place bottom on PCB (use z_max)
-    - THT parts (model.z != 0): sit flat on PCB (use 0)
-
-    Note on units: model.z is in EasyEDA 3D units (100 units/mm), not mm.
-    The threshold of 0.01 corresponds to ~1 EasyEDA unit. Empirically, THT
-    parts have |model.z| > 10 units (e.g., C2203 @ -13.78), while SMD parts
-    have model.z ≈ 0 (e.g., C1027, C3116).
-
-    Args:
-        model_z: Z offset from EasyEDA model data (in EasyEDA 3D units, NOT mm)
-        z_max: Maximum Z coordinate from OBJ bounding box (mm)
-
-    Returns:
-        Z offset in mm
-    """
-    # Check if part is SMD (model.z near zero in EasyEDA units)
-    if abs(model_z) < _SMD_MODEL_Z_THRESHOLD:
-        # SMD part: place bottom on PCB surface
-        return z_max
-    else:
-        # THT part: sit flat on PCB
-        return 0.0
-
-
-def _calculate_z_offset_connector_or_origin(z_max: float, z_min: float) -> float:
-    """Calculate Z offset for connectors or parts with origin offset.
-
-    Logic:
-    - If mainly extends above PCB (z_max > 2×|z_min|): sit on surface (z=0)
-    - If mainly extends below PCB (z_max < |z_min|): use top surface (z_max)
-    - If balanced: use midpoint (-z_min/2)
-
-    Args:
-        z_max: Maximum Z coordinate from OBJ (mm)
-        z_min: Minimum Z coordinate from OBJ (mm)
-
-    Returns:
-        Z offset in mm
-    """
-    if z_max > _Z_MAINLY_ABOVE_RATIO_CONNECTOR * abs(z_min):
-        # Mainly extends above PCB
-        return 0.0
-    elif z_max < abs(z_min):
-        # Extends mainly below PCB
-        return z_max
-    else:
-        # Balanced
-        return -z_min / 2
-
-
-def _calculate_z_offset_regular(z_max: float, z_min: float, model_z: float) -> float:
-    """Calculate Z offset for regular SMD/THT parts.
-
-    Logic:
-    - DIP packages (z_max < 0.5×|z_min|): extend far below, use z_max
-    - Mainly above (z_max > 3×|z_min|): sit flat (e.g., horizontal TO-220)
-    - Tall headers (z_max > 5mm AND |z_min| > 1mm): use model.z
-    - Normal THT: sit flat (z=0)
-
-    Args:
-        z_max: Maximum Z coordinate from OBJ (mm)
-        z_min: Minimum Z coordinate from OBJ (mm)
-        model_z: Z offset from EasyEDA model data (in EasyEDA 3D units)
-
-    Returns:
-        Z offset in mm
-    """
-    if z_max < _Z_MAINLY_BELOW_RATIO * abs(z_min):
-        # DIP packages extending far below
-        return z_max
-    elif z_max > _Z_MAINLY_ABOVE_RATIO_REGULAR * abs(z_min):
-        # Mainly extends above (e.g., horizontal TO-220)
-        return 0.0
-    elif z_max > _TALL_HEADER_MIN_HEIGHT_MM and abs(z_min) > _TALL_HEADER_MIN_DEPTH_MM:
-        # Tall headers with depth (e.g., C668119)
-        return model_z / _Z_MILS_TO_MM
-    else:
-        # Normal THT parts
-        return 0.0
-
-
 def _apply_rotation_transform(offset: Tuple[float, float, float], rotation_z: float) -> Tuple[float, float, float]:
     """Apply 2D rotation transformation to XY offset for ±180° rotations.
 
@@ -398,8 +316,8 @@ def compute_model_transform(
     if obj_source is not None:
         cx, cy, z_min, z_max = _obj_bounding_box(obj_source)
 
-    # Calculate model origin difference (convert from mils to mm)
-    model_origin_diff_y = (model.origin_y - fp_origin_y) / _MILS_TO_MM
+    # Calculate model origin difference (convert from EasyEDA units to mm)
+    model_origin_diff_y = (model.origin_y - fp_origin_y) / _EE_UNITS_TO_MM
 
     # Calculate part height for relative threshold checks
     height = z_max - z_min if obj_source else 0.0
@@ -426,7 +344,7 @@ def compute_model_transform(
         # Places model so that: bottom of model (z_min) + EasyEDA offset = final position
         # For THT parts: positions leads correctly below PCB
         # For SMD parts (model.z=0): places bottom at PCB surface
-        z_offset = -z_min + (model.z / _Z_MILS_TO_MM)
+        z_offset = -z_min + (model.z / _Z_EE_UNITS_TO_MM)
 
         # Combine X (from OBJ center), Y (calculated), and Z (calculated)
         offset = (-cx, y_offset, z_offset)

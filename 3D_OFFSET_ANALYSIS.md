@@ -4,8 +4,8 @@ Documentation of 3D model offset calculation logic for EasyEDA to KiCad conversi
 
 ## Data Table
 
-| Part ID | Package | Editor Ver | Model Origin Y Offset | model.z (mils) | z_min (mm) | z_max (mm) | Expected Offset | Status |
-|---------|---------|------------|----------------------|----------------|------------|------------|-----------------|--------|
+| Part ID | Package | Editor Ver | Model Origin Y Offset | model.z (EE units) | z_min (mm) | z_max (mm) | Expected Offset | Status |
+|---------|---------|------------|----------------------|--------------------|------------|------------|-----------------|--------|
 | C82899  | ESP32-WROOM-32 | 6.5.23 | -3.743mm | 0.0 | -0.01 | 3.11 | (0, 3.743, 0.005) | ✅ PASS |
 | C33696  | VSSOP-8 | 6.4.19 | -798.057mm | 0.0 | 0.0 | 1.25 | (0, 0, 0) | ✅ PASS (outlier) |
 | C1027   | L0603 | 6.5.48 | 0.492mm | 0.0 | 0.0 | 0.50 | (0, 0, 0.254) | ✅ PASS |
@@ -31,10 +31,12 @@ Documentation of 3D model offset calculation logic for EasyEDA to KiCad conversi
 ## Terminology
 
 - **Model Origin Y Offset**: Difference between SVGNODE `c_origin` Y coordinate and footprint origin Y coordinate
-- **model.z**: Z-offset value from SVGNODE in EasyEDA data, stored in **mils** (thousandths of an inch)
+- **model.z**: Z-offset value from SVGNODE in EasyEDA data, stored in **EasyEDA units** (1 unit = 10 mils = 0.254mm)
 - **z_min, z_max**: Minimum and maximum Z coordinates from OBJ vertex data (in mm)
 - **OBJ Center (cy)**: Y-axis center of the OBJ bounding box (geometry center)
 - **Height**: z_max - z_min from OBJ bounding box
+
+**Note on EasyEDA Units**: EasyEDA uses a coordinate system where 1 unit = 10 mils = 0.254mm. The conversion factor 3.937 = 1/0.254.
 
 ## Solution Implemented
 
@@ -102,26 +104,26 @@ z_offset = -z_min + (model.z / 3.937)
 ```
 
 **How it works**:
-1. `model.z` is stored in **mils** (thousandths of an inch) in EasyEDA data
-2. Convert mils to mm: `model.z / 3.937`
+1. `model.z` is stored in **EasyEDA units** (1 unit = 10 mils = 0.254mm) in EasyEDA data
+2. Convert EasyEDA units to mm: `model.z / 3.937` (where 3.937 = 1/0.254)
 3. Position the model so bottom edge (z_min) plus EasyEDA offset equals final position
 4. For SMD parts (model.z = 0): places bottom at PCB surface (z_offset = -z_min)
 5. For THT parts (model.z ≠ 0): positions leads correctly below PCB
 
-**Examples**:
+**Examples** (model.z values in EasyEDA units):
 - **C82899** (SMD): z_min=-0.01, model.z=0 → z_offset = 0.01 + 0 = 0.01mm ✓
-- **C2203** (THT): z_min=-3.5, model.z=-13.78 → z_offset = 3.5 + (-3.5) = 0mm ✓
-- **C2316** (connector): z_min=-4.3, model.z=-9.84 → z_offset = 4.3 + (-2.5) = 1.8mm ✓
-- **C385834** (RJ45): z_min=-9.8, model.z=-12.6 → z_offset = 9.8 + (-3.2) = 6.6mm ✓
-- **C2562** (TO-220): z_min=-4.0, model.z=-26.77 → z_offset = 4.0 + (-6.8) = -2.8mm ✓
+- **C2203** (THT): z_min=-3.5, model.z=-13.78 → z_offset = 3.5 + (-13.78 × 0.254) = 3.5 + (-3.5) = 0mm ✓
+- **C2316** (connector): z_min=-4.3, model.z=-9.84 → z_offset = 4.3 + (-9.84 × 0.254) = 4.3 + (-2.5) = 1.8mm ✓
+- **C385834** (RJ45): z_min=-9.8, model.z=-12.6 → z_offset = 9.8 + (-12.6 × 0.254) = 9.8 + (-3.2) = 6.6mm ✓
+- **C2562** (TO-220): z_min=-4.0, model.z=-26.77 → z_offset = 4.0 + (-26.77 × 0.254) = 4.0 + (-6.8) = -2.8mm ✓
 
 **Key Discovery**:
-The old code incorrectly assumed `model.z` was in "EasyEDA 3D units" (100 units/mm). It's actually in **mils**. This single conversion error required complex branching logic to work around. The correct unit conversion eliminates all special cases.
+The old code incorrectly assumed `model.z` was in "EasyEDA 3D units" (100 units/mm). It's actually in **EasyEDA coordinate units** where 1 unit = 10 mils = 0.254mm. This single conversion error required complex branching logic to work around. The correct unit conversion eliminates all special cases.
 
 ## Key Insights
 
 1. **Z-offset has a universal formula** - The breakthrough discovery:
-   - `model.z` in EasyEDA data is stored in **mils**, not "EasyEDA 3D units" (100 units/mm)
+   - `model.z` in EasyEDA data is stored in **EasyEDA units** (1 unit = 10 mils = 0.254mm), not "EasyEDA 3D units" (100 units/mm)
    - Universal formula: `z_offset = -z_min + (model.z / 3.937)` works for ALL parts
    - No special cases needed for SMD, THT, connectors, symmetric parts, etc.
    - The old complex branching logic was compensating for the wrong unit conversion
