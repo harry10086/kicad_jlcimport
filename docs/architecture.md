@@ -138,90 +138,16 @@ Pointing the tool at an existing library appends to it safely: symbols are inser
 
 ## 3D Model Transform Calculation
 
-3D models are positioned on footprints using offset and rotation transforms. The calculation differs between SMD and through-hole parts due to how EasyEDA represents them.
+3D models are positioned on footprints using offset and rotation transforms calculated by `kicad/model3d.py`.
 
-### OBJ Bounding Box Analysis
+The offset has two independent components:
 
-When a 3D model is available, `kicad/model3d.py` downloads the OBJ mesh data and computes its bounding box:
+1. **Geometry offset** — Compensates for the model's bounding box not being centered at the origin. Calculated in model space and rotated with the model.
+2. **Origin offset** — Compensates for EasyEDA's model origin differing from the footprint origin. Calculated in footprint space (not rotated).
 
-```python
-cx, cy, z_min, z_max = _obj_bounding_box(obj_source)
-```
+The Z offset uses a universal formula: `z_offset = -z_min + (model.z / 3.937)` where `model.z` is in EasyEDA units (1 unit = 10 mils = 0.254mm).
 
-This extracts:
-- **XY center** — Center point of the model geometry in the XY plane (mm)
-- **Z range** — Minimum and maximum Z coordinates (mm)
-
-### SMD Parts (Standard Calculation)
-
-For SMD parts and THT parts with coincident origins, the offset is straightforward:
-
-```python
-offset = (-cx, -cy, model.z / 100)
-```
-
-- **X/Y offset** — Negated XY center recenters the model on the footprint origin
-- **Z offset** — Comes directly from EasyEDA's model metadata (in 0.01mm units)
-
-### Through-Hole Parts (Special Handling)
-
-THT connectors in EasyEDA place the 3D model at a different position than the footprint, creating two separate offsets that must be corrected:
-
-1. **Model placement offset** — Where EasyEDA positioned the model on the canvas
-2. **Geometry offset** — The model's own geometry not being centered at the origin
-
-#### Detection
-
-THT connectors are detected by comparing the 3D model origin to the footprint origin:
-
-```python
-model_origin_diff_y = (model.origin_y - fp_origin_y) / 3.937  # mils to mm
-is_tht_connector = abs(model_origin_diff_y) > 0.01  # > 0.01mm difference
-```
-
-If the model origin differs by more than 0.01mm, special THT offset calculation is applied.
-
-#### Y Offset Calculation
-
-Two strategies based on the OBJ geometry:
-
-```python
-if abs(cy) < 0.5:
-    # Model is well-centered in its own space
-    y_offset = -model_origin_diff_y
-else:
-    # Model geometry is off-center, combine both corrections
-    y_offset = -cy - model_origin_diff_y
-```
-
-- **Small OBJ center** (<0.5mm): Model geometry is near its own origin, so only the EasyEDA placement offset matters
-- **Large OBJ center** (≥0.5mm): Model geometry is significantly off-center, requiring both the geometry correction and placement offset
-
-#### Z Offset Calculation
-
-Geometry-based heuristic that adapts to the part's vertical extent:
-
-```python
-if z_max < abs(z_min):
-    # Part extends more below than above
-    z_offset = z_max
-else:
-    # Part extends more above than below
-    z_offset = -z_min / 2
-```
-
-- **More extent below** (z_max < |z_min|): Use top surface as reference — typical for connectors that sit on the PCB surface (e.g., RJ45 jacks)
-- **More extent above** (z_max ≥ |z_min|): Use half the depth below the PCB — typical for terminal blocks with long pins extending through the board
-
-#### Example Results
-
-| Part | Type | Y Offset | Z Offset | Accuracy |
-|------|------|----------|----------|----------|
-| C668119 | 4-pin header (coincident origins) | 0mm | -0.134mm | Exact match ✓ |
-| C385834 | RJ45 connector (z_max < \|z_min\|) | -1.08mm | 6.35mm | Exact match ✓ |
-| C395958 | 2-pin terminal (z_max ≥ \|z_min\|) | -8.7mm | 4.25mm | <0.2mm error ✓ |
-
-This approach provides accurate placement for most THT connectors without requiring manual adjustment. The small remaining errors (typically <0.2mm) are within acceptable tolerances for visual verification in the 3D viewer.
+For details, see [3D Model Handling](3d-models.md).
 
 ## Configuration
 
