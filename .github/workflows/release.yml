@@ -111,5 +111,4 @@ jobs:
           files: |
             *.tar.gz
             *.zip
-            JLCImport-*.zip
           generate_release_notes: true
