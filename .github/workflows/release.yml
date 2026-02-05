@@ -87,10 +87,23 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           merge-multiple: true
+
+      - name: Build PCM ZIP
+        run: |
+          # Build a KiCad PCM-compatible ZIP with files at the root (no wrapper directory)
+          zip -r JLCImport-${{ github.ref_name }}.zip \
+            metadata.json \
+            LICENSE \
+            README.md \
+            src/kicad_jlcimport/ \
+            -x "src/kicad_jlcimport/__pycache__/*" \
+            -x "src/kicad_jlcimport/**/__pycache__/*"
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -98,4 +111,5 @@ jobs:
           files: |
             *.tar.gz
             *.zip
+            JLCImport-*.zip
           generate_release_notes: true
