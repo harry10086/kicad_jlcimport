@@ -96,14 +96,13 @@ jobs:
 
       - name: Build PCM ZIP
         run: |
-          # Build a KiCad PCM-compatible ZIP with files at the root (no wrapper directory)
-          zip -r JLCImport-${{ github.ref_name }}.zip \
-            metadata.json \
-            LICENSE \
-            README.md \
-            src/kicad_jlcimport/ \
-            -x "src/kicad_jlcimport/__pycache__/*" \
-            -x "src/kicad_jlcimport/**/__pycache__/*"
+          # Build a KiCad PCM-compatible ZIP: plugin code must be under plugins/
+          mkdir -p pcm-staging/plugins
+          cp -r src/kicad_jlcimport/* pcm-staging/plugins/
+          find pcm-staging -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null || true
+          cp metadata.json pcm-staging/
+          cd pcm-staging
+          zip -r ../JLCImport-${{ github.ref_name }}.zip metadata.json plugins/
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
