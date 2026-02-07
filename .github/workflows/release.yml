@@ -40,7 +40,7 @@ jobs:
         shell: bash
         run: |
           pip install setuptools==80.10.2 wheel
-          pip install --no-build-isolation wxPython==4.2.4
+          pip install -f https://extras.wxpython.org/wxPython4/extras/linux/gtk3/ubuntu-24.04 wxPython==4.2.4
           pip install pyinstaller==6.18.0 pyinstaller-hooks-contrib==2026.0 textual==7.5.0 "textual-image[textual]==0.8.5" Pillow==12.1.0
 
       - name: Build CLI
