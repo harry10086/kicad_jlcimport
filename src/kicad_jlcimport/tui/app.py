@@ -111,6 +111,78 @@ class SSLWarningScreen(Screen):
         self.dismiss(True)
 
 
+class PathInputScreen(Screen):
+    """Modal screen for entering a custom global library directory path."""
+
+    BINDINGS = [
+        Binding("escape", "dismiss_screen", "Cancel"),
+    ]
+
+    CSS = """
+    PathInputScreen {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.85);
+    }
+    #path-dialog {
+        width: 70;
+        height: auto;
+        max-height: 10;
+        background: #1a1a1a;
+        border: solid #333333;
+        padding: 1 2;
+    }
+    #path-title {
+        text-style: bold;
+        color: #33ff33;
+        width: 100%;
+    }
+    #path-input {
+        margin: 1 0;
+    }
+    #path-error {
+        color: #ff4444;
+        height: auto;
+    }
+    #path-buttons {
+        height: 1;
+        margin-top: 1;
+    }
+    #path-buttons Button { margin-right: 1; }
+    """
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="path-dialog"):
+            yield Static("Global library directory", id="path-title")
+            yield Input(placeholder="/path/to/libraries", id="path-input")
+            yield Static("", id="path-error")
+            with Horizontal(id="path-buttons"):
+                yield Button("OK", id="path-ok", variant="success")
+                yield Button("Cancel", id="path-cancel")
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id == "path-input":
+            self._try_accept()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "path-ok":
+            self._try_accept()
+        elif event.button.id == "path-cancel":
+            self.dismiss("")
+
+    def action_dismiss_screen(self) -> None:
+        self.dismiss("")
+
+    def _try_accept(self):
+        path = self.query_one("#path-input", Input).value.strip()
+        if not path:
+            self.dismiss("")
+            return
+        if not os.path.isdir(path):
+            self.query_one("#path-error", Static).update("Directory does not exist")
+            return
+        self.dismiss(path)
+
+
 class JLCImportTUI(App):
     """TUI application for JLCImport - search and import JLCPCB components."""
 
@@ -158,6 +230,7 @@ class JLCImportTUI(App):
     RadioButton {
         height: 1;
         padding: 0;
+        border: none;
         background: transparent;
     }
     RadioSet {
@@ -271,24 +344,27 @@ class JLCImportTUI(App):
     }
     #detail-buttons Button { margin-right: 1; }
 
-    /* Import: single compact row */
+    /* Import section – 3 rows */
     #import-section {
         height: auto;
         border-top: solid #333333;
         padding: 0;
     }
-    #dest-selector { layout: vertical; height: auto; }
-    #dest-selector RadioButton { width: auto; }
-    #import-options {
-        height: auto;
+    #import-row-1, #import-row-2, #import-row-3 {
+        height: 1;
         width: 100%;
     }
-    #lib-name-label { width: auto; margin: 0 1; }
-    #lib-name-input { width: 16; margin-right: 2; }
-    #kicad-version-select { width: 10; margin-right: 1; }
+    #dest-project { width: 1fr; }
+    #dest-global { width: auto; }
+    #global-browse-btn { width: 3; min-width: 0; padding: 0 0; }
+    #global-reset-btn { width: 3; min-width: 0; padding: 0 0; }
     #part-input { width: 16; }
     #overwrite-cb { margin: 0 1; width: auto; }
     #import-btn { margin-left: 1; }
+    #lib-name-label { width: auto; margin: 0 1; }
+    #lib-name-input { width: 16; margin-right: 2; }
+    #kicad-version-label { width: auto; margin: 0 1; }
+    #kicad-version-select { width: 10; margin-right: 1; }
 
     /* Status */
     #status-section {
@@ -316,12 +392,22 @@ class JLCImportTUI(App):
         ("100K+", 100000),
     ]
 
-    def __init__(self, project_dir: str = "", kicad_version: int | None = None):
+    def __init__(self, project_dir: str = "", kicad_version: int | None = None, global_lib_dir: str = ""):
         super().__init__()
         self._project_dir = project_dir
         self._kicad_version = kicad_version or DEFAULT_KICAD_VERSION
         self._lib_name = load_config().get("lib_name", "JLCImport")
-        self._global_lib_dir = get_global_lib_dir(self._kicad_version)
+        self._global_lib_dir_override = global_lib_dir
+        if global_lib_dir:
+            self._global_lib_dir = global_lib_dir
+        else:
+            try:
+                self._global_lib_dir = get_global_lib_dir(self._kicad_version)
+            except ValueError:
+                config = load_config()
+                config["global_lib_dir"] = ""
+                save_config(config)
+                self._global_lib_dir = get_global_lib_dir(self._kicad_version)
         self._search_results: list = []
         self._raw_search_results: list = []
         self._sort_col: int = -1
@@ -336,6 +422,7 @@ class JLCImportTUI(App):
         self._pulse_timer = None
         self._pulse_phase: int = 0
         self._ssl_warning_shown: bool = False
+        self._toggling_dest: bool = False
         self._col_names = ["LCSC", "Type", "Price", "Stock", "Part", "Package", "Description"]
 
     def compose(self) -> ComposeResult:
@@ -393,29 +480,33 @@ class JLCImportTUI(App):
                             yield Button("LCSC", id="detail-lcsc-btn", disabled=True)
 
             with Vertical(id="import-section"):
-                with Horizontal(id="import-options"):
-                    with RadioSet(id="dest-selector"):
-                        yield RadioButton(
-                            f"Proj [b]{self._project_dir or 'n/a'}[/b]",
-                            value=bool(self._project_dir),
-                            id="dest-project",
-                        )
-                        yield RadioButton(
-                            f"Global [b]{self._global_lib_dir}[/b]",
-                            value=not bool(self._project_dir),
-                            id="dest-global",
-                        )
+                with Horizontal(id="import-row-1"):
+                    yield RadioButton(
+                        f"Proj [b]{self._project_dir or 'n/a'}[/b]",
+                        value=bool(self._project_dir),
+                        id="dest-project",
+                    )
+                    yield Input(placeholder="C427602", id="part-input")
+                    yield Checkbox("Overwrite", id="overwrite-cb")
+                    yield Button("Import", id="import-btn", variant="success")
+                with Horizontal(id="import-row-2"):
+                    yield RadioButton(
+                        f"Global [b]{self._global_lib_dir}[/b]",
+                        value=not bool(self._project_dir),
+                        id="dest-global",
+                    )
+                    yield Button("\u2026", id="global-browse-btn")
+                    yield Button("\u2715", id="global-reset-btn")
+                with Horizontal(id="import-row-3"):
                     yield Label("Lib", id="lib-name-label")
                     yield Input(value=self._lib_name, id="lib-name-input")
+                    yield Label("KiCad", id="kicad-version-label")
                     yield Select(
                         [(f"v{v}", v) for v in sorted(SUPPORTED_VERSIONS)],
                         value=self._kicad_version,
                         id="kicad-version-select",
                         allow_blank=False,
                     )
-                    yield Input(placeholder="C427602", id="part-input")
-                    yield Checkbox("Overwrite", id="overwrite-cb")
-                    yield Button("Import", id="import-btn", variant="success")
 
             with Container(id="status-section"):
                 yield RichLog(id="status-log", highlight=True, markup=True)
@@ -543,6 +634,26 @@ class JLCImportTUI(App):
         elif not new_name:
             self.query_one("#lib-name-input", Input).value = self._lib_name
 
+    def _on_global_browse_result(self, path: str):
+        """Handle result from PathInputScreen."""
+        if not path:
+            return
+        config = load_config()
+        config["global_lib_dir"] = path
+        save_config(config)
+        self._global_lib_dir = path
+        self._global_lib_dir_override = ""
+        self.query_one("#dest-global", RadioButton).label = f"Global [b]{self._global_lib_dir}[/b]"
+
+    def _reset_global_dir(self):
+        """Clear the custom global library directory and revert to default."""
+        config = load_config()
+        config["global_lib_dir"] = ""
+        save_config(config)
+        self._global_lib_dir_override = ""
+        self._global_lib_dir = get_global_lib_dir(self._get_kicad_version())
+        self.query_one("#dest-global", RadioButton).label = f"Global [b]{self._global_lib_dir}[/b]"
+
     def on_button_pressed(self, event: Button.Pressed):
         """Handle button clicks."""
         self._hide_suggestions()
@@ -557,6 +668,27 @@ class JLCImportTUI(App):
         elif button_id == "detail-lcsc-btn":
             if self._lcsc_page_url:
                 webbrowser.open(self._lcsc_page_url)
+        elif button_id == "global-browse-btn":
+            self.push_screen(PathInputScreen(), self._on_global_browse_result)
+        elif button_id == "global-reset-btn":
+            self._reset_global_dir()
+
+    def on_radio_button_changed(self, event: RadioButton.Changed):
+        """Manual mutual exclusion for standalone destination radio buttons."""
+        if self._toggling_dest:
+            return
+        if event.radio_button.id not in ("dest-project", "dest-global"):
+            return
+        self._toggling_dest = True
+        try:
+            other_id = "dest-global" if event.radio_button.id == "dest-project" else "dest-project"
+            other = self.query_one(f"#{other_id}", RadioButton)
+            if event.value:
+                other.value = False
+            elif not other.value:
+                event.radio_button.value = True
+        finally:
+            self._toggling_dest = False
 
     def action_focus_search(self):
         """Focus the search input."""
@@ -727,9 +859,11 @@ class JLCImportTUI(App):
                 self._apply_filters()
                 self._repopulate_results()
         elif event.select.id == "kicad-version-select":
-            version = self._get_kicad_version()
-            self._global_lib_dir = get_global_lib_dir(version)
-            self.query_one("#dest-global", RadioButton).label = f"Global [b]{self._global_lib_dir}[/b]"
+            config = load_config()
+            if not config.get("global_lib_dir", "") and not self._global_lib_dir_override:
+                version = self._get_kicad_version()
+                self._global_lib_dir = get_global_lib_dir(version)
+                self.query_one("#dest-global", RadioButton).label = f"Global [b]{self._global_lib_dir}[/b]"
 
     def on_radio_set_changed(self, event: RadioSet.Changed):
         """Re-filter when type filter changes."""
@@ -747,11 +881,8 @@ class JLCImportTUI(App):
         paths = []
         if self._project_dir:
             paths.append(os.path.join(self._project_dir, f"{lib_name}.kicad_sym"))
-        try:
-            global_dir = get_global_lib_dir(self._get_kicad_version())
-            paths.append(os.path.join(global_dir, f"{lib_name}.kicad_sym"))
-        except Exception:
-            pass
+        if self._global_lib_dir:
+            paths.append(os.path.join(self._global_lib_dir, f"{lib_name}.kicad_sym"))
         for p in paths:
             try:
                 if os.path.exists(p):
@@ -923,12 +1054,11 @@ class JLCImportTUI(App):
             self._log(f"[red]Error: {e}[/red]")
             return
 
-        dest_selector = self.query_one("#dest-selector", RadioSet)
-        use_global = dest_selector.pressed_index == 1
+        use_global = self.query_one("#dest-global", RadioButton).value
         kicad_version = self._get_kicad_version()
 
         if use_global:
-            lib_dir = get_global_lib_dir(kicad_version)
+            lib_dir = self._global_lib_dir
         else:
             lib_dir = self._project_dir
             if not lib_dir:

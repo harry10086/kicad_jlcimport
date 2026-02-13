@@ -124,11 +124,12 @@ class _CategoryPopup(wx.PopupWindow):
 
 
 class JLCImportDialog(wx.Dialog):
-    def __init__(self, parent, board, project_dir=None, kicad_version=None):
+    def __init__(self, parent, board, project_dir=None, kicad_version=None, global_lib_dir=""):
         super().__init__(parent, title="JLCImport", size=(700, 600), style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER)
         self.board = board
         self._project_dir = project_dir  # Used when board is None (standalone mode)
         self._kicad_version = kicad_version or DEFAULT_KICAD_VERSION
+        self._global_lib_dir_override = global_lib_dir
         self._search_results = []
         self._raw_search_results = []
         self._search_request_id = 0
@@ -292,7 +293,18 @@ class JLCImportDialog(wx.Dialog):
         # Left side: destination + library name
         dest_sizer = wx.BoxSizer(wx.VERTICAL)
         project_dir = self._get_project_dir()
-        global_dir = get_global_lib_dir(self._kicad_version)
+        if self._global_lib_dir_override:
+            global_dir = self._global_lib_dir_override
+        else:
+            try:
+                global_dir = get_global_lib_dir(self._kicad_version)
+            except ValueError:
+                # Custom dir in config doesn't exist; clear it and fall back
+                config = load_config()
+                config["global_lib_dir"] = ""
+                save_config(config)
+                global_dir = get_global_lib_dir(self._kicad_version)
+        self._global_lib_dir = global_dir
         bold_font = panel.GetFont().Bold()
 
         proj_row = wx.BoxSizer(wx.HORIZONTAL)
@@ -307,7 +319,13 @@ class JLCImportDialog(wx.Dialog):
         global_row.Add(self.dest_global, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
         self._global_path_label = wx.StaticText(panel, label=global_dir)
         self._global_path_label.SetFont(bold_font)
-        global_row.Add(self._global_path_label, 0, wx.ALIGN_CENTER_VERTICAL)
+        global_row.Add(self._global_path_label, 1, wx.ALIGN_CENTER_VERTICAL)
+        self._global_browse_btn = wx.Button(panel, label="...", size=(30, -1))
+        self._global_browse_btn.Bind(wx.EVT_BUTTON, self._on_global_browse)
+        global_row.Add(self._global_browse_btn, 0, wx.ALIGN_CENTER_VERTICAL | wx.LEFT, 5)
+        self._global_reset_btn = wx.Button(panel, label="X", size=(30, -1))
+        self._global_reset_btn.Bind(wx.EVT_BUTTON, self._on_global_reset)
+        global_row.Add(self._global_reset_btn, 0, wx.ALIGN_CENTER_VERTICAL | wx.LEFT, 2)
 
         self.dest_project.SetValue(True)
         if not project_dir:
@@ -434,9 +452,38 @@ class JLCImportDialog(wx.Dialog):
 
     def _on_version_change(self, event):
         """Update global path label when KiCad version changes."""
-        self._global_path_label.SetLabel(get_global_lib_dir(self._get_kicad_version()))
-        self._global_path_label.GetParent().Layout()
+        config = load_config()
+        if not config.get("global_lib_dir", "") and not self._global_lib_dir_override:
+            new_dir = get_global_lib_dir(self._get_kicad_version())
+            self._global_lib_dir = new_dir
+            self._global_path_label.SetLabel(new_dir)
+            self._global_path_label.GetParent().Layout()
         event.Skip()
+
+    def _on_global_browse(self, event):
+        """Open a directory picker to choose a custom global library directory."""
+        dlg = wx.DirDialog(self, "Choose global library directory", style=wx.DD_DEFAULT_STYLE)
+        if dlg.ShowModal() == wx.ID_OK:
+            path = dlg.GetPath()
+            config = load_config()
+            config["global_lib_dir"] = path
+            save_config(config)
+            self._global_lib_dir = path
+            self._global_lib_dir_override = ""
+            self._global_path_label.SetLabel(path)
+            self._global_path_label.GetParent().Layout()
+        dlg.Destroy()
+
+    def _on_global_reset(self, event):
+        """Clear the custom global library directory and revert to default."""
+        config = load_config()
+        config["global_lib_dir"] = ""
+        save_config(config)
+        self._global_lib_dir_override = ""
+        default_dir = get_global_lib_dir(self._get_kicad_version())
+        self._global_lib_dir = default_dir
+        self._global_path_label.SetLabel(default_dir)
+        self._global_path_label.GetParent().Layout()
 
     def _log(self, msg: str):
         self.status_text.AppendText(msg + "\n")
@@ -634,8 +681,8 @@ class JLCImportDialog(wx.Dialog):
         project_dir = self._get_project_dir()
         if project_dir:
             paths.append(os.path.join(project_dir, f"{lib_name}.kicad_sym"))
-        global_dir = get_global_lib_dir(self._get_kicad_version())
-        paths.append(os.path.join(global_dir, f"{lib_name}.kicad_sym"))
+        if self._global_lib_dir:
+            paths.append(os.path.join(self._global_lib_dir, f"{lib_name}.kicad_sym"))
         for p in paths:
             if os.path.exists(p):
                 try:
@@ -1103,7 +1150,7 @@ class JLCImportDialog(wx.Dialog):
 
         use_global = self.dest_global.GetValue()
         if use_global:
-            lib_dir = get_global_lib_dir(self._get_kicad_version())
+            lib_dir = self._global_lib_dir
         else:
             lib_dir = self._get_project_dir()
             if not lib_dir:
