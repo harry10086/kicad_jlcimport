@@ -4,7 +4,28 @@ import os
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
 
+try:
+    import textual  # noqa: F401
+
+    _has_textual = True
+except ImportError:
+    _has_textual = False
+
+try:
+    import wx
+
+    _has_wx = True
+except ImportError:
+    wx = None
+    _has_wx = False
+
+needs_textual = pytest.mark.skipif(not _has_textual, reason="textual not installed")
+needs_wx = pytest.mark.skipif(not _has_wx, reason="wxPython not installed")
+
+
+@needs_textual
 def test_tui_entry_validates_nonexistent_dir(tmp_path, monkeypatch, capsys):
     """TUI entry point exits with error for nonexistent --global-lib-dir."""
     bad_path = str(tmp_path / "nonexistent")
@@ -13,8 +34,6 @@ def test_tui_entry_validates_nonexistent_dir(tmp_path, monkeypatch, capsys):
         ["prog", "--global-lib-dir", bad_path],
     )
     with patch("kicad_jlcimport.tui.app.JLCImportTUI"):
-        import pytest
-
         with pytest.raises(SystemExit) as exc_info:
             from kicad_jlcimport.tui import main
 
@@ -24,6 +43,7 @@ def test_tui_entry_validates_nonexistent_dir(tmp_path, monkeypatch, capsys):
     assert "--global-lib-dir does not exist" in err
 
 
+@needs_textual
 def test_tui_entry_passes_global_lib_dir(tmp_path, monkeypatch):
     """TUI entry point passes validated --global-lib-dir to JLCImportTUI."""
     real_dir = str(tmp_path)
@@ -49,8 +69,6 @@ def test_gui_entry_validates_nonexistent_dir(tmp_path, monkeypatch, capsys):
         "sys.argv",
         ["prog", "--global", "--global-lib-dir", bad_path],
     )
-    import pytest
-
     with pytest.raises(SystemExit) as exc_info:
         from kicad_jlcimport.gui_entry import main
 
@@ -60,6 +78,7 @@ def test_gui_entry_validates_nonexistent_dir(tmp_path, monkeypatch, capsys):
     assert "--global-lib-dir does not exist" in err
 
 
+@needs_textual
 def test_tui_app_constructor_stores_override(tmp_path, monkeypatch):
     """JLCImportTUI stores the override and uses it as _global_lib_dir."""
     monkeypatch.setattr(
@@ -73,6 +92,7 @@ def test_tui_app_constructor_stores_override(tmp_path, monkeypatch):
     assert app._global_lib_dir_override == str(tmp_path)
 
 
+@needs_textual
 def test_tui_app_constructor_without_override(tmp_path, monkeypatch):
     """JLCImportTUI without override uses get_global_lib_dir."""
     monkeypatch.setattr(
@@ -95,6 +115,7 @@ def test_tui_app_constructor_without_override(tmp_path, monkeypatch):
 # be instantiated without a running wx.App.
 
 
+@needs_wx
 def test_dialog_version_change_preserves_override(monkeypatch):
     """Changing KiCad version does not overwrite the CLI override in dialog."""
     monkeypatch.setattr(
@@ -122,6 +143,7 @@ def test_dialog_version_change_preserves_override(monkeypatch):
     assert dlg._global_lib_dir == "/cli/override"
 
 
+@needs_wx
 def test_dialog_version_change_updates_without_override(monkeypatch):
     """Changing KiCad version updates _global_lib_dir when no override is set."""
     monkeypatch.setattr(
@@ -154,6 +176,7 @@ def test_dialog_version_change_updates_without_override(monkeypatch):
     dlg._global_path_label.SetLabel.assert_called_once_with("/new/default/path")
 
 
+@needs_wx
 def test_dialog_browse_clears_override(monkeypatch):
     """Browsing to a new directory clears the CLI override."""
     monkeypatch.setattr(
@@ -164,8 +187,6 @@ def test_dialog_browse_clears_override(monkeypatch):
         "kicad_jlcimport.dialog.save_config",
         lambda _c: None,
     )
-    import wx
-
     from kicad_jlcimport.dialog import JLCImportDialog
 
     mock_dir_dlg = MagicMock()
@@ -188,6 +209,7 @@ def test_dialog_browse_clears_override(monkeypatch):
     assert dlg._global_lib_dir_override == ""
 
 
+@needs_wx
 def test_dialog_reset_clears_override(monkeypatch):
     """Resetting the global dir clears the CLI override."""
     monkeypatch.setattr(
