@@ -15,7 +15,6 @@ from textual.containers import Center, Container, Horizontal, Vertical, Vertical
 from textual.screen import Screen
 from textual.widgets import (
     Button,
-    Checkbox,
     DataTable,
     Footer,
     Header,
@@ -39,7 +38,6 @@ from kicad_jlcimport.easyeda.api import (
     filter_by_min_stock,
     filter_by_type,
     search_components,
-    validate_lcsc_id,
 )
 from kicad_jlcimport.importer import import_component
 from kicad_jlcimport.kicad.library import (
@@ -183,6 +181,84 @@ class PathInputScreen(Screen):
         self.dismiss(path)
 
 
+class MetadataEditScreen(Screen):
+    """Modal screen for editing component metadata before import."""
+
+    BINDINGS = [
+        Binding("escape", "dismiss_screen", "Cancel"),
+    ]
+
+    CSS = """
+    MetadataEditScreen {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.85);
+    }
+    #meta-dialog {
+        width: 70;
+        height: auto;
+        max-height: 20;
+        background: #1a1a1a;
+        border: solid #333333;
+        padding: 1 2;
+    }
+    #meta-title {
+        text-style: bold;
+        color: #33ff33;
+        width: 100%;
+    }
+    .meta-label {
+        margin-top: 1;
+        color: #aaaaaa;
+    }
+    #meta-desc, #meta-keywords, #meta-manufacturer {
+        margin: 0;
+    }
+    #meta-buttons {
+        height: 1;
+        margin-top: 1;
+    }
+    #meta-buttons Button { margin-right: 1; }
+    """
+
+    def __init__(self, metadata: dict):
+        super().__init__()
+        self._metadata = metadata
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="meta-dialog"):
+            yield Static("Edit Metadata", id="meta-title")
+            yield Static("Description", classes="meta-label")
+            yield Input(value=self._metadata.get("description", ""), id="meta-desc")
+            yield Static("Keywords", classes="meta-label")
+            yield Input(value=self._metadata.get("keywords", ""), id="meta-keywords")
+            yield Static("Manufacturer", classes="meta-label")
+            yield Input(value=self._metadata.get("manufacturer", ""), id="meta-manufacturer")
+            with Horizontal(id="meta-buttons"):
+                yield Button("OK", id="meta-ok", variant="success")
+                yield Button("Cancel", id="meta-cancel")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "meta-ok":
+            self._accept()
+        elif event.button.id == "meta-cancel":
+            self.dismiss(None)
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        self._accept()
+
+    def action_dismiss_screen(self) -> None:
+        self.dismiss(None)
+
+    def _accept(self):
+        self.dismiss(
+            {
+                "description": self.query_one("#meta-desc", Input).value,
+                "keywords": self.query_one("#meta-keywords", Input).value,
+                "manufacturer": self.query_one("#meta-manufacturer", Input).value,
+            }
+        )
+
+
 class JLCImportTUI(App):
     """TUI application for JLCImport - search and import JLCPCB components."""
 
@@ -238,12 +314,6 @@ class JLCImportTUI(App):
         layout: horizontal;
         background: transparent;
         border: none;
-    }
-    Checkbox {
-        height: 1;
-        border: none;
-        padding: 0;
-        background: transparent;
     }
     DataTable {
         background: #0a0a0a;
@@ -358,9 +428,6 @@ class JLCImportTUI(App):
     #dest-global { width: auto; max-width: 64; }
     #global-browse-btn { width: 3; min-width: 0; padding: 0 0; }
     #global-reset-btn { width: 3; min-width: 0; padding: 0 0; }
-    #part-input { width: 16; }
-    #overwrite-cb { margin: 0 1; width: auto; }
-    #import-btn { margin-left: 1; }
     #lib-name-label { width: auto; margin: 0 1; }
     #lib-name-input { width: 16; margin-right: 2; }
     #kicad-version-label { width: auto; margin: 0 1; }
@@ -424,6 +491,7 @@ class JLCImportTUI(App):
         self._pulse_timer = None
         self._pulse_phase: int = 0
         self._ssl_warning_shown: bool = False
+        self._selected_result: dict | None = None
         self._toggling_dest: bool = False
         self._col_names = ["LCSC", "Type", "Price", "Stock", "Part", "Package", "Description"]
 
@@ -489,9 +557,6 @@ class JLCImportTUI(App):
                         value=not _select_global,
                         id="dest-project",
                     )
-                    yield Input(placeholder="C427602", id="part-input")
-                    yield Checkbox("Overwrite", id="overwrite-cb")
-                    yield Button("Import", id="import-btn", variant="success")
                 with Horizontal(id="import-row-2"):
                     yield RadioButton(
                         self._global_label(self._global_lib_dir),
@@ -505,7 +570,7 @@ class JLCImportTUI(App):
                     yield Input(value=self._lib_name, id="lib-name-input")
                     yield Label("KiCad", id="kicad-version-label")
                     yield Select(
-                        [(f"v{v}", v) for v in sorted(SUPPORTED_VERSIONS)],
+                        [(f"v{v}", v) for v in sorted(SUPPORTED_VERSIONS, reverse=True)],
                         value=self._kicad_version,
                         id="kicad-version-select",
                         allow_blank=False,
@@ -524,6 +589,7 @@ class JLCImportTUI(App):
         if not self._project_dir:
             self.query_one("#dest-project", RadioButton).disabled = True
         self.query_one("#dest-global", RadioButton).tooltip = self._global_lib_dir
+        self._update_version_visibility()
         self.query_one("#search-input", Input).focus()
 
     def _log(self, msg: str):
@@ -661,6 +727,14 @@ class JLCImportTUI(App):
         btn.label = self._global_label(path)
         btn.tooltip = path
 
+    def _update_version_visibility(self):
+        """Show KiCad version dropdown only when using the default 3rd-party directory."""
+        config = load_config()
+        custom = config.get("global_lib_dir", "") or self._global_lib_dir_override
+        show = not custom
+        self.query_one("#kicad-version-label", Label).display = show
+        self.query_one("#kicad-version-select", Select).display = show
+
     def _on_global_browse_result(self, path: str):
         """Handle result from PathInputScreen."""
         if not path:
@@ -671,6 +745,7 @@ class JLCImportTUI(App):
         self._global_lib_dir = path
         self._global_lib_dir_override = ""
         self._update_global_button(self._global_lib_dir)
+        self._update_version_visibility()
 
     def _reset_global_dir(self):
         """Clear the custom global library directory and revert to default."""
@@ -680,6 +755,7 @@ class JLCImportTUI(App):
         self._global_lib_dir_override = ""
         self._global_lib_dir = get_global_lib_dir(self._get_kicad_version())
         self._update_global_button(self._global_lib_dir)
+        self._update_version_visibility()
 
     def on_button_pressed(self, event: Button.Pressed):
         """Handle button clicks."""
@@ -687,7 +763,7 @@ class JLCImportTUI(App):
         button_id = event.button.id
         if button_id == "search-btn":
             self._do_search()
-        elif button_id == "import-btn" or button_id == "detail-import-btn":
+        elif button_id == "detail-import-btn":
             self._do_import_action()
         elif button_id == "detail-datasheet-btn":
             if self._datasheet_url:
@@ -826,8 +902,8 @@ class JLCImportTUI(App):
             self._raw_search_results = results
             self._sort_col = 3  # sorted by stock
             self._sort_ascending = False
-            self._selected_index = -1
 
+            self.app.call_from_thread(self._clear_detail)
             self.app.call_from_thread(self._populate_package_choices)
             self.app.call_from_thread(self._apply_filters)
             self.app.call_from_thread(
@@ -930,8 +1006,11 @@ class JLCImportTUI(App):
         """Repopulate the DataTable from search results."""
         table = self.query_one("#results-table", DataTable)
         table.clear()
-        for r in self._search_results:
+        reselect_idx = -1
+        for i, r in enumerate(self._search_results):
             lcsc = r["lcsc"]
+            if self._selected_result and lcsc == self._selected_result["lcsc"]:
+                reselect_idx = i
             prefix = "\u2713 " if lcsc in self._imported_ids else ""
             price_str = f"${r['price']:.4f}" if r["price"] else "N/A"
             stock_str = f"{r['stock']:,}" if r["stock"] else "N/A"
@@ -945,6 +1024,14 @@ class JLCImportTUI(App):
                 r.get("description", ""),
             )
         self._update_results_count()
+        if reselect_idx >= 0:
+            self._selected_index = reselect_idx
+            table.move_cursor(row=reselect_idx)
+        elif len(self._search_results) == 1:
+            table.move_cursor(row=0)
+            self._show_detail(0)
+        elif self._selected_result:
+            self._clear_detail()
 
     def _update_results_count(self):
         """Update the results count label."""
@@ -998,6 +1085,26 @@ class JLCImportTUI(App):
 
     # --- Selection ---
 
+    def _clear_detail(self):
+        """Clear the detail panel when nothing is selected."""
+        self._selected_result = None
+        self._selected_index = -1
+        self._stop_skeleton()
+        self._image_request_id += 1  # cancel any in-flight image fetch
+        self.query_one("#detail-part", Label).update("")
+        self.query_one("#detail-lcsc", Label).update("")
+        self.query_one("#detail-brand", Label).update("")
+        self.query_one("#detail-package", Label).update("")
+        self.query_one("#detail-price", Label).update("")
+        self.query_one("#detail-stock", Label).update("")
+        self.query_one("#detail-desc", Label).update("")
+        self.query_one("#detail-image", TIImage).image = None
+        self._datasheet_url = ""
+        self._lcsc_page_url = ""
+        self.query_one("#detail-import-btn", Button).disabled = True
+        self.query_one("#detail-datasheet-btn", Button).disabled = True
+        self.query_one("#detail-lcsc-btn", Button).disabled = True
+
     def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted):
         """Update detail when cursor moves."""
         self._show_detail(event.cursor_row)
@@ -1010,13 +1117,12 @@ class JLCImportTUI(App):
         """Update the detail panel for the given row."""
         if row_idx < 0 or row_idx >= len(self._search_results):
             return
-        if row_idx == self._selected_index:
+        r = self._search_results[row_idx]
+        if self._selected_result and r["lcsc"] == self._selected_result["lcsc"]:
+            self._selected_index = row_idx  # update index (may have shifted)
             return
         self._selected_index = row_idx
-        r = self._search_results[row_idx]
-
-        # Update part input
-        self.query_one("#part-input", Input).value = r["lcsc"]
+        self._selected_result = r
 
         # Update detail fields
         self.query_one("#detail-part", Label).update(f"Part [b]{r['model']}[/b]")
@@ -1073,20 +1179,32 @@ class JLCImportTUI(App):
 
     # --- Import ---
 
+    def _confirm_metadata(self, metadata: dict) -> dict | None:
+        """Show the metadata edit screen and block until dismissed.
+
+        Called from a worker thread; uses call_from_thread + threading.Event
+        to push a modal screen and wait for the result.
+        """
+        event = threading.Event()
+        result_holder: list = []
+
+        def _on_dismiss(result):
+            result_holder.append(result)
+            event.set()
+
+        self.app.call_from_thread(self.push_screen, MetadataEditScreen(metadata), _on_dismiss)
+        event.wait()
+        return result_holder[0] if result_holder else None
+
     def _do_import_action(self):
         """Start the import process."""
         self._persist_lib_name()
-        part_input = self.query_one("#part-input", Input)
-        raw_id = part_input.value.strip()
-        if not raw_id:
-            self._log("[red]Error: Enter an LCSC part number[/red]")
+
+        if not self._selected_result:
+            self._log("[red]Error: Select a search result first[/red]")
             return
 
-        try:
-            lcsc_id = validate_lcsc_id(raw_id)
-        except ValueError as e:
-            self._log(f"[red]Error: {e}[/red]")
-            return
+        lcsc_id = self._selected_result["lcsc"]
 
         use_global = self.query_one("#dest-global", RadioButton).value
         kicad_version = self._get_kicad_version()
@@ -1099,11 +1217,10 @@ class JLCImportTUI(App):
                 self._log("[red]Error: No project directory. Use Global destination.[/red]")
                 return
 
-        overwrite = self.query_one("#overwrite-cb", Checkbox).value
+        search_result = self._selected_result
 
-        self.query_one("#import-btn", Button).disabled = True
         self.query_one("#detail-import-btn", Button).disabled = True
-        self._run_import(lcsc_id, lib_dir, overwrite, use_global, kicad_version)
+        self._run_import(lcsc_id, lib_dir, use_global, kicad_version, search_result)
 
     def _get_kicad_version(self) -> int:
         """Return the selected KiCad version from the dropdown."""
@@ -1111,25 +1228,77 @@ class JLCImportTUI(App):
         val = select.value
         return val if isinstance(val, int) else DEFAULT_KICAD_VERSION
 
+    def _confirm_overwrite(self, name: str, existing: list[str]) -> bool:
+        """Show a confirmation screen when files already exist.
+
+        Called from a worker thread; uses call_from_thread + threading.Event
+        to push a modal screen and wait for the result.
+        """
+        event = threading.Event()
+        result_holder: list = []
+
+        items = ", ".join(existing)
+        msg = f"'{name}' already exists ({items}). Overwrite?"
+
+        def _on_dismiss(confirmed):
+            result_holder.append(confirmed)
+            event.set()
+
+        from textual.screen import Screen as _Screen
+        from textual.widgets import Button as _Button
+        from textual.widgets import Static as _Static
+
+        class _ConfirmScreen(_Screen):
+            CSS = """
+            _ConfirmScreen {
+                align: center middle;
+                background: rgba(0, 0, 0, 0.85);
+            }
+            #confirm-dialog {
+                width: 60;
+                height: auto;
+                max-height: 10;
+                background: #1a1a1a;
+                border: solid #ff6600;
+                padding: 1 2;
+            }
+            #confirm-msg { color: #cccccc; margin: 1 0; }
+            #confirm-buttons { height: 1; margin-top: 1; }
+            #confirm-buttons Button { margin-right: 1; }
+            """
+
+            def compose(self_screen):
+                with Vertical(id="confirm-dialog"):
+                    yield _Static(msg, id="confirm-msg")
+                    with Horizontal(id="confirm-buttons"):
+                        yield _Button("Yes", id="confirm-yes", variant="warning")
+                        yield _Button("No", id="confirm-no")
+
+            def on_button_pressed(self_screen, btn_event: _Button.Pressed):
+                self_screen.dismiss(btn_event.button.id == "confirm-yes")
+
+        self.app.call_from_thread(self.push_screen, _ConfirmScreen(), _on_dismiss)
+        event.wait()
+        return bool(result_holder and result_holder[0])
+
     @work(thread=True)
-    def _run_import(self, lcsc_id: str, lib_dir: str, overwrite: bool, use_global: bool, kicad_version: int):
+    def _run_import(self, lcsc_id: str, lib_dir: str, use_global: bool, kicad_version: int, search_result=None):
         """Run the import in a background thread."""
         try:
             try:
-                self._do_import(lcsc_id, lib_dir, overwrite, use_global, kicad_version)
+                self._do_import(lcsc_id, lib_dir, use_global, kicad_version, search_result)
             except SSLCertError:
                 self._handle_ssl_cert_error()
-                self._do_import(lcsc_id, lib_dir, overwrite, use_global, kicad_version)
+                self._do_import(lcsc_id, lib_dir, use_global, kicad_version, search_result)
         except APIError as e:
             self.app.call_from_thread(self._log, f"[red]API Error: {e}[/red]")
         except Exception as e:
             self.app.call_from_thread(self._log, f"[red]Error: {e}[/red]")
             self.app.call_from_thread(self._log, traceback.format_exc())
         finally:
-            self.app.call_from_thread(self.query_one("#import-btn", Button).__setattr__, "disabled", False)
             self.app.call_from_thread(self.query_one("#detail-import-btn", Button).__setattr__, "disabled", False)
 
-    def _do_import(self, lcsc_id: str, lib_dir: str, overwrite: bool, use_global: bool, kicad_version: int):
+    def _do_import(self, lcsc_id: str, lib_dir: str, use_global: bool, kicad_version: int, search_result=None):
         """Execute the import process."""
         lib_name = self._lib_name
 
@@ -1140,11 +1309,18 @@ class JLCImportTUI(App):
             lcsc_id,
             lib_dir,
             lib_name,
-            overwrite=overwrite,
+            overwrite=False,
             use_global=use_global,
             log=log,
             kicad_version=kicad_version,
+            search_result=search_result,
+            confirm_metadata=self._confirm_metadata,
+            confirm_overwrite=self._confirm_overwrite,
         )
+
+        if result is None:
+            log("Import cancelled.")
+            return
 
         title = result["title"]
         name = result["name"]

@@ -153,37 +153,16 @@ class TestDialogStickyDestination:
 
     def test_dialog_does_not_persist_on_import_failure(self, monkeypatch):
         """A failed import should not persist the destination preference."""
-        saved = {}
-        monkeypatch.setattr(
-            "kicad_jlcimport.dialog.load_config",
-            lambda: {"lib_name": "JLCImport", "global_lib_dir": "", "use_global": False},
-        )
-        monkeypatch.setattr("kicad_jlcimport.dialog.save_config", lambda c: saved.update(c))
-        monkeypatch.setattr("kicad_jlcimport.dialog.validate_lcsc_id", lambda x: x)
         from kicad_jlcimport.dialog import JLCImportDialog
 
         dlg = SimpleNamespace(
-            part_input=MagicMock(),
-            dest_global=MagicMock(),
-            _global_lib_dir="/some/dir",
-            overwrite_cb=MagicMock(),
-            import_btn=MagicMock(),
-            status_text=MagicMock(),
-            _lib_name="JLCImport",
-            _get_project_dir=lambda: "/project",
-            _get_kicad_version=lambda: 9,
-            _ssl_warning_shown=False,
-            _imported_ids=set(),
-            _search_results=[],
-            _do_import=MagicMock(side_effect=Exception("import failed")),
+            _busy_overlay=MagicMock(),
+            _main_panel=MagicMock(),
             _log=MagicMock(),
             _persist_destination=MagicMock(),
         )
-        dlg.part_input.GetValue.return_value = "C427602"
-        dlg.dest_global.GetValue.return_value = True
-        dlg.overwrite_cb.GetValue.return_value = False
 
-        JLCImportDialog._on_import(dlg, None)
+        JLCImportDialog._on_import_error(dlg, "import failed")
 
         dlg._persist_destination.assert_not_called()
 
@@ -303,7 +282,7 @@ class TestTUIStickyDestination:
 
         # _do_import should raise, so _persist_destination should not be reached
         try:
-            JLCImportTUI._do_import(app, "C427602", str(tmp_path), False, True, 9)
+            JLCImportTUI._do_import(app, "C427602", str(tmp_path), True, 9)
         except Exception:
             pass
 
