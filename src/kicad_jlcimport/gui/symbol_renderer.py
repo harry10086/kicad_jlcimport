@@ -5,7 +5,13 @@ from __future__ import annotations
 import re
 
 import wx
-import wx.svg
+
+try:
+    import wx.svg
+
+    _has_svg = True
+except (ImportError, ModuleNotFoundError):
+    _has_svg = False
 
 # Pattern to extract layerid CSS rules from EasyEDA's <style> block.
 # Example: *[layerid="1"] {stroke:#FF0000;fill:#FF0000;}
@@ -55,11 +61,20 @@ def _inline_layer_styles(svg: str) -> str:
     return re.sub(r"<[^/][^>]*layerid=[^>]*>", _add_style, svg)
 
 
+def has_svg_support() -> bool:
+    """Return True if the platform can render SVG via wx.svg."""
+    return _has_svg
+
+
 def render_svg_bitmap(svg_string: str, size: int = 160) -> wx.Bitmap | None:
     """Render an SVG string to a wx.Bitmap, scaled to fit *size* x *size*.
 
-    Returns None if the SVG cannot be parsed.
+    Returns None if the SVG cannot be parsed or wx.svg is unavailable
+    (e.g. KiCad 9.0.7 on Windows ships a broken wx.svg._nanosvg).
     """
+    if not _has_svg:
+        return None
+
     svg_string = _inline_layer_styles(svg_string)
 
     try:
