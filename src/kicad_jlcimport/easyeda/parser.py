@@ -391,7 +391,8 @@ def _parse_solid_region(parts: List[str]) -> EESolidRegion:
     if layer in _SOLID_REGION_LAYERS and region_type == "solid":
         kicad_layer = LAYER_MAP.get(layer, "F.SilkS")
         # Check if path contains arc commands - if so, use arc parser
-        if " A " in svg_path or "\tA " in svg_path:
+        # Regex catches spaceless arcs like "3008.5A8.5" as well as " A "
+        if re.search(r"[0-9]A\s*[\d.]", svg_path) or " A " in svg_path:
             points = _parse_svg_path_with_arcs(svg_path)
             if points:
                 return EESolidRegion(layer=kicad_layer, points=points, region_type=region_type)
@@ -426,50 +427,186 @@ def _parse_svg_polygon(svg_path: str) -> List[Tuple[float, float]]:
     return points
 
 
+def _svg_arc_center(x1: float, y1: float, x2: float, y2: float, r: float, fA: int, fS: int) -> Tuple[float, float]:
+    """Compute the center of an SVG arc using the SVG spec algorithm (phi=0)."""
+    dx = (x1 - x2) / 2
+    dy = (y1 - y2) / 2
+    d_sq = dx * dx + dy * dy
+    r_sq = r * r
+    # Scale radius up if endpoints are too far apart
+    if d_sq > r_sq:
+        r = math.sqrt(d_sq)
+        r_sq = d_sq
+    sq = math.sqrt(max(0, (r_sq - d_sq) / d_sq))
+    if fA == fS:
+        sq = -sq
+    mx = (x1 + x2) / 2
+    my = (y1 + y2) / 2
+    cx = mx + sq * dy
+    cy = my - sq * dx
+    return cx, cy
+
+
 def _parse_svg_path_with_arcs(svg_path: str) -> List[Tuple[float, float]]:
     """Parse SVG path containing arc commands, approximating arcs as polygons.
 
-    Handles paths like: M x y A rx ry rot large sweep ex ey A rx ry rot large sweep ex ey
-    which draw circles using two 180-degree arcs.
+    Walks through M, L, H, V, A, and Z commands to produce a polygon outline.
+    Lowercase commands are treated as relative offsets per the SVG spec.
+    Works for full circles, D-shapes, rounded rectangles, and any mixed path.
     """
-    points = []
-    # Remove Z at end
-    path = svg_path.replace("Z", "").replace("z", "").strip()
+    # Tokenise: split on SVG commands while keeping the command letter
+    tokens = re.split(r"(?=[MLAZHVmlazhv])", svg_path.strip())
 
-    # Extract starting point from M command
-    m_match = re.match(r"M\s*([\d.e+-]+)\s+([\d.e+-]+)", path)
-    if not m_match:
-        return []
+    points: List[Tuple[float, float]] = []
+    cur_x = cur_y = 0.0
 
-    start_x = float(m_match.group(1))
-    start_y = float(m_match.group(2))
+    for token in tokens:
+        token = token.strip()
+        if not token:
+            continue
+        cmd = token[0]
+        args = re.split(r"[,\s]+", token[1:].strip())
+        args = [a for a in args if a]  # drop empty strings
 
-    # Find all arc commands
-    arc_pattern = r"A\s*([\d.e+-]+)\s+([\d.e+-]+)\s+([\d.e+-]+)\s+([01])\s+([01])\s+([\d.e+-]+)\s+([\d.e+-]+)"
-    arcs = re.findall(arc_pattern, path)
+        if cmd == "M":
+            if len(args) < 2:
+                continue
+            cur_x, cur_y = float(args[0]), float(args[1])
+            points.append((mil_to_mm(cur_x), mil_to_mm(cur_y)))
+        elif cmd == "m":
+            if len(args) < 2:
+                continue
+            cur_x += float(args[0])
+            cur_y += float(args[1])
+            points.append((mil_to_mm(cur_x), mil_to_mm(cur_y)))
 
-    if not arcs:
-        return []
+        elif cmd == "L":
+            if len(args) < 2:
+                continue
+            cur_x, cur_y = float(args[0]), float(args[1])
+            points.append((mil_to_mm(cur_x), mil_to_mm(cur_y)))
+        elif cmd == "l":
+            if len(args) < 2:
+                continue
+            cur_x += float(args[0])
+            cur_y += float(args[1])
+            points.append((mil_to_mm(cur_x), mil_to_mm(cur_y)))
 
-    # For a circle made of two arcs, compute center and radius
-    # First arc goes from start to end1, second arc goes from end1 back to start
-    rx = float(arcs[0][0])
-    ry = float(arcs[0][1])
-    end1_x = float(arcs[0][5])
-    end1_y = float(arcs[0][6])
+        elif cmd == "H":
+            if len(args) < 1:
+                continue
+            cur_x = float(args[0])
+            points.append((mil_to_mm(cur_x), mil_to_mm(cur_y)))
+        elif cmd == "h":
+            if len(args) < 1:
+                continue
+            cur_x += float(args[0])
+            points.append((mil_to_mm(cur_x), mil_to_mm(cur_y)))
 
-    # Center is midpoint between start and end1 (for a circle)
-    cx = (start_x + end1_x) / 2
-    cy = (start_y + end1_y) / 2
-    radius = (rx + ry) / 2  # Average for slight ellipses
+        elif cmd == "V":
+            if len(args) < 1:
+                continue
+            cur_y = float(args[0])
+            points.append((mil_to_mm(cur_x), mil_to_mm(cur_y)))
+        elif cmd == "v":
+            if len(args) < 1:
+                continue
+            cur_y += float(args[0])
+            points.append((mil_to_mm(cur_x), mil_to_mm(cur_y)))
 
-    # Generate polygon approximation of circle (16 segments)
-    num_segments = 16
-    for i in range(num_segments):
-        angle = 2 * math.pi * i / num_segments
-        px = cx + radius * math.cos(angle)
-        py = cy + radius * math.sin(angle)
-        points.append((mil_to_mm(px), mil_to_mm(py)))
+        elif cmd in ("A", "a"):
+            # A rx ry rotation large-arc-flag sweep-flag ex ey
+            if len(args) < 7:
+                continue
+            rx = abs(float(args[0]))
+            ry = abs(float(args[1]))
+            phi = math.radians(float(args[2]))
+            fA = int(args[3])
+            fS = int(args[4])
+            if cmd == "A":
+                end_x, end_y = float(args[5]), float(args[6])
+            else:
+                end_x = cur_x + float(args[5])
+                end_y = cur_y + float(args[6])
+
+            if rx == 0 or ry == 0:
+                # Degenerate arc — treat as line
+                cur_x, cur_y = end_x, end_y
+                points.append((mil_to_mm(cur_x), mil_to_mm(cur_y)))
+                continue
+
+            # SVG spec F.6.5/F.6.6: endpoint-to-center parameterization
+            cos_phi = math.cos(phi)
+            sin_phi = math.sin(phi)
+
+            # Step 1: compute (x1', y1')
+            dx = (cur_x - end_x) / 2
+            dy = (cur_y - end_y) / 2
+            x1p = cos_phi * dx + sin_phi * dy
+            y1p = -sin_phi * dx + cos_phi * dy
+
+            # Step 2: compute (cx', cy')
+            x1p_sq = x1p * x1p
+            y1p_sq = y1p * y1p
+            rx_sq = rx * rx
+            ry_sq = ry * ry
+
+            # Scale radii up if endpoints are too far apart (F.6.6.3)
+            lam = x1p_sq / rx_sq + y1p_sq / ry_sq
+            if lam > 1:
+                scale = math.sqrt(lam)
+                rx *= scale
+                ry *= scale
+                rx_sq = rx * rx
+                ry_sq = ry * ry
+
+            num = max(0, rx_sq * ry_sq - rx_sq * y1p_sq - ry_sq * x1p_sq)
+            den = rx_sq * y1p_sq + ry_sq * x1p_sq
+            sq = math.sqrt(num / den) if den > 0 else 0.0
+            if fA == fS:
+                sq = -sq
+            cxp = sq * rx * y1p / ry
+            cyp = -sq * ry * x1p / rx
+
+            # Step 3: compute center (cx, cy) from (cx', cy')
+            cx = cos_phi * cxp - sin_phi * cyp + (cur_x + end_x) / 2
+            cy = sin_phi * cxp + cos_phi * cyp + (cur_y + end_y) / 2
+
+            # Step 4: compute theta1 and dtheta
+            ux = (x1p - cxp) / rx
+            uy = (y1p - cyp) / ry
+            vx = (-x1p - cxp) / rx
+            vy = (-y1p - cyp) / ry
+
+            theta1 = math.atan2(uy, ux)
+
+            dot = ux * vx + uy * vy
+            cross = ux * vy - uy * vx
+            dtheta = math.atan2(cross, dot)
+            if fS == 0 and dtheta > 0:
+                dtheta -= 2 * math.pi
+            elif fS == 1 and dtheta < 0:
+                dtheta += 2 * math.pi
+
+            # Adaptive segment count: ~0.5 mil per segment, clamped 8–64
+            arc_length = abs(dtheta) * max(rx, ry)
+            segments = max(8, min(64, int(arc_length / 0.5)))
+
+            # Generate arc points on rotated ellipse
+            for i in range(1, segments + 1):
+                angle = theta1 + dtheta * i / segments
+                # Point on axis-aligned ellipse
+                ex = rx * math.cos(angle)
+                ey = ry * math.sin(angle)
+                # Rotate by phi and translate to center
+                px = cos_phi * ex - sin_phi * ey + cx
+                py = sin_phi * ex + cos_phi * ey + cy
+                points.append((mil_to_mm(px), mil_to_mm(py)))
+
+            cur_x, cur_y = end_x, end_y
+
+        elif cmd in ("Z", "z"):
+            pass  # KiCad polygons auto-close
 
     return points
 
