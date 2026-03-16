@@ -52,23 +52,32 @@ def _build_keywords(comp: dict) -> str:
     return " ".join(sorted(terms))
 
 
-def _check_existing_files(lib_dir: str, lib_name: str, name: str) -> list[str]:
-    """Return a list of existing file types (e.g. ["footprint", "symbol", "3D model"])."""
+def _check_existing_files(
+    lib_dir: str, lib_name: str, fp_name: str, sym_name: str = "", model_name: str = ""
+) -> list[str]:
+    """Return a list of existing file types (e.g. ["footprint", "symbol", "3D model"]).
+
+    *fp_name* is the footprint filename.
+    *sym_name* is the symbol name inside the .kicad_sym (defaults to *fp_name*).
+    *model_name* is the 3D model filename (defaults to *fp_name*).
+    """
+    sym_name = sym_name or fp_name
+    model_name = model_name or fp_name
     existing: list[str] = []
-    fp_path = os.path.join(lib_dir, f"{lib_name}.pretty", f"{name}.kicad_mod")
+    fp_path = os.path.join(lib_dir, f"{lib_name}.pretty", f"{fp_name}.kicad_mod")
     if os.path.exists(fp_path):
         existing.append("footprint")
     sym_path = os.path.join(lib_dir, f"{lib_name}.kicad_sym")
     if os.path.exists(sym_path):
         try:
             with open(sym_path, encoding="utf-8") as f:
-                if f'(symbol "{name}"' in f.read():
+                if f'(symbol "{sym_name}"' in f.read():
                     existing.append("symbol")
         except (PermissionError, OSError):
             pass
     models_dir = os.path.join(lib_dir, f"{lib_name}.3dshapes")
-    step_path = os.path.join(models_dir, f"{name}.step")
-    wrl_path = os.path.join(models_dir, f"{name}.wrl")
+    step_path = os.path.join(models_dir, f"{model_name}.step")
+    wrl_path = os.path.join(models_dir, f"{model_name}.wrl")
     if os.path.exists(step_path) or os.path.exists(wrl_path):
         existing.append("3D model")
     return existing
@@ -146,7 +155,6 @@ def import_component(
 
     title = comp["title"]
     name = sanitize_name(title)
-    footprint_ref = f"{lib_name}:{name}"
     package = comp.get("package", "")
     candidate_ref = None
     reuse_existing_footprint = False
@@ -158,20 +166,13 @@ def import_component(
             kicad_version=kicad_version,
         )
 
-    # Check for existing files and ask user to confirm overwrite
-    if not export_only and confirm_overwrite:
-        existing = _check_existing_files(lib_dir, lib_name, name)
-        if existing:
-            if not confirm_overwrite(name, existing):
-                return None
-            overwrite = True
-
     # Compute metadata that will be written to KiCad files
     metadata = {
         "description": _build_description(comp),
         "keywords": _build_keywords(comp),
         "manufacturer": comp.get("manufacturer", ""),
     }
+    metadata["__component_name"] = name  # shown/editable in dialog as footprint & 3D name
     if candidate_ref:
         metadata["__package_name"] = package
         metadata["__footprint_candidate_ref"] = candidate_ref
@@ -179,11 +180,39 @@ def import_component(
         metadata = confirm_metadata(metadata)
         if metadata is None:
             return None
-        if "__reuse_existing_footprint" in metadata:
+        if metadata.get("__manually_chosen_footprint"):
+            # User browsed and picked a specific footprint — override candidate_ref
+            # so the existing reuse logic below routes it correctly.
+            candidate_ref = metadata["__manually_chosen_footprint"]
+            reuse_choice_from_metadata = True
+        elif "__reuse_existing_footprint" in metadata:
             reuse_choice_from_metadata = bool(metadata["__reuse_existing_footprint"])
     metadata.pop("__package_name", None)
     metadata.pop("__footprint_candidate_ref", None)
     metadata.pop("__reuse_existing_footprint", None)
+    metadata.pop("__manually_chosen_footprint", None)
+    # Apply user-edited footprint / 3D-model name overrides (EasyEDA import only).
+    # Check for empty strings BEFORE sanitize_name — sanitize_name("") returns
+    # "unnamed" which is truthy, so the `or name` fallback would never trigger.
+    raw_fp_name = metadata.pop("__footprint_name", "").strip()
+    raw_model_name = metadata.pop("__model_name", "").strip()
+    fp_name = sanitize_name(raw_fp_name) if raw_fp_name else name
+    model_name = sanitize_name(raw_model_name) if raw_model_name else fp_name
+    metadata.pop("__component_name", None)
+
+    # Check for existing files and ask user to confirm overwrite.
+    # This runs after metadata editing so fp_name reflects any user rename.
+    if not export_only and confirm_overwrite:
+        existing = _check_existing_files(lib_dir, lib_name, fp_name, sym_name=name, model_name=model_name)
+        if existing:
+            if not confirm_overwrite(fp_name, existing):
+                return None
+            overwrite = True
+
+    # footprint_ref defaults to lib:fp_name (respects any user rename).
+    # This is overwritten below by candidate_ref if the user chose a KiCad
+    # library footprint, so no guard against reuse_existing_footprint is needed.
+    footprint_ref = f"{lib_name}:{fp_name}"
 
     if candidate_ref:
         if reuse_choice_from_metadata is True:
@@ -305,6 +334,8 @@ def import_component(
             kicad_version,
             wrl_source,
             metadata,
+            fp_name=fp_name,
+            model_name=model_name,
         )
 
     return _import_to_library(
@@ -327,6 +358,8 @@ def import_component(
         metadata,
         reuse_existing_footprint,
         footprint_ref,
+        fp_name=fp_name,
+        model_name=model_name,
     )
 
 
@@ -346,17 +379,23 @@ def _export_only(
     kicad_version,
     wrl_source=None,
     metadata=None,
+    fp_name=None,
+    model_name=None,
 ):
     """Write raw .kicad_mod, .kicad_sym, and 3D models to a flat directory."""
+    # fp_name: filename for .kicad_mod (defaults to component name)
+    # model_name: filename for .step/.wrl (defaults to fp_name)
+    fp_name = fp_name or name
+    model_name = model_name or fp_name
     os.makedirs(out_dir, exist_ok=True)
 
     # Model path for export is relative within the output dir
     # Use WRL instead of STEP for consistency with offset calculations (which use OBJ/WRL geometry)
-    model_path = f"3dmodels/{name}.wrl" if uuid_3d else ""
+    model_path = f"3dmodels/{model_name}.wrl" if uuid_3d else ""
 
     fp_content = write_footprint(
         footprint,
-        name,
+        fp_name,
         lcsc_id=lcsc_id,
         description=metadata["description"],
         keywords=metadata["keywords"],
@@ -367,7 +406,7 @@ def _export_only(
         kicad_version=kicad_version,
     )
 
-    fp_path = os.path.join(out_dir, f"{name}.kicad_mod")
+    fp_path = os.path.join(out_dir, f"{fp_name}.kicad_mod")
     with open(fp_path, "w") as f:
         f.write(fp_content)
     log(f"  Saved: {fp_path}")
@@ -389,7 +428,7 @@ def _export_only(
         step_data = download_step(uuid_3d)
         if wrl_source is None:
             wrl_source = download_wrl_source(uuid_3d)
-        step_path, wrl_path = save_models(models_dir, name, step_data, wrl_source)
+        step_path, wrl_path = save_models(models_dir, model_name, step_data, wrl_source)
         if step_path:
             log(f"  Saved: {step_path}")
         if wrl_path:
@@ -418,8 +457,19 @@ def _import_to_library(
     metadata=None,
     reuse_existing_footprint=False,
     footprint_ref="",
+    fp_name=None,
+    model_name=None,
 ):
-    """Import into KiCad library structure with lib-table updates."""
+    """Import into KiCad library structure with lib-table updates.
+
+    fp_name:    filename used for the .kicad_mod file (defaults to component name).
+    model_name: filename used for .step/.wrl files (defaults to fp_name).
+    The symbol is always saved under the component name so KiCad's symbol
+    property ``Footprint`` can reference it consistently.
+    """
+    # fp_name / model_name default to the component name when not overridden
+    fp_name = fp_name or name
+    model_name = model_name or fp_name
     log(f"Destination: {lib_dir}")
 
     paths = ensure_lib_structure(lib_dir, lib_name)
@@ -430,8 +480,8 @@ def _import_to_library(
         log(f"Using existing footprint reference: {footprint_ref}")
         log("Skipping footprint and 3D model file generation.")
     elif uuid_3d:
-        step_dest = os.path.join(paths["models_dir"], f"{name}.step")
-        wrl_dest = os.path.join(paths["models_dir"], f"{name}.wrl")
+        step_dest = os.path.join(paths["models_dir"], f"{model_name}.step")
+        wrl_dest = os.path.join(paths["models_dir"], f"{model_name}.wrl")
         step_existed = os.path.exists(step_dest)
         wrl_existed = os.path.exists(wrl_dest)
 
@@ -439,14 +489,14 @@ def _import_to_library(
         step_data = download_step(uuid_3d) if overwrite or not step_existed else None
         if wrl_source is None and (overwrite or not wrl_existed):
             wrl_source = download_wrl_source(uuid_3d)
-        step_path, wrl_path = save_models(paths["models_dir"], name, step_data, wrl_source)
+        step_path, wrl_path = save_models(paths["models_dir"], model_name, step_data, wrl_source)
 
         # Use WRL instead of STEP for consistency with offset calculations (which use OBJ/WRL geometry)
         if wrl_path:
             if use_global:
-                model_path = os.path.join(paths["models_dir"], f"{name}.wrl").replace("\\", "/")
+                model_path = os.path.join(paths["models_dir"], f"{model_name}.wrl").replace("\\", "/")
             else:
-                model_path = f"${{KIPRJMOD}}/{lib_name}.3dshapes/{name}.wrl"
+                model_path = f"${{KIPRJMOD}}/{lib_name}.3dshapes/{model_name}.wrl"
             if wrl_existed and not overwrite:
                 log(f"  WRL skipped: {wrl_path} (exists, overwrite=off)")
             else:
@@ -465,7 +515,7 @@ def _import_to_library(
         log("Writing footprint...")
         fp_content = write_footprint(
             footprint,
-            name,
+            fp_name,
             lcsc_id=lcsc_id,
             description=metadata["description"],
             keywords=metadata["keywords"],
@@ -475,14 +525,14 @@ def _import_to_library(
             model_rotation=model_rotation,
             kicad_version=kicad_version,
         )
-        fp_path = os.path.join(paths["fp_dir"], f"{name}.kicad_mod")
-        fp_saved = save_footprint(paths["fp_dir"], name, fp_content, overwrite)
+        fp_path = os.path.join(paths["fp_dir"], f"{fp_name}.kicad_mod")
+        fp_saved = save_footprint(paths["fp_dir"], fp_name, fp_content, overwrite)
         if fp_saved:
             log(f"  Saved: {fp_path}")
         else:
             log(f"  Skipped: {fp_path} (exists, overwrite=off)")
 
-    # Write symbol
+    # Write symbol (always uses component name, not fp_name)
     if sym_content:
         sym_added = add_symbol_to_lib(paths["sym_path"], name, sym_content, overwrite, kicad_version=kicad_version)
         if sym_added:

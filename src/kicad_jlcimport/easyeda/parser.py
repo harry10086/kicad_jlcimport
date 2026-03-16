@@ -49,11 +49,13 @@ PIN_TYPES = {
 _SOLID_REGION_LAYERS = {"3", "4", "12"}
 
 
+# EasyEDA stores coordinates in 10-mil units (1 unit = 10 mils = 0.254 mm).
+# Dividing by 3.937 converts EasyEDA units to millimeters (3.937 ≈ 1/0.254).
 MILS_TO_MM_DIVISOR = 3.937
 
 
 def mil_to_mm(mil: float) -> float:
-    """Convert mils to millimeters."""
+    """Convert EasyEDA units (10-mil) to millimeters."""
     return mil / MILS_TO_MM_DIVISOR
 
 
