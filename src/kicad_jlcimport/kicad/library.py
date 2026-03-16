@@ -315,14 +315,87 @@ def _read_fp_lib_entries(table_path: str) -> list[tuple[str, str, str]]:
     return [(name, lib_type, uri) for name, lib_type, uri in _LIB_ENTRY_RE.findall(content)]
 
 
-def _expand_lib_uri(uri: str, project_dir: str = "") -> str:
-    """Expand common variables in a lib-table URI."""
+def _iter_kicad_config_versions() -> list[str]:
+    """Return all versioned KiCad config directories that exist on disk.
 
-    def _fallback_var(key: str) -> str:
-        if not re.match(r"^KICAD\d+_FOOTPRINT_DIR$", key):
-            return ""
+    Returns the newest version first so callers find the most relevant config
+    without knowing the installed KiCad version in advance.
+    """
+    base = _kicad_config_base()
+    dirs: list[tuple[float, str]] = []
+    try:
+        for entry in os.listdir(base):
+            full = os.path.join(base, entry)
+            if os.path.isdir(full):
+                try:
+                    dirs.append((float(entry), full))
+                except ValueError:
+                    pass
+    except OSError:
+        pass
+    dirs.sort(reverse=True)
+    return [d for _, d in dirs]
 
+
+def resolve_kicad_var(key: str) -> str:
+    """Resolve a KiCad environment variable (e.g. ``KICAD9_3DMODEL_DIR``).
+
+    Checks, in order:
+    1. The process environment (``os.environ``).
+    2. ``kicad_common.json`` from the newest installed KiCad version.
+    3. Hardcoded platform-specific fallback paths (3D model dirs only).
+
+    Returns the resolved directory path, or ``""`` if not found.
+    """
+    env_val = os.environ.get(key, "")
+    if env_val and os.path.isdir(env_val):
+        return env_val
+
+    for ver_dir in _iter_kicad_config_versions():
+        common = os.path.join(ver_dir, "kicad_common.json")
+        try:
+            with open(common, encoding="utf-8") as f:
+                data = json.load(f)
+            val = (data.get("environment") or {}).get("vars") or {}
+            val = val.get(key, "")
+            if val and os.path.isdir(val):
+                return val
+        except (OSError, ValueError, KeyError):
+            continue
+
+    # Hardcoded fallbacks for standard KiCad installs
+    if re.match(r"^KICAD\d+_3DMODEL_DIR$", key):
         candidates: list[str] = []
+        if sys.platform == "darwin":
+            candidates.extend(
+                [
+                    "/Applications/KiCad/KiCad.app/Contents/SharedSupport/3dmodels",
+                    "/Applications/KiCad/KiCad Nightly.app/Contents/SharedSupport/3dmodels",
+                ]
+            )
+        elif sys.platform == "win32":
+            pf = os.environ.get("ProgramFiles", r"C:\Program Files")
+            candidates.extend(
+                [
+                    os.path.join(pf, "KiCad", "share", "kicad", "3dmodels"),
+                    os.path.join(pf, "KiCad", "9.0", "share", "kicad", "3dmodels"),
+                    os.path.join(pf, "KiCad", "8.0", "share", "kicad", "3dmodels"),
+                ]
+            )
+        else:
+            candidates.extend(
+                [
+                    "/usr/share/kicad/3dmodels",
+                    "/usr/share/kicad-nightly/3dmodels",
+                    "/usr/local/share/kicad/3dmodels",
+                ]
+            )
+        for candidate in candidates:
+            if os.path.isdir(candidate):
+                return candidate
+
+    if re.match(r"^KICAD\d+_FOOTPRINT_DIR$", key):
+        candidates = []
         if sys.platform == "darwin":
             candidates.extend(
                 [
@@ -347,22 +420,26 @@ def _expand_lib_uri(uri: str, project_dir: str = "") -> str:
                     "/usr/local/share/kicad/footprints",
                 ]
             )
-
         for candidate in candidates:
             if os.path.isdir(candidate):
                 return candidate
-        return ""
+
+    return ""
+
+
+def _expand_lib_uri(uri: str, project_dir: str = "") -> str:
+    """Expand common variables in a lib-table URI."""
 
     def _replace(match) -> str:
         key = match.group(1)
         if key == "KIPRJMOD":
-            return project_dir
-        env_val = os.environ.get(key, "")
-        if env_val:
-            return env_val
-        fallback = _fallback_var(key)
-        if fallback:
-            return fallback
+            # Return the raw token when project_dir is unknown so the
+            # downstream "${" guard discards this entry rather than
+            # producing a bogus root-relative path like "/JLCImport.pretty".
+            return project_dir if project_dir else match.group(0)
+        resolved = resolve_kicad_var(key)
+        if resolved:
+            return resolved
         return match.group(0)
 
     expanded = _ENV_VAR_RE.sub(_replace, uri)
@@ -374,14 +451,27 @@ def _expand_lib_uri(uri: str, project_dir: str = "") -> str:
     return expanded
 
 
-def _iter_footprint_libraries(project_dir: str, kicad_version: int = DEFAULT_KICAD_VERSION) -> list[tuple[str, str]]:
-    """Return existing .pretty directories from project/global fp-lib-table files."""
+def _iter_footprint_libraries(
+    project_dir: str,
+    kicad_version: int = DEFAULT_KICAD_VERSION,
+    jlc_lib_name: str = "JLCImport",
+    jlc_global_lib_dir: str = "",
+) -> list[tuple[str, str]]:
+    """Return existing .pretty directories from project/global fp-lib-table files.
+
+    Also injects any JLCImport .pretty directories that exist on disk but are
+    not yet registered in a lib-table (e.g. immediately after a first import,
+    before KiCad has been restarted to pick up the new lib-table entry).
+
+    jlc_lib_name:       The configured JLCImport library name (default "JLCImport").
+    jlc_global_lib_dir: The global JLCImport output directory, if known.
+    """
     candidates: list[tuple[str, str]] = []
     tables: list[tuple[str, str]] = []
 
     if project_dir:
         tables.append((os.path.join(project_dir, "fp-lib-table"), project_dir))
-    tables.append((os.path.join(get_global_config_dir(kicad_version), "fp-lib-table"), project_dir))
+    tables.append((os.path.join(get_global_config_dir(kicad_version), "fp-lib-table"), ""))
 
     seen: set[tuple[str, str]] = set()
     for table_path, table_project_dir in tables:
@@ -396,6 +486,28 @@ def _iter_footprint_libraries(project_dir: str, kicad_version: int = DEFAULT_KIC
                 continue
             seen.add(key)
             candidates.append(key)
+
+    # Inject JLCImport .pretty directories that exist on disk but are missing
+    # from the lib-tables.  This covers the window between the first import
+    # (which writes the lib-table) and the next KiCad restart (which reads it).
+    # Two candidate locations are checked: the project directory and the
+    # configured global output directory.
+    jlc_pretty = f"{jlc_lib_name}.pretty"
+    jlc_search_dirs = []
+    if project_dir:
+        jlc_search_dirs.append((jlc_lib_name, os.path.join(project_dir, jlc_pretty)))
+    if jlc_global_lib_dir:
+        jlc_search_dirs.append((jlc_lib_name, os.path.join(jlc_global_lib_dir, jlc_pretty)))
+
+    for lib_name, path in jlc_search_dirs:
+        if not os.path.isdir(path):
+            continue
+        key = (lib_name, os.path.normpath(path))
+        if key in seen:
+            continue  # already in lib-table, nothing to do
+        seen.add(key)
+        candidates.append(key)
+
     return candidates
 
 
