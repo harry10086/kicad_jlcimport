@@ -63,6 +63,7 @@ source install.sh      # macOS/Linux
 
 Based on recent git history:
 
+- `v1.4.0`: KiCad footprint browser with live preview, footprint/3D model renaming, KiCad library footprint reuse, SpinnerOverlay deadlock fix, multi-unit symbol crash fix, and pinned ruff version.
 - `v1.2.10`: fixed Python 3.9 annotation evaluation in library handling.
 - `v1.2.9`: made the plugin dialog non-modal and added multi-unit symbol support.
 - `v1.2.8`: hardened SVG path parsing for better import reliability.
