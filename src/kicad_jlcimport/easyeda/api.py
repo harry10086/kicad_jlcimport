@@ -8,6 +8,7 @@ import re
 import socket
 import ssl
 import sys
+import urllib.error
 import urllib.request
 import warnings
 from typing import Any, Dict, List, Optional
@@ -281,6 +282,8 @@ def fetch_component_data(uuid: str) -> Dict[str, Any]:
 
 
 JLCPCB_SEARCH_API = "https://jlcpcb.com/api/overseas-pcb-order/v1/shoppingCart/smtGood/selectSmtComponentList"
+SZLCSC_SEARCH_API = "https://so.szlcsc.com/query/product"
+
 
 
 def search_components(
@@ -351,6 +354,124 @@ def search_components(
     return {"total": total, "results": results}
 
 
+def search_components_cn(
+    keyword: str, page: int = 1, page_size: int = 10
+) -> Dict[str, Any]:
+    """Search 立创商城 (SZLCSC) domestic parts library.
+
+    Uses the domestic Chinese site so.szlcsc.com which provides RMB pricing
+    and domestic warehouse stock levels.
+
+    Args:
+        keyword: Search term (LCSC part number, MPN, brand, or category)
+        page: Page number (1-based)
+        page_size: Results per page (max 30)
+
+    Returns dict with 'total' and 'results' list. Each result has the same
+    keys as search_components(): lcsc, name, model, brand, package, category,
+    stock, type, price, description, url, datasheet.
+
+    type is derived from smtLabel:
+        'SMT基础库' -> 'Basic'
+        'SMT扩展库' -> 'Extended'
+        anything else -> ''
+    """
+def search_components_cn(keyword: str, page: int = 1, page_size: int = 50) -> dict:
+    import builtins
+    import math
+
+    results = []
+    total = 0
+    max_apipage = 30
+    needed_pages = math.ceil(page_size / max_apipage)
+    start_p = (page - 1) * needed_pages + 1
+    
+    for current_p in range(start_p, start_p + needed_pages):
+        req_data = {
+            "currentPage": current_p,
+            "pageSize": max_apipage,
+            "keyword": keyword,
+            "sortNumber": 0,
+            "spotFilter": 0,
+            "discountFilter": 1,
+            "hasDataFile": False,
+        }
+        
+        req = urllib.request.Request(
+            SZLCSC_SEARCH_API,
+            data=json.dumps(req_data).encode("utf-8"),
+            headers={
+                **_HEADERS,
+                "Content-Type": "application/json",
+                "Origin": "https://so.szlcsc.com",
+                "Referer": "https://so.szlcsc.com/global.html",
+            },
+        )
+        try:
+            with _urlopen(req, timeout=15) as resp:
+                resp_data = resp.read()
+                try:
+                    raw = json.loads(resp_data.decode("utf-8"))
+                except ValueError as json_err:
+                    if current_p > 1:
+                        break
+                    raise APIError(f"API blocked (JSON Error). Response: {resp_data[:100]}") from json_err
+        except (urllib.error.HTTPError, urllib.error.URLError) as e:
+            if current_p > 1:
+                break
+            raise APIError(f"Search failed: {e}") from e
+
+        if raw.get("code") != 200:
+            if current_p > 1:
+                break
+            raise APIError(f"API Error (Code {raw.get('code')}): {raw.get('msg', '')} \nRaw: {raw}")
+
+        search_result = (raw.get("result") or {}).get("searchResult") or {}
+        if current_p == 1:
+            total = search_result.get("totalCount", 0)
+            
+        items = search_result.get("productRecordList") or []
+        if not items:
+            break
+
+        _SMT_LABEL_MAP = {
+            "SMT基础库": "Basic",
+            "SMT扩展库": "Extended",
+        }
+
+        for item in items:
+            vo = item.get("productVO") or {}
+            prices = vo.get("productPriceList") or []
+            unit_price = prices[0]["productPrice"] if prices else None
+            product_id = vo.get("productId", "")
+            url = f"https://item.szlcsc.com/{product_id}.html" if product_id else ""
+            smt_label = vo.get("smtLabel", "")
+            results.append(
+                {
+                    "lcsc": vo.get("productCode", ""),
+                    "name": vo.get("productName", ""),
+                    "model": vo.get("productModel", ""),
+                    "brand": vo.get("productGradePlateName", ""),
+                    "package": vo.get("encapsulationModel", ""),
+                    "category": vo.get("productType", ""),
+                    "stock": vo.get("stockNumber", 0),
+                    "type": _SMT_LABEL_MAP.get(smt_label, ""),
+                    "price": unit_price,
+                    "description": vo.get("productName", ""),
+                    "url": url,
+                    "datasheet": "",
+                }
+            )
+
+            if len(results) >= page_size:
+                break
+
+        if len(results) >= page_size:
+            break
+
+    return {"total": max(total, len(results)), "results": results}
+
+
 def filter_by_min_stock(results: list, min_stock: int) -> list:
     """Filter search results by minimum stock count.
 
@@ -379,7 +500,16 @@ def filter_by_type(results: list, part_type: str) -> list:
     return [r for r in results if r.get("type") == part_type]
 
 
-_ALLOWED_IMAGE_HOSTS = ("jlcpcb.com", "www.jlcpcb.com", "lcsc.com", "www.lcsc.com")
+_ALLOWED_IMAGE_HOSTS = (
+    "jlcpcb.com",
+    "www.jlcpcb.com",
+    "lcsc.com",
+    "www.lcsc.com",
+    "szlcsc.com",
+    "www.szlcsc.com",
+    "item.szlcsc.com",
+    "alimg.szlcsc.com",
+)
 
 
 def fetch_product_image(lcsc_url: str) -> Optional[bytes]:
@@ -408,23 +538,26 @@ def fetch_product_image(lcsc_url: str) -> Optional[bytes]:
     )
     try:
         with _urlopen(req, timeout=10) as resp:
-            html = resp.read().decode("utf-8")
+            html = resp.read().decode("utf-8", errors="ignore")
     except (urllib.error.HTTPError, urllib.error.URLError, OSError):
         return None
 
-    # Find product image URL
-    match = re.search(r'https://assets\.lcsc\.com/images/lcsc/900x900/[^\s"<>]+', html)
+    # Try to find product image URL in domestic szlcsc or intl lcsc formats
+    match = re.search(
+        r'https://(?:assets\.lcsc\.com/images/lcsc/900x900|alimg\.szlcsc\.com/upload/public/product/(?:source|breviary))/[^\s"<>]+(?:\.jpg|\.png)',
+        html,
+    )
     if not match:
         return None
 
     img_url = match.group(0)
-    if not img_url.startswith("https://assets.lcsc.com/"):
+    if not (img_url.startswith("https://assets.lcsc.com/") or img_url.startswith("https://alimg.szlcsc.com/")):
         return None
     req2 = urllib.request.Request(
         img_url,
         headers={
             "User-Agent": _UA,
-            "Accept": "image/webp,image/apng,image/*,*/*;q=0.8",
+            "Accept": "image/jpeg,image/png,image/*,*/*;q=0.8",
             "Accept-Language": "en-US,en;q=0.9",
             "Referer": lcsc_url,
         },

@@ -37,7 +37,7 @@ from kicad_jlcimport.easyeda.api import (
     fetch_product_image,
     filter_by_min_stock,
     filter_by_type,
-    search_components,
+    search_components_cn,
 )
 from kicad_jlcimport.importer import import_component
 from kicad_jlcimport.kicad.library import (
@@ -501,7 +501,7 @@ class JLCImportTUI(App):
             with Vertical(id="search-section"):
                 with Horizontal(id="search-row"):
                     yield Input(
-                        placeholder="Search JLCPCB parts...",
+                        placeholder="Search 立创商城 parts...",
                         id="search-input",
                     )
                     yield Button("Search", id="search-btn", variant="primary")
@@ -890,10 +890,10 @@ class JLCImportTUI(App):
 
         try:
             try:
-                result = search_components(keyword, page_size=500)
+                result = search_components_cn(keyword, page_size=100)
             except SSLCertError:
                 self._handle_ssl_cert_error()
-                result = search_components(keyword, page_size=500)
+                result = search_components_cn(keyword, page_size=100)
 
             results = result["results"]
 
@@ -1012,7 +1012,7 @@ class JLCImportTUI(App):
             if self._selected_result and lcsc == self._selected_result["lcsc"]:
                 reselect_idx = i
             prefix = "\u2713 " if lcsc in self._imported_ids else ""
-            price_str = f"${r['price']:.4f}" if r["price"] else "N/A"
+            price_str = f"\u00a5{r['price']:.4f}" if r["price"] else "N/A"
             stock_str = f"{r['stock']:,}" if r["stock"] else "N/A"
             table.add_row(
                 prefix + lcsc,

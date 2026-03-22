@@ -1,6 +1,6 @@
 # JLCImport
 
-JLCImport is a KiCad action plugin that imports symbols, footprints, and 3D models from LCSC/JLCPCB into your project or global library.
+JLCImport is a KiCad action plugin that imports symbols, footprints, and 3D models from SZLCSC/JLCPCB into your project or global library.
 
 ## Features
 
@@ -16,11 +16,11 @@ JLCImport is a KiCad action plugin that imports symbols, footprints, and 3D mode
 
 1. Open KiCad and go to **Tools > Plugin and Content Manager**
 2. Open repository settings and add:
-   `https://github.com/jvanderberg/kicad_jlcimport/releases/latest/download/repository.json`
+   `https://github.com/harry10086/kicad_jlcimport/releases/latest/download/repository.json`
 3. Refresh repositories
 4. Install **JLCImport**
 
-Fallback: install from ZIP using [Releases](https://github.com/jvanderberg/kicad_jlcimport/releases) (`JLCImport-vX.X.X.zip`, not "Source code" ZIP).
+Fallback: install from ZIP using [Releases](https://github.com/harry10086/kicad_jlcimport/releases) (`JLCImport-vX.X.X.zip`, not "Source code" ZIP).
 
 For local development, link `src/kicad_jlcimport` into your KiCad plugin directory and restart KiCad.
 
@@ -62,7 +62,10 @@ source install.sh      # macOS/Linux
 ## Recent Updates
 
 Based on recent git history:
-
+- `v1.4.1`：把 LCSC 改成了国内 szlcsc.com，速度更快。但每次加载数量减少到100,因为国内网站有限制。
+            修改了加载图标。
+            修改了预览图片的关闭按钮。
+            价格都改成了人民币¥，库存也都是国内库存。
 - `v1.4.0`: KiCad footprint browser with live preview, footprint/3D model renaming, KiCad library footprint reuse, SpinnerOverlay deadlock fix, multi-unit symbol crash fix, and pinned ruff version.
 - `v1.2.10`: fixed Python 3.9 annotation evaluation in library handling.
 - `v1.2.9`: made the plugin dialog non-modal and added multi-unit symbol support.

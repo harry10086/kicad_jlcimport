@@ -11,7 +11,7 @@ from kicad_jlcimport.easyeda.api import (
     SSLCertError,
     filter_by_min_stock,
     filter_by_type,
-    search_components,
+    search_components_cn,
     validate_lcsc_id,
 )
 from kicad_jlcimport.importer import import_component
@@ -28,7 +28,7 @@ def cmd_search(args):
         type_filter = "Extended"
 
     try:
-        result = search_components(args.keyword, page_size=args.count)
+        result = search_components_cn(args.keyword, page_size=args.count)
     except SSLCertError as e:
         print(f"  Error: {e}")
         print("  Use --insecure to bypass certificate verification.")
@@ -80,7 +80,7 @@ def cmd_search(args):
     print(f"  {'─' * 3} {'─' * 12} {'─' * 8} {'─' * 7} {'─' * 8}  {'─' * 30}")
 
     for i, r in enumerate(results, 1):
-        price_str = f"${r['price']:.4f}" if r["price"] else "  N/A  "
+        price_str = f"\u00a5{r['price']:.4f}" if r["price"] else "  N/A  "
         stock_str = f"{r['stock']:>8,}" if r["stock"] else "     N/A"
         print(f"  {i:<3} {r['lcsc']:<12} {r['type']:<8} {price_str:>7} {stock_str}  {r['model']}")
         print(f"      {r['description']}")
