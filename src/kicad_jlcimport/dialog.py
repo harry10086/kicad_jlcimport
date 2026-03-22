@@ -21,7 +21,7 @@ from .easyeda.api import (
     fetch_product_image,
     filter_by_min_stock,
     filter_by_type,
-    search_components,
+    search_components_cn,
 )
 from .gui.symbol_renderer import has_svg_support, render_svg_bitmap
 from .importer import import_component
@@ -1457,31 +1457,49 @@ class _SpinnerOverlay(wx.Window):
 
     def _on_paint(self, event):
         dc = wx.PaintDC(self)
-        w, h = self.GetClientSize()
+        gc = wx.GraphicsContext.Create(dc)
+        if not gc:
+            # Traditional DC fallback if GC creation fails
+            self._on_paint_classic(dc)
+            return
 
-        # Derive spinner colours from the background luminance
+        w, h = self.GetClientSize()
         bg = wx.SystemSettings.GetColour(wx.SYS_COLOUR_WINDOW)
         lum = (bg.Red() * 299 + bg.Green() * 587 + bg.Blue() * 114) // 1000
-        if lum < 128:
-            tail_grey, head_grey = 60, 200
-        else:
-            tail_grey, head_grey = 210, 80
+        # Use a slightly brighter color for contrast without an ugly box
+        color = wx.Colour(220, 220, 220, 200) if lum < 128 else wx.Colour(60, 60, 60, 220)
 
+        cx, cy = w / 2.0, h / 2.0
+        r = self._ARC_RADIUS
+        
+        gc.SetAntialiasMode(wx.ANTIALIAS_DEFAULT)
+        # Use a smooth path for the arc to ensure no pixel gaps
+        path = gc.CreatePath()
+        start_angle = math.radians(self._angle)
+        end_angle = math.radians(self._angle + self._ARC_SWEEP)
+        path.AddArc(cx, cy, r, start_angle, end_angle, True)
+        
+        pen = gc.CreatePen(wx.GraphicsPenInfo(color).Width(self._ARC_WIDTH).Cap(wx.CAP_ROUND))
+        gc.SetPen(pen)
+        gc.StrokePath(path)
+
+    def _on_paint_classic(self, dc):
+        """Fallback for environments without GraphicsContext."""
+        w, h = self.GetClientSize()
+        bg = wx.SystemSettings.GetColour(wx.SYS_COLOUR_WINDOW)
+        lum = (bg.Red() * 299 + bg.Green() * 587 + bg.Blue() * 114) // 1000
+        grey = 200 if lum < 128 else 80
+        dc.SetPen(wx.Pen(wx.Colour(grey, grey, grey), self._ARC_WIDTH))
+        
         cx, cy = w / 2.0, h / 2.0
         r = self._ARC_RADIUS
         for i in range(self._SEGMENTS):
             frac = i / self._SEGMENTS
             t1 = self._angle + frac * self._ARC_SWEEP
             t2 = self._angle + (i + 1) / self._SEGMENTS * self._ARC_SWEEP
-            a1 = math.radians(t1)
-            a2 = math.radians(t2)
-            x1 = cx + r * math.cos(a1)
-            y1 = cy + r * math.sin(a1)
-            x2 = cx + r * math.cos(a2)
-            y2 = cy + r * math.sin(a2)
-            grey = int(tail_grey + (head_grey - tail_grey) * frac)
-            dc.SetPen(wx.Pen(wx.Colour(grey, grey, grey), self._ARC_WIDTH))
-            dc.DrawLine(int(x1), int(y1), int(x2), int(y2))
+            a1, a2 = math.radians(t1), math.radians(t2)
+            dc.DrawLine(int(cx + r * math.cos(a1)), int(cy + r * math.sin(a1)),
+                        int(cx + r * math.cos(a2)), int(cy + r * math.sin(a2)))
 
 
 class JLCImportDialog(wx.Dialog):
@@ -1518,6 +1536,12 @@ class JLCImportDialog(wx.Dialog):
     def _on_close(self, event):
         if self._closing:
             return
+            
+        # Prevent closing the entire plugin if we are in full-screen gallery view
+        if hasattr(self, "_gallery_panel") and self._gallery_panel.IsShown():
+            self._exit_gallery()
+            return
+            
         # Warn if an import is in progress (main panel disabled during import)
         if not self._main_panel.IsEnabled():
             if (
@@ -1603,8 +1627,14 @@ class JLCImportDialog(wx.Dialog):
 
         vbox.Add(search_box, 0, wx.EXPAND | wx.ALL, 5)
 
+        hbox_count = wx.BoxSizer(wx.HORIZONTAL)
         self.results_count_label = wx.StaticText(panel, label="")
-        vbox.Add(self.results_count_label, 0, wx.LEFT | wx.RIGHT, 10)
+        hbox_count.Add(self.results_count_label, 1, wx.ALIGN_CENTER_VERTICAL)
+        self.load_more_btn = wx.Button(panel, label="Load More")
+        self.load_more_btn.Bind(wx.EVT_BUTTON, self._on_load_more)
+        self.load_more_btn.Disable()
+        hbox_count.Add(self.load_more_btn, 0)
+        vbox.Add(hbox_count, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 10)
 
         # --- Results list ---
         self.results_list = wx.ListCtrl(panel, style=wx.LC_REPORT | wx.LC_SINGLE_SEL)
@@ -1776,12 +1806,15 @@ class JLCImportDialog(wx.Dialog):
         self._gallery_panel.Hide()
         gbox = wx.BoxSizer(wx.VERTICAL)
 
-        # Top row: back button
+        # Top row: close button only
         top_sizer = wx.BoxSizer(wx.HORIZONTAL)
-        self._gallery_back = wx.Button(self._gallery_panel, label="\u2190 Back")
-        self._gallery_back.Bind(wx.EVT_BUTTON, self._on_gallery_close)
-        top_sizer.Add(self._gallery_back, 0)
-        gbox.Add(top_sizer, 0, wx.LEFT | wx.TOP, 5)
+        top_sizer.AddStretchSpacer()
+        
+        self._gallery_close_btn = wx.Button(self._gallery_panel, label="\u2715 Close View", style=wx.BU_EXACTFIT)
+        self._gallery_close_btn.Bind(wx.EVT_BUTTON, self._on_gallery_close)
+        top_sizer.Add(self._gallery_close_btn, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 10)
+        
+        gbox.Add(top_sizer, 0, wx.EXPAND | wx.LEFT | wx.TOP, 5)
 
         # Navigation row: [<] image+dots [>]
         nav_sizer = wx.BoxSizer(wx.HORIZONTAL)
@@ -1947,8 +1980,7 @@ class JLCImportDialog(wx.Dialog):
                     "Consider downloading the latest version of this plugin which "
                     "may include updated CA certificates.",
                     "TLS Certificate Warning",
-                    wx.OK | wx.ICON_WARNING,
-                )
+        )
                 wx.CallAfter(
                     self._log,
                     "TLS certificate verification disabled for this session.",
@@ -1996,6 +2028,8 @@ class JLCImportDialog(wx.Dialog):
         if not keyword:
             return
 
+        self._current_page = 1
+        self.load_more_btn.Disable()
         self.search_btn.Disable()
         self._clear_detail()
         self.results_list.DeleteAllItems()
@@ -2013,7 +2047,27 @@ class JLCImportDialog(wx.Dialog):
         self._search_overlay.show()
         threading.Thread(
             target=self._fetch_search_results,
-            args=(keyword, request_id),
+            args=(keyword, request_id, 1),
+            daemon=True,
+        ).start()
+
+    def _on_load_more(self, event):
+        """Handle load more button click."""
+        keyword = self.search_input.GetValue().strip()
+        if not keyword:
+            return
+
+        self._current_page += 1
+        self.load_more_btn.Disable()
+        self._log(f'Loading page {self._current_page} for "{keyword}"...')
+
+        self._search_request_id += 1
+        request_id = self._search_request_id
+        self._start_search_pulse()
+        self._search_overlay.show()
+        threading.Thread(
+            target=self._fetch_search_results,
+            args=(keyword, request_id, self._current_page),
             daemon=True,
         ).start()
 
@@ -2038,16 +2092,16 @@ class JLCImportDialog(wx.Dialog):
         self.search_btn.SetLabel("Search")
         self.search_btn.Enable()
 
-    def _fetch_search_results(self, keyword, request_id):
+    def _fetch_search_results(self, keyword, request_id, page=1):
         """Background thread: fetch search results from API."""
         try:
             try:
-                result = search_components(keyword, page_size=500)
+                result = search_components_cn(keyword, page, page_size=100)
             except SSLCertError:
                 self._handle_ssl_cert_error()
-                result = search_components(keyword, page_size=500)
+                result = search_components_cn(keyword, page, page_size=100)
             if not self._closing:
-                wx.CallAfter(self._on_search_complete, result, request_id)
+                wx.CallAfter(self._on_search_complete, result, request_id, page)
         except APIError as e:
             if not self._closing:
                 wx.CallAfter(self._on_search_error, f"Search error: {e}", request_id)
@@ -2055,7 +2109,7 @@ class JLCImportDialog(wx.Dialog):
             if not self._closing:
                 wx.CallAfter(self._on_search_error, f"Unexpected error: {type(e).__name__}: {e}", request_id)
 
-    def _on_search_complete(self, result, request_id):
+    def _on_search_complete(self, result, request_id, page):
         """Handle search results on the main thread."""
         if request_id != self._search_request_id:
             return
@@ -2063,13 +2117,25 @@ class JLCImportDialog(wx.Dialog):
         self._search_overlay.dismiss()
 
         results = result["results"]
-        results.sort(key=lambda r: r["stock"] or 0, reverse=True)
+        has_more = len(results) >= 100
+        
+        if page == 1:
+            self._raw_search_results = results
+            self._sort_col = 3  # sorted by stock
+            self._sort_ascending = False
+        else:
+            self._raw_search_results.extend(results)
+            
+        # Re-sort full list
+        self._raw_search_results.sort(key=lambda r: r["stock"] or 0, reverse=True)
 
-        self._raw_search_results = results
         self._populate_package_choices()
-        self._sort_col = 3  # sorted by stock
-        self._sort_ascending = False
         self._apply_filters()
+        
+        if has_more:
+            self.load_more_btn.Enable()
+        else:
+            self.load_more_btn.Disable()
         self._log(f"  {result['total']} total results, showing {len(self._search_results)}")
         self._refresh_imported_ids()
         self._update_col_headers()
@@ -2211,7 +2277,7 @@ class JLCImportDialog(wx.Dialog):
             prefix = "\u2713 " if lcsc in self._imported_ids else ""
             self.results_list.InsertItem(i, prefix + lcsc)
             self.results_list.SetItem(i, 1, r["type"])
-            price_str = f"${r['price']:.4f}" if r["price"] else "N/A"
+            price_str = f"\u00a5{r['price']:.4f}" if r["price"] else "N/A"
             self.results_list.SetItem(i, 2, price_str)
             stock_str = f"{r['stock']:,}" if r["stock"] else "N/A"
             self.results_list.SetItem(i, 3, stock_str)
@@ -2284,7 +2350,7 @@ class JLCImportDialog(wx.Dialog):
         self.detail_part.SetValue(r["model"])
         self.detail_brand.SetValue(r["brand"])
         self.detail_package.SetValue(r["package"])
-        price_str = f"${r['price']:.4f}" if r["price"] else "N/A"
+        price_str = f"\u00a5{r['price']:.4f}" if r["price"] else "N/A"
         self.detail_price.SetValue(price_str)
         stock_str = f"{r['stock']:,}" if r["stock"] else "N/A"
         self.detail_stock.SetValue(stock_str)
@@ -2440,7 +2506,7 @@ class JLCImportDialog(wx.Dialog):
         r = self._search_results[idx]
 
         # Update info
-        price_str = f"${r['price']:.4f}" if r["price"] else "N/A"
+        price_str = f"\u00a5{r['price']:.4f}" if r["price"] else "N/A"
         stock_str = f"{r['stock']:,}" if r["stock"] else "N/A"
         info = (
             f"{r['lcsc']}  |  {r['model']}  |  {r['brand']}  |  {r['package']}  |  {price_str}  |  Stock: {stock_str}"

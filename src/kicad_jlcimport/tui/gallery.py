@@ -106,7 +106,7 @@ class GalleryScreen(Screen):
         r = self._results[self._index]
 
         # Update info
-        price_str = f"${r['price']:.4f}" if r["price"] else "N/A"
+        price_str = f"\u00a5{r['price']:.4f}" if r["price"] else "N/A"
         stock_str = f"{r['stock']:,}" if r["stock"] else "N/A"
         info = (
             f"{r['lcsc']}  |  {r['model']}  |  {r['brand']}  |  {r['package']}  |  {price_str}  |  Stock: {stock_str}"

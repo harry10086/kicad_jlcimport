@@ -27,6 +27,10 @@ _HOSTS = [
     "lcsc.com",
     "www.lcsc.com",
     "assets.lcsc.com",
+    "so.szlcsc.com",
+    "www.szlcsc.com",
+    "item.szlcsc.com",
+    "alimg.szlcsc.com",
 ]
 
 _OUTPUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cacerts.pem")
