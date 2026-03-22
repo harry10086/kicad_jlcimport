@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kicad-jlcimport"
-version = "1.5.0"
-description = "KiCad 8/9/10 plugin to import components from JLCPCB/LCSC"
+version = "1.5.1"
+description = "KiCad 8/9/10 plugin to import components from JLCPCB/SZLCSC"
 requires-python = ">=3.8"
 license = {text = "MIT"}
 
