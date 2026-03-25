@@ -48,7 +48,7 @@ def _make_fake_sym():
 def _patch_importer(monkeypatch, fake_comp, fake_fp=None, fake_sym=None, capture_sym=None, capture_fp=None):
     fake_fp = fake_fp or _make_fake_fp()
     fake_sym = fake_sym or _make_fake_sym()
-    monkeypatch.setattr(importer, "fetch_full_component", lambda _: fake_comp)
+    monkeypatch.setattr(importer, "fetch_full_component", lambda _, **kw: fake_comp)
     monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *a, **k: fake_fp)
     monkeypatch.setattr(importer, "parse_symbol_shapes", lambda *a, **k: fake_sym)
     monkeypatch.setattr(importer, "write_footprint", capture_fp or (lambda *a, **k: "(footprint TestPart)\n"))

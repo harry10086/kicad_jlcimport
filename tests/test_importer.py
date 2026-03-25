@@ -60,7 +60,7 @@ class TestImportComponent:
         fake_fp = self._make_fake_footprint()
         fake_sym = self._make_fake_symbol()
 
-        monkeypatch.setattr(importer, "fetch_full_component", lambda _: fake_comp)
+        monkeypatch.setattr(importer, "fetch_full_component", lambda _, **kw: fake_comp)
         monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *a, **k: fake_fp)
         monkeypatch.setattr(importer, "parse_symbol_shapes", lambda *a, **k: fake_sym)
         monkeypatch.setattr(importer, "write_footprint", lambda *a, **k: "(footprint TestPart)\n")
@@ -87,7 +87,7 @@ class TestImportComponent:
         fake_comp = self._make_fake_comp(with_symbol=False, with_3d=True)
         fake_fp = self._make_fake_footprint()
 
-        monkeypatch.setattr(importer, "fetch_full_component", lambda _: fake_comp)
+        monkeypatch.setattr(importer, "fetch_full_component", lambda _, **kw: fake_comp)
         monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *a, **k: fake_fp)
         monkeypatch.setattr(importer, "write_footprint", lambda *a, **k: "(footprint TestPart)\n")
         monkeypatch.setattr(importer, "download_step", lambda _: b"step-data")
@@ -119,7 +119,7 @@ class TestImportComponent:
         fake_fp = self._make_fake_footprint()
         fake_sym = self._make_fake_symbol()
 
-        monkeypatch.setattr(importer, "fetch_full_component", lambda _: fake_comp)
+        monkeypatch.setattr(importer, "fetch_full_component", lambda _, **kw: fake_comp)
         monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *a, **k: fake_fp)
         monkeypatch.setattr(importer, "parse_symbol_shapes", lambda *a, **k: fake_sym)
         monkeypatch.setattr(importer, "write_footprint", lambda *a, **k: "(footprint TestPart)\n")
@@ -145,7 +145,7 @@ class TestImportComponent:
         fake_fp = self._make_fake_footprint()
         fake_sym = self._make_fake_symbol()
 
-        monkeypatch.setattr(importer, "fetch_full_component", lambda _: fake_comp)
+        monkeypatch.setattr(importer, "fetch_full_component", lambda _, **kw: fake_comp)
         monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *a, **k: fake_fp)
         monkeypatch.setattr(importer, "parse_symbol_shapes", lambda *a, **k: fake_sym)
         monkeypatch.setattr(importer, "write_footprint", lambda *a, **k: "(footprint TestPart)\n")
@@ -184,7 +184,7 @@ class TestImportComponent:
                 wrl_path if wrl_source else None,
             )
 
-        monkeypatch.setattr(importer, "fetch_full_component", lambda _: fake_comp)
+        monkeypatch.setattr(importer, "fetch_full_component", lambda _, **kw: fake_comp)
         monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *a, **k: fake_fp)
         monkeypatch.setattr(importer, "write_footprint", lambda *a, **k: "(footprint TestPart)\n")
         monkeypatch.setattr(importer, "download_step", lambda _: b"STEP")
@@ -224,7 +224,7 @@ class TestImportComponent:
             wrl_path = os.path.join(dir, f"{name}.wrl")
             return step_path, wrl_path
 
-        monkeypatch.setattr(importer, "fetch_full_component", lambda _: fake_comp)
+        monkeypatch.setattr(importer, "fetch_full_component", lambda _, **kw: fake_comp)
         monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *a, **k: fake_fp)
         monkeypatch.setattr(importer, "write_footprint", lambda *a, **k: "(footprint TestPart)\n")
         monkeypatch.setattr(importer, "download_step", _step_should_not_download)
@@ -250,7 +250,7 @@ class TestImportComponent:
         fake_comp = self._make_fake_comp(with_symbol=False, with_3d=False)
         fake_fp = self._make_fake_footprint()
 
-        monkeypatch.setattr(importer, "fetch_full_component", lambda _: fake_comp)
+        monkeypatch.setattr(importer, "fetch_full_component", lambda _, **kw: fake_comp)
         monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *a, **k: fake_fp)
         monkeypatch.setattr(importer, "write_footprint", lambda *a, **k: "(footprint TestPart)\n")
 
@@ -275,7 +275,7 @@ class TestImportComponent:
         fp_dir.mkdir(parents=True)
         (fp_dir / "TestPart.kicad_mod").write_text("existing")
 
-        monkeypatch.setattr(importer, "fetch_full_component", lambda _: fake_comp)
+        monkeypatch.setattr(importer, "fetch_full_component", lambda _, **kw: fake_comp)
         monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *a, **k: fake_fp)
         monkeypatch.setattr(importer, "write_footprint", lambda *a, **k: "(footprint TestPart)\n")
 
@@ -301,7 +301,7 @@ class TestImportComponent:
         sym_path = tmp_path / "TestLib.kicad_sym"
         sym_path.write_text('(kicad_symbol_lib\n  (version 20241209)\n  (generator "test")\n  (symbol "TestPart")\n)\n')
 
-        monkeypatch.setattr(importer, "fetch_full_component", lambda _: fake_comp)
+        monkeypatch.setattr(importer, "fetch_full_component", lambda _, **kw: fake_comp)
         monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *a, **k: fake_fp)
         monkeypatch.setattr(importer, "parse_symbol_shapes", lambda *a, **k: fake_sym)
         monkeypatch.setattr(importer, "write_footprint", lambda *a, **k: "(footprint TestPart)\n")
@@ -324,7 +324,7 @@ class TestImportComponent:
         fake_comp = self._make_fake_comp(with_symbol=False, with_3d=False)
         fake_fp = self._make_fake_footprint(with_model=True)
 
-        monkeypatch.setattr(importer, "fetch_full_component", lambda _: fake_comp)
+        monkeypatch.setattr(importer, "fetch_full_component", lambda _, **kw: fake_comp)
         monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *a, **k: fake_fp)
         monkeypatch.setattr(importer, "write_footprint", lambda *a, **k: "(footprint TestPart)\n")
         monkeypatch.setattr(importer, "download_step", lambda _: None)
@@ -348,7 +348,7 @@ class TestImportComponent:
         fake_comp = self._make_fake_comp(with_symbol=False, with_3d=False)
         fake_fp = self._make_fake_footprint()
 
-        monkeypatch.setattr(importer, "fetch_full_component", lambda _: fake_comp)
+        monkeypatch.setattr(importer, "fetch_full_component", lambda _, **kw: fake_comp)
         monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *a, **k: fake_fp)
         monkeypatch.setattr(importer, "write_footprint", lambda *a, **k: "(footprint TestPart)\n")
 
@@ -383,7 +383,7 @@ class TestImportComponent:
             captured_model_path.append(kwargs.get("model_path", ""))
             return "(footprint TestPart)\n"
 
-        monkeypatch.setattr(importer, "fetch_full_component", lambda _: fake_comp)
+        monkeypatch.setattr(importer, "fetch_full_component", lambda _, **kw: fake_comp)
         monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *a, **k: fake_fp)
         monkeypatch.setattr(importer, "write_footprint", capture_write_footprint)
         monkeypatch.setattr(importer, "download_step", lambda _: b"STEP")
@@ -461,7 +461,7 @@ class TestMultiUnitSymbolImport:
             write_calls.append(kwargs)
             return '    (symbol "DualMOSFET_0_1")\n'
 
-        monkeypatch.setattr(importer, "fetch_full_component", lambda _: fake_comp)
+        monkeypatch.setattr(importer, "fetch_full_component", lambda _, **kw: fake_comp)
         monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *a, **k: fake_fp)
         monkeypatch.setattr(importer, "parse_symbol_shapes", lambda *a, **k: fake_sym)
         monkeypatch.setattr(importer, "write_footprint", lambda *a, **k: "(footprint DualMOSFET)\n")
@@ -500,7 +500,7 @@ class TestMultiUnitSymbolImport:
 
         fake_fp = self._make_fake_footprint()
 
-        monkeypatch.setattr(importer, "fetch_full_component", lambda _: fake_comp)
+        monkeypatch.setattr(importer, "fetch_full_component", lambda _, **kw: fake_comp)
         monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *a, **k: fake_fp)
         monkeypatch.setattr(importer, "parse_symbol_shapes", capture_parse)
         monkeypatch.setattr(importer, "write_footprint", lambda *a, **k: "(footprint DualMOSFET)\n")
@@ -533,7 +533,7 @@ class TestMultiUnitSymbolImport:
             write_calls.append(kwargs)
             return '  (symbol "Test")\n'
 
-        monkeypatch.setattr(importer, "fetch_full_component", lambda _: fake_comp)
+        monkeypatch.setattr(importer, "fetch_full_component", lambda _, **kw: fake_comp)
         monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *a, **k: fake_fp)
         monkeypatch.setattr(importer, "parse_symbol_shapes", lambda *a, **k: fake_sym)
         monkeypatch.setattr(importer, "write_footprint", lambda *a, **k: "(footprint Test)\n")
@@ -710,7 +710,7 @@ class TestImportBackslashPaths:
             captured_model_path.append(kwargs.get("model_path", ""))
             return "(footprint TestPart)\n"
 
-        monkeypatch.setattr(importer, "fetch_full_component", lambda _: fake_comp)
+        monkeypatch.setattr(importer, "fetch_full_component", lambda _, **kw: fake_comp)
         monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *a, **k: fake_fp)
         monkeypatch.setattr(importer, "write_footprint", capture_write_footprint)
         monkeypatch.setattr(importer, "download_step", lambda _: b"STEP")
@@ -864,7 +864,7 @@ class TestSearchResultMerge:
             EEPin(number="1", name="VCC", x=0, y=0, rotation=0, length=2.54, electrical_type="power_in")
         )
 
-        monkeypatch.setattr(importer, "fetch_full_component", lambda _: fake_comp)
+        monkeypatch.setattr(importer, "fetch_full_component", lambda _, **kw: fake_comp)
         monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *a, **k: fake_fp)
         monkeypatch.setattr(importer, "parse_symbol_shapes", lambda *a, **k: fake_sym)
         monkeypatch.setattr(importer, "write_footprint", lambda *a, **k: "(footprint TestPart)\n")
@@ -901,7 +901,7 @@ class TestSearchResultMerge:
             EEPin(number="1", name="VCC", x=0, y=0, rotation=0, length=2.54, electrical_type="power_in")
         )
 
-        monkeypatch.setattr(importer, "fetch_full_component", lambda _: fake_comp)
+        monkeypatch.setattr(importer, "fetch_full_component", lambda _, **kw: fake_comp)
         monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *a, **k: fake_fp)
         monkeypatch.setattr(importer, "parse_symbol_shapes", lambda *a, **k: fake_sym)
         monkeypatch.setattr(importer, "write_footprint", lambda *a, **k: "(footprint TestPart)\n")
@@ -936,7 +936,7 @@ class TestSearchResultMerge:
             EEPin(number="1", name="VCC", x=0, y=0, rotation=0, length=2.54, electrical_type="power_in")
         )
 
-        monkeypatch.setattr(importer, "fetch_full_component", lambda _: fake_comp)
+        monkeypatch.setattr(importer, "fetch_full_component", lambda _, **kw: fake_comp)
         monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *a, **k: fake_fp)
         monkeypatch.setattr(importer, "parse_symbol_shapes", lambda *a, **k: fake_sym)
         monkeypatch.setattr(importer, "write_footprint", lambda *a, **k: "(footprint TestPart)\n")
@@ -986,7 +986,7 @@ class TestConfirmMetadata:
         return sym
 
     def _patch_importer(self, monkeypatch, fake_comp, fake_fp, fake_sym, capture_sym=None, capture_fp=None):
-        monkeypatch.setattr(importer, "fetch_full_component", lambda _: fake_comp)
+        monkeypatch.setattr(importer, "fetch_full_component", lambda _, **kw: fake_comp)
         monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *a, **k: fake_fp)
         monkeypatch.setattr(importer, "parse_symbol_shapes", lambda *a, **k: fake_sym)
         monkeypatch.setattr(
@@ -1152,7 +1152,7 @@ class TestConfirmOverwrite:
         return sym
 
     def _patch_importer(self, monkeypatch, fake_comp, fake_fp, fake_sym):
-        monkeypatch.setattr(importer, "fetch_full_component", lambda _: fake_comp)
+        monkeypatch.setattr(importer, "fetch_full_component", lambda _, **kw: fake_comp)
         monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *a, **k: fake_fp)
         monkeypatch.setattr(importer, "parse_symbol_shapes", lambda *a, **k: fake_sym)
         monkeypatch.setattr(importer, "write_footprint", lambda *a, **k: "(footprint TestPart)\n")
@@ -1286,7 +1286,7 @@ class TestReuseFootprint:
         symbol_kwargs = {}
         write_footprint_called = []
 
-        monkeypatch.setattr(importer, "fetch_full_component", lambda _: fake_comp)
+        monkeypatch.setattr(importer, "fetch_full_component", lambda _, **kw: fake_comp)
         monkeypatch.setattr(importer, "find_best_matching_footprint", lambda *a, **k: "Package_DIP:DIP-8_W7.62mm")
         monkeypatch.setattr(importer, "parse_symbol_shapes", lambda *a, **k: self._make_fake_symbol())
         monkeypatch.setattr(
@@ -1321,7 +1321,7 @@ class TestReuseFootprint:
             EEPad(shape="RECT", x=0, y=0, width=1, height=1, layer="1", number="1", drill=0, rotation=0)
         )
 
-        monkeypatch.setattr(importer, "fetch_full_component", lambda _: fake_comp)
+        monkeypatch.setattr(importer, "fetch_full_component", lambda _, **kw: fake_comp)
         monkeypatch.setattr(importer, "find_best_matching_footprint", lambda *a, **k: "Package_DIP:DIP-8_W7.62mm")
         monkeypatch.setattr(importer, "parse_symbol_shapes", lambda *a, **k: self._make_fake_symbol())
         monkeypatch.setattr(
@@ -1352,7 +1352,7 @@ class TestReuseFootprint:
         symbol_kwargs = {}
         write_footprint_called = []
 
-        monkeypatch.setattr(importer, "fetch_full_component", lambda _: fake_comp)
+        monkeypatch.setattr(importer, "fetch_full_component", lambda _, **kw: fake_comp)
         monkeypatch.setattr(importer, "find_best_matching_footprint", lambda *a, **k: "Diode_SMD:D_SOD-323")
         monkeypatch.setattr(importer, "parse_symbol_shapes", lambda *a, **k: self._make_fake_symbol())
         monkeypatch.setattr(
@@ -1397,7 +1397,7 @@ class TestReuseFootprint:
             EEPad(shape="RECT", x=0, y=0, width=1, height=1, layer="1", number="1", drill=0, rotation=0)
         )
 
-        monkeypatch.setattr(importer, "fetch_full_component", lambda _: fake_comp)
+        monkeypatch.setattr(importer, "fetch_full_component", lambda _, **kw: fake_comp)
         monkeypatch.setattr(importer, "parse_symbol_shapes", lambda *a, **k: self._make_fake_symbol())
         monkeypatch.setattr(
             importer, "write_symbol", lambda *a, **k: symbol_kwargs.update(k) or '  (symbol "TestPart")\n'

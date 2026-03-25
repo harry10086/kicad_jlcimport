@@ -602,8 +602,13 @@ def _strip_cjk_parens(text: str) -> str:
     return re.sub(r"\([^\x00-\x7F]+\)", "", text).strip()
 
 
-def fetch_full_component(lcsc_id: str) -> Dict[str, Any]:
+def fetch_full_component(lcsc_id: str, pre_fetched_uuids: Optional[List[Dict]] = None) -> Dict[str, Any]:
     """High-level: fetch all data needed for a component.
+
+    Args:
+        lcsc_id: LCSC part number.
+        pre_fetched_uuids: Optional pre-fetched result from fetch_component_uuids().
+            When provided, the initial UUID lookup is skipped (saves one HTTP call).
 
     Returns dict with keys:
         title, prefix, lcsc_id, datasheet,
@@ -613,7 +618,7 @@ def fetch_full_component(lcsc_id: str) -> Dict[str, Any]:
         description, manufacturer, manufacturer_part
     """
     lcsc_id = validate_lcsc_id(lcsc_id)
-    uuids = fetch_component_uuids(lcsc_id)
+    uuids = pre_fetched_uuids if pre_fetched_uuids is not None else fetch_component_uuids(lcsc_id)
 
     # Last UUID is footprint, others are symbol parts
     footprint_uuid = uuids[-1]["component_uuid"]
