@@ -392,7 +392,7 @@ def search_components_cn(keyword: str, page: int = 1, page_size: int = 50) -> di
             "pageSize": max_apipage,
             "keyword": keyword,
             "sortNumber": 0,
-            "spotFilter": 0,
+            "spotFilter": 1,
             "discountFilter": 1,
             "hasDataFile": False,
         }

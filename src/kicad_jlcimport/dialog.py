@@ -181,7 +181,7 @@ def _no_easyeda_placeholder(size: int) -> wx.Bitmap:
 
 
 class _PageIndicator(wx.Control):
-    """Owner-drawn two-dot page indicator for switching between photo and symbol views."""
+    """Owner-drawn dot page indicator for switching between photo, symbol, and footprint views."""
 
     DOT_RADIUS = 4
     DOT_GAP = 12
@@ -190,10 +190,10 @@ class _PageIndicator(wx.Control):
         super().__init__(
             parent,
             style=wx.BORDER_NONE,
-            size=(2 * self.DOT_GAP + 2 * self.DOT_RADIUS, 2 * self.DOT_RADIUS + 4),
+            size=(3 * self.DOT_GAP + 2 * self.DOT_RADIUS, 2 * self.DOT_RADIUS + 4),
         )
         self._page = 0
-        self._num_pages = 2
+        self._num_pages = 3
         self._on_page_change = on_page_change
         self.SetBackgroundStyle(wx.BG_STYLE_PAINT)
         self.Bind(wx.EVT_PAINT, self._on_paint)
@@ -1517,17 +1517,20 @@ class JLCImportDialog(wx.Dialog):
         self._image_request_id = 0
         self._gallery_request_id = 0
         self._gallery_svg_request_id = 0
-        self._gallery_page = 0  # 0=photo, 1=footprint in gallery view
+        self._gallery_page = 0  # 0=photo, 1=symbol, 2=footprint in gallery view
         self._gallery_photo_bitmap = None
-        self._gallery_svg_string = None
+        self._gallery_symbol_svg_string = None
+        self._gallery_footprint_svg_string = None
 
         self._ssl_warning_shown = False
         self._selected_result = None
         self._has_easyeda_data = True  # cleared when API returns no data
         self._photo_bitmap = None
         self._symbol_bitmap = None
-        self._symbol_svg_string = None  # raw SVG for re-rendering at gallery size
-        self._detail_page = 0  # 0=photo, 1=symbol
+        self._symbol_svg_string = None  # raw symbol SVG for re-rendering at gallery size
+        self._footprint_bitmap = None
+        self._footprint_svg_string = None  # raw footprint SVG for re-rendering at gallery size
+        self._detail_page = 0  # 0=photo, 1=symbol, 2=footprint
         self._symbol_request_id = 0
         self._init_ui()
         self.Centre()
@@ -2309,10 +2312,12 @@ class JLCImportDialog(wx.Dialog):
         self._selected_result = None
         self._stop_skeleton()
         self._image_request_id += 1  # cancel any in-flight image fetch
-        self._symbol_request_id += 1  # cancel any in-flight symbol fetch
+        self._symbol_request_id += 1  # cancel any in-flight symbol/footprint fetch
         self._photo_bitmap = None
         self._symbol_bitmap = None
         self._symbol_svg_string = None
+        self._footprint_bitmap = None
+        self._footprint_svg_string = None
         self._detail_page = 0
         self._page_indicator.set_page(0)
         self.detail_lcsc.SetValue("")
@@ -2344,6 +2349,8 @@ class JLCImportDialog(wx.Dialog):
         self._photo_bitmap = None
         self._symbol_bitmap = None
         self._symbol_svg_string = None
+        self._footprint_bitmap = None
+        self._footprint_svg_string = None
 
         # Populate detail fields
         self.detail_lcsc.SetValue(f"{r['lcsc']}  ({r['type']})")
@@ -2377,14 +2384,16 @@ class JLCImportDialog(wx.Dialog):
             if self._detail_page == 0:
                 self._show_no_image()
 
-        # Fetch symbol data in background
+        # Fetch symbol + footprint SVG data in background
         lcsc_id = r["lcsc"]
         self._symbol_request_id += 1
         sym_request_id = self._symbol_request_id
         if self._detail_page == 1:
+            self._show_no_symbol()
+        elif self._detail_page == 2:
             self._show_no_footprint()
         threading.Thread(
-            target=self._fetch_footprint_svg,
+            target=self._fetch_component_svgs,
             args=(lcsc_id, sym_request_id),
             daemon=True,
         ).start()
@@ -2521,7 +2530,8 @@ class JLCImportDialog(wx.Dialog):
 
         # Reset gallery caches
         self._gallery_photo_bitmap = None
-        self._gallery_svg_string = None
+        self._gallery_symbol_svg_string = None
+        self._gallery_footprint_svg_string = None
 
         # Show skeleton while loading
         self._show_gallery_skeleton()
@@ -2537,7 +2547,7 @@ class JLCImportDialog(wx.Dialog):
                 self._stop_gallery_skeleton()
                 self._show_gallery_no_image()
 
-        # Fetch footprint SVG
+        # Fetch symbol + footprint SVGs
         lcsc_id = r["lcsc"]
         self._gallery_svg_request_id += 1
         svg_request_id = self._gallery_svg_request_id
@@ -2627,11 +2637,11 @@ class JLCImportDialog(wx.Dialog):
 
     def _show_gallery_footprint(self):
         """Render and display footprint SVG at gallery size."""
-        if not self._gallery_svg_string:
+        if not self._gallery_footprint_svg_string:
             self._show_gallery_no_footprint()
             return
         size = self._get_gallery_image_size()
-        bmp = render_svg_bitmap(self._gallery_svg_string, size=size)
+        bmp = render_svg_bitmap(self._gallery_footprint_svg_string, size=size)
         if bmp:
             self._gallery_image.SetBitmap(bmp)
             self._gallery_panel.Layout()
@@ -2639,33 +2649,38 @@ class JLCImportDialog(wx.Dialog):
             self._show_gallery_no_footprint()
 
     def _fetch_gallery_svg(self, lcsc_id, request_id):
-        """Fetch footprint SVG in background for gallery view."""
+        """Fetch symbol + footprint SVGs in background for gallery view."""
         try:
             try:
                 uuids = fetch_component_uuids(lcsc_id)
             except SSLCertError:
                 self._handle_ssl_cert_error()
                 uuids = fetch_component_uuids(lcsc_id)
-            svg_string = uuids[-1].get("svg", "") if uuids else ""
-            if not self._closing and self._gallery_svg_request_id == request_id and svg_string:
-                wx.CallAfter(self._set_gallery_svg, svg_string, request_id)
+            footprint_svg = uuids[-1].get("svg", "") if uuids else ""
+            symbol_svg = uuids[0].get("svg", "") if uuids and len(uuids) > 1 else ""
+            if not self._closing and self._gallery_svg_request_id == request_id:
+                wx.CallAfter(self._set_gallery_svgs, symbol_svg, footprint_svg, request_id)
         except APIError:
             if not self._closing and self._gallery_svg_request_id == request_id:
                 wx.CallAfter(self._on_no_easyeda_data, self._symbol_request_id)
         except Exception:
-            pass  # Footprint preview is best-effort
+            pass  # Preview is best-effort
 
-    def _set_gallery_svg(self, svg_string, request_id):
-        """Set gallery footprint SVG on main thread."""
+    def _set_gallery_svgs(self, symbol_svg, footprint_svg, request_id):
+        """Set gallery symbol + footprint SVGs on main thread."""
         if self._gallery_svg_request_id != request_id:
             return
-        self._gallery_svg_string = svg_string
+        self._gallery_symbol_svg_string = symbol_svg
+        self._gallery_footprint_svg_string = footprint_svg
         if self._gallery_page == 1:
+            self._stop_gallery_skeleton()
+            self._show_gallery_symbol()
+        elif self._gallery_page == 2:
             self._stop_gallery_skeleton()
             self._show_gallery_footprint()
 
     def _on_gallery_page_change(self, page):
-        """Handle gallery page indicator click to switch photo/footprint."""
+        """Handle gallery page indicator click to switch photo/symbol/footprint."""
         self._gallery_page = page
         if page == 0:
             if self._gallery_photo_bitmap:
@@ -2673,11 +2688,35 @@ class JLCImportDialog(wx.Dialog):
                 self._gallery_panel.Layout()
             else:
                 self._show_gallery_no_image()
+        elif page == 1:
+            if self._gallery_symbol_svg_string:
+                self._show_gallery_symbol()
+            else:
+                self._show_gallery_no_symbol()
         else:
-            if self._gallery_svg_string:
+            if self._gallery_footprint_svg_string:
                 self._show_gallery_footprint()
             else:
                 self._show_gallery_no_footprint()
+
+    def _show_gallery_no_symbol(self):
+        """Show a symbol placeholder in gallery."""
+        size = self._get_gallery_image_size()
+        self._gallery_image.SetBitmap(_no_footprint_placeholder(size, not has_svg_support()))
+        self._gallery_panel.Layout()
+
+    def _show_gallery_symbol(self):
+        """Render and display symbol SVG at gallery size."""
+        if not self._gallery_symbol_svg_string:
+            self._show_gallery_no_symbol()
+            return
+        size = self._get_gallery_image_size()
+        bmp = render_svg_bitmap(self._gallery_symbol_svg_string, size=size)
+        if bmp:
+            self._gallery_image.SetBitmap(bmp)
+            self._gallery_panel.Layout()
+        else:
+            self._show_gallery_no_symbol()
 
     def _get_gallery_image_size(self):
         """Get the max square image size for the gallery."""
@@ -2823,8 +2862,8 @@ class JLCImportDialog(wx.Dialog):
                 self._show_no_image()
             self.Layout()
 
-    def _fetch_footprint_svg(self, lcsc_id, request_id):
-        """Background thread: fetch footprint SVG from the API."""
+    def _fetch_component_svgs(self, lcsc_id, request_id):
+        """Background thread: fetch symbol + footprint SVGs from the API."""
         try:
             try:
                 uuids = fetch_component_uuids(lcsc_id)
@@ -2832,26 +2871,37 @@ class JLCImportDialog(wx.Dialog):
                 self._handle_ssl_cert_error()
                 uuids = fetch_component_uuids(lcsc_id)
 
-            # Last entry is the footprint
-            svg_string = uuids[-1].get("svg", "") if uuids else ""
+            # Last entry is the footprint, earlier entries are symbol parts
+            footprint_svg = uuids[-1].get("svg", "") if uuids else ""
+            symbol_svg = uuids[0].get("svg", "") if uuids and len(uuids) > 1 else ""
 
-            if not self._closing and self._symbol_request_id == request_id and svg_string:
-                wx.CallAfter(self._set_footprint_svg, svg_string, request_id)
+            if not self._closing and self._symbol_request_id == request_id:
+                wx.CallAfter(self._set_component_svgs, symbol_svg, footprint_svg, request_id)
         except APIError:
             if not self._closing and self._symbol_request_id == request_id:
                 wx.CallAfter(self._on_no_easyeda_data, request_id)
         except Exception:
-            pass  # Footprint preview is best-effort
+            pass  # Preview is best-effort
 
-    def _set_footprint_svg(self, svg_string, request_id):
-        """Main thread: render the footprint SVG and cache it."""
+    def _set_component_svgs(self, symbol_svg, footprint_svg, request_id):
+        """Main thread: render and cache both symbol and footprint SVGs."""
         if self._symbol_request_id != request_id:
             return
-        self._symbol_svg_string = svg_string
-        self._symbol_bitmap = render_svg_bitmap(svg_string)
+        # Cache symbol SVG
+        self._symbol_svg_string = symbol_svg
+        self._symbol_bitmap = render_svg_bitmap(symbol_svg) if symbol_svg else None
+        # Cache footprint SVG
+        self._footprint_svg_string = footprint_svg
+        self._footprint_bitmap = render_svg_bitmap(footprint_svg) if footprint_svg else None
+        # Update display if currently viewing symbol or footprint page
         if self._detail_page == 1:
             if self._symbol_bitmap:
                 self.detail_image.SetBitmap(self._symbol_bitmap)
+            else:
+                self._show_no_symbol()
+        elif self._detail_page == 2:
+            if self._footprint_bitmap:
+                self.detail_image.SetBitmap(self._footprint_bitmap)
             else:
                 self._show_no_footprint()
 
@@ -2865,21 +2915,31 @@ class JLCImportDialog(wx.Dialog):
         bmp = _no_easyeda_placeholder(160)
         self._photo_bitmap = bmp
         self._symbol_bitmap = bmp
+        self._footprint_bitmap = bmp
         self.detail_image.SetBitmap(bmp)
 
     def _on_page_change(self, page):
-        """Handle page indicator click to switch between photo and symbol."""
+        """Handle page indicator click to switch between photo, symbol, and footprint."""
         self._detail_page = page
         if page == 0:
             if self._photo_bitmap:
                 self.detail_image.SetBitmap(self._photo_bitmap)
             else:
                 self._show_no_image()
-        else:
+        elif page == 1:
             if self._symbol_bitmap:
                 self.detail_image.SetBitmap(self._symbol_bitmap)
             else:
+                self._show_no_symbol()
+        else:
+            if self._footprint_bitmap:
+                self.detail_image.SetBitmap(self._footprint_bitmap)
+            else:
                 self._show_no_footprint()
+
+    def _show_no_symbol(self):
+        """Show a placeholder when symbol preview is unavailable."""
+        self.detail_image.SetBitmap(_no_footprint_placeholder(160, not has_svg_support()))
 
     def _show_no_footprint(self):
         """Show a placeholder when footprint preview is unavailable."""
