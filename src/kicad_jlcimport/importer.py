@@ -511,7 +511,12 @@ def _import_to_library(
         # Use WRL instead of STEP for consistency with offset calculations (which use OBJ/WRL geometry)
         if wrl_path:
             if use_global:
-                model_path = f"${{KICAD{kicad_version}_3RD_PARTY}}/{lib_name}.3dshapes/{model_name}.wrl"
+                from .kicad.library import load_config
+                custom_global = load_config().get("global_lib_dir", "")
+                if custom_global and os.path.normpath(lib_dir) == os.path.normpath(custom_global):
+                    model_path = os.path.join(lib_dir, f"{lib_name}.3dshapes", f"{model_name}.wrl").replace("\\", "/")
+                else:
+                    model_path = f"${{KICAD{kicad_version}_3RD_PARTY}}/{lib_name}.3dshapes/{model_name}.wrl"
             else:
                 model_path = f"${{KIPRJMOD}}/{lib_name}.3dshapes/{model_name}.wrl"
             if wrl_existed and not overwrite:
