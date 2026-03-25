@@ -1,12 +1,12 @@
 {
   "$schema": "https://go.kicad.org/pcm/schemas/v1",
   "name": "JLCImport",
-  "description": "KiCad 8/9/10 plugin to import components from JLCPCB/SZLCSC",
-  "description_full": "Action plugin for KiCad 8/9/10 that imports symbols, footprints, and 3D models directly from JLCPCB/SZLCSC into your project or global library.",
+  "description": "KiCad 8/9/10 plugin to import components from JLCPCB/立创商城(szlcsc.com)",
+  "description_full": "Action plugin for KiCad 8/9/10 that imports symbols, footprints, and 3D models directly from JLCPCB/立创商城(szlcsc.com) into your project or global library.",
   "identifier": "com.github.jvanderberg.kicad-jlcimport",
   "type": "plugin",
   "author": {
-    "name": "Josh Vanderberg (harry10086)",
+    "name": "Josh Vanderberg (original author), harry10086 (current maintainer)",
     "contact": {
       "web": "https://github.com/jvanderberg"
     }

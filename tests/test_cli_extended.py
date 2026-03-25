@@ -59,7 +59,7 @@ class TestCmdSearch:
                 },
             ],
         }
-        monkeypatch.setattr(cli, "search_components", lambda *a, **k: mock_results)
+        monkeypatch.setattr(cli, "search_components_cn", lambda *a, **k: mock_results)
 
         args = SimpleNamespace(
             keyword="resistor",
@@ -99,7 +99,7 @@ class TestCmdSearch:
                 },
             ],
         }
-        monkeypatch.setattr(cli, "search_components", lambda *a, **k: mock_results)
+        monkeypatch.setattr(cli, "search_components_cn", lambda *a, **k: mock_results)
 
         args = SimpleNamespace(
             keyword="resistor",
@@ -139,7 +139,7 @@ class TestCmdSearch:
                 },
             ],
         }
-        monkeypatch.setattr(cli, "search_components", lambda *a, **k: mock_results)
+        monkeypatch.setattr(cli, "search_components_cn", lambda *a, **k: mock_results)
 
         args = SimpleNamespace(
             keyword="resistor",
@@ -179,7 +179,7 @@ class TestCmdSearch:
                 },
             ],
         }
-        monkeypatch.setattr(cli, "search_components", lambda *a, **k: mock_results)
+        monkeypatch.setattr(cli, "search_components_cn", lambda *a, **k: mock_results)
 
         args = SimpleNamespace(
             keyword="resistor",
@@ -209,7 +209,7 @@ class TestCmdSearch:
                 },
             ],
         }
-        monkeypatch.setattr(cli, "search_components", lambda *a, **k: mock_results)
+        monkeypatch.setattr(cli, "search_components_cn", lambda *a, **k: mock_results)
 
         args = SimpleNamespace(
             keyword="resistor",
@@ -226,7 +226,7 @@ class TestCmdSearch:
 
     def test_search_no_results(self, monkeypatch, capsys):
         mock_results = {"total": 0, "results": []}
-        monkeypatch.setattr(cli, "search_components", lambda *a, **k: mock_results)
+        monkeypatch.setattr(cli, "search_components_cn", lambda *a, **k: mock_results)
 
         args = SimpleNamespace(
             keyword="nonexistent",
@@ -255,7 +255,7 @@ class TestCmdSearch:
                 },
             ],
         }
-        monkeypatch.setattr(cli, "search_components", lambda *a, **k: mock_results)
+        monkeypatch.setattr(cli, "search_components_cn", lambda *a, **k: mock_results)
 
         args = SimpleNamespace(
             keyword="resistor",
@@ -284,7 +284,7 @@ class TestCmdSearch:
                 },
             ],
         }
-        monkeypatch.setattr(cli, "search_components", lambda *a, **k: mock_results)
+        monkeypatch.setattr(cli, "search_components_cn", lambda *a, **k: mock_results)
 
         args = SimpleNamespace(
             keyword="resistor",
@@ -653,7 +653,7 @@ class TestMain:
     def test_main_search_command(self, monkeypatch, capsys):
         monkeypatch.setattr("kicad_jlcimport.kicad.library.save_config", lambda _: None)
         mock_results = {"total": 0, "results": []}
-        monkeypatch.setattr(cli, "search_components", lambda *a, **k: mock_results)
+        monkeypatch.setattr(cli, "search_components_cn", lambda *a, **k: mock_results)
         monkeypatch.setattr(sys, "argv", ["jlcimport", "search", "test"])
         cli.main()
         out = capsys.readouterr().out
