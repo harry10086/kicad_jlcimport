@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import os
-from typing import Callable
+from concurrent.futures import ThreadPoolExecutor
+from typing import Callable, Dict, List, Optional
 
 from .easyeda.api import download_step, download_wrl_source, fetch_full_component
 from .easyeda.parser import parse_footprint_shapes, parse_symbol_shapes
@@ -98,6 +99,7 @@ def import_component(
     component_data: dict | None = None,
     symbol_kwargs: dict | None = None,
     confirm_reuse_footprint: Callable[[str, str], bool] | None = None,
+    pre_fetched_uuids: list | None = None,
 ) -> dict | None:
     """Import an LCSC component into a KiCad library or export raw files.
 
@@ -139,7 +141,7 @@ def import_component(
         comp = component_data
     else:
         log(f"Fetching component {lcsc_id}...")
-        comp = fetch_full_component(lcsc_id)
+        comp = fetch_full_component(lcsc_id, pre_fetched_uuids=pre_fetched_uuids)
 
     # Merge richer metadata from search result when available
     if search_result:
@@ -246,6 +248,7 @@ def import_component(
         if not uuid_3d:
             uuid_3d = comp.get("uuid_3d", "")
         if uuid_3d:
+            log("Downloading 3D model data...")
             wrl_source = download_wrl_source(uuid_3d)
         if footprint.model:
             model_offset, model_rotation = compute_model_transform(
@@ -425,9 +428,13 @@ def _export_only(
 
     if uuid_3d:
         models_dir = os.path.join(out_dir, "3dmodels")
-        step_data = download_step(uuid_3d)
-        if wrl_source is None:
-            wrl_source = download_wrl_source(uuid_3d)
+        # Download STEP and WRL in parallel
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            step_future = pool.submit(download_step, uuid_3d)
+            wrl_future = pool.submit(download_wrl_source, uuid_3d) if wrl_source is None else None
+            step_data = step_future.result()
+            if wrl_future is not None:
+                wrl_source = wrl_future.result()
         step_path, wrl_path = save_models(models_dir, model_name, step_data, wrl_source)
         if step_path:
             log(f"  Saved: {step_path}")
@@ -486,9 +493,19 @@ def _import_to_library(
         wrl_existed = os.path.exists(wrl_dest)
 
         log("Downloading 3D model...")
-        step_data = download_step(uuid_3d) if overwrite or not step_existed else None
-        if wrl_source is None and (overwrite or not wrl_existed):
-            wrl_source = download_wrl_source(uuid_3d)
+        need_step = overwrite or not step_existed
+        need_wrl = wrl_source is None and (overwrite or not wrl_existed)
+        # Download STEP and WRL in parallel when both are needed
+        if need_step and need_wrl:
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                step_future = pool.submit(download_step, uuid_3d)
+                wrl_future = pool.submit(download_wrl_source, uuid_3d)
+                step_data = step_future.result()
+                wrl_source = wrl_future.result()
+        else:
+            step_data = download_step(uuid_3d) if need_step else None
+            if need_wrl:
+                wrl_source = download_wrl_source(uuid_3d)
         step_path, wrl_path = save_models(paths["models_dir"], model_name, step_data, wrl_source)
 
         # Use WRL instead of STEP for consistency with offset calculations (which use OBJ/WRL geometry)

@@ -1532,6 +1532,7 @@ class JLCImportDialog(wx.Dialog):
         self._footprint_svg_string = None  # raw footprint SVG for re-rendering at gallery size
         self._detail_page = 0  # 0=photo, 1=symbol, 2=footprint
         self._symbol_request_id = 0
+        self._cached_uuids = None  # cached from SVG preview for reuse during import
         self._init_ui()
         self.Centre()
         self.Bind(wx.EVT_CLOSE, self._on_close)
@@ -2318,6 +2319,7 @@ class JLCImportDialog(wx.Dialog):
         self._symbol_svg_string = None
         self._footprint_bitmap = None
         self._footprint_svg_string = None
+        self._cached_uuids = None
         self._detail_page = 0
         self._page_indicator.set_page(0)
         self.detail_lcsc.SetValue("")
@@ -2875,7 +2877,9 @@ class JLCImportDialog(wx.Dialog):
             footprint_svg = uuids[-1].get("svg", "") if uuids else ""
             symbol_svg = uuids[0].get("svg", "") if uuids and len(uuids) > 1 else ""
 
+            # Cache UUIDs for reuse during import (saves one API call)
             if not self._closing and self._symbol_request_id == request_id:
+                self._cached_uuids = uuids
                 wx.CallAfter(self._set_component_svgs, symbol_svg, footprint_svg, request_id)
         except APIError:
             if not self._closing and self._symbol_request_id == request_id:
@@ -3112,4 +3116,5 @@ class JLCImportDialog(wx.Dialog):
             search_result=search_result,
             confirm_metadata=confirm_metadata,
             confirm_overwrite=confirm_overwrite,
+            pre_fetched_uuids=self._cached_uuids,
         )
