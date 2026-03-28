@@ -60,7 +60,7 @@ source install.sh      # macOS/Linux
 ```
 
 ## Recent Updates
-
+![Search and details](images/search.png)
 Based on recent git history:
 - `v1.5.1`：基线更新到了1.5.0，并修复了搜索结果和网站数量不一致的问题。
                  增加了符号图和封装图的预览，3D 预览不好做，暂时不做。
