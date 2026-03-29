@@ -1,13 +1,13 @@
 # JLCImport
 
-JLCImport is a KiCad action plugin that imports symbols, footprints, and 3D models from SZLCSC/JLCPCB into your project or global library.
+JLCImport is a KiCad action plugin that imports symbols, footprints, and 3D models from 立创商城(szlcsc.com)/JLCPCB into your project or global library.
 
 ## Features
 
 - Imports symbol, footprint, and 3D model data in one step.
 - Works with project libraries or global KiCad libraries.
 - Includes searchable part lookup with stock and type filtering.
-- Handles modern KiCad formats (8/9, with conversion support for 10 paths).
+- Handles modern KiCad formats (8/9/10).
 - Ships with plugin, CLI, GUI, and TUI workflows.
 
 ![Search and details](images/search_results.png)
@@ -60,12 +60,15 @@ source install.sh      # macOS/Linux
 ```
 
 ## Recent Updates
-
+![Search and details](images/search.png)
 Based on recent git history:
-- `v1.4.1`：把 LCSC 改成了国内 szlcsc.com，速度更快。但每次加载数量减少到100,因为国内网站有限制。
+- `v1.5.1`：基线更新到了1.5.0，并修复了搜索结果和网站数量不一致的问题。
+                 增加了符号图和封装图的预览，3D 预览不好做，暂时不做。
+- `v1.5.0`：[https://github.com/jvanderberg/kicad_jlcimport/pull/86](https://github.com/jvanderberg/kicad_jlcimport/pull/86)
+- `v1.4.1`：把 LCSC 改成了国内 szlcsc.com，速度更快。但每次加载数量减少到100。
             修改了加载图标。
             修改了预览图片的关闭按钮。
-            价格都改成了人民币¥，库存也都是国内库存。
+            价格都改成了人民币 ¥，库存也都是国内库存。
 - `v1.4.0`: KiCad footprint browser with live preview, footprint/3D model renaming, KiCad library footprint reuse, SpinnerOverlay deadlock fix, multi-unit symbol crash fix, and pinned ruff version.
 - `v1.2.10`: fixed Python 3.9 annotation evaluation in library handling.
 - `v1.2.9`: made the plugin dialog non-modal and added multi-unit symbol support.
@@ -78,7 +81,7 @@ The plugin stores settings in `jlcimport.json` in your KiCad config directory. R
 
 ## Compatibility
 
-The project targets KiCad 8 and 9, and includes format support for KiCad 10 in the conversion code paths.
+The project targets KiCad 8, 9, and 10.
 
 For the plugin inside KiCad, no extra Python packages are required.
 
