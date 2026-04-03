@@ -3,6 +3,7 @@
 import gzip
 import json
 import logging
+import math
 import os
 import re
 import socket
@@ -351,6 +352,124 @@ def search_components(
     return {"total": total, "results": results}
 
 
+SZLCSC_SEARCH_API = "https://so.szlcsc.com/query/product"
+SZLCSC_ATTA_BASE = "https://atta.szlcsc.com"
+
+_SMT_LABEL_MAP = {
+    "SMT基础库": "Basic",
+    "SMT扩展库": "Extended",
+}
+
+
+def _extract_cn_datasheet(pv: dict) -> str:
+    """Extract datasheet PDF URL from SZLCSC fileTypeVOList."""
+    for ft in pv.get("fileTypeVOList") or []:
+        if ft.get("fileType") == "pdf_property":
+            details = ft.get("detailVOList") or []
+            if details:
+                rel = details[0].get("fileUrl", "")
+                if rel and rel.startswith("/"):
+                    return f"{SZLCSC_ATTA_BASE}{rel}"
+    return ""
+
+
+def search_components_cn(keyword: str, page: int = 1, page_size: int = 50) -> Dict[str, Any]:
+    """Search the domestic Chinese SZLCSC (立创商城) parts library.
+
+    Uses the same return format as :func:`search_components` so callers can
+    swap between international and Chinese endpoints transparently.
+
+    Args:
+        keyword: Search term.
+        page: Logical page number (1-based).
+        page_size: Desired number of results.
+
+    Returns dict with 'total' and 'results' list (same schema as
+    :func:`search_components`).
+    """
+    # CN API returns max 30 items per request; cap total to avoid excessive
+    # sequential calls (e.g. page_size=500 would need 17 round-trips).
+    page_size = min(page_size, 100)
+    max_apipage = 30
+    pages_needed = math.ceil(page_size / max_apipage)
+    start_page = (page - 1) * pages_needed + 1
+
+    all_items: list = []
+    total = 0
+
+    for i in range(pages_needed):
+        current_p = start_page + i
+        req_data = {
+            "currentPage": current_p,
+            "pageSize": max_apipage,
+            "keyword": keyword,
+            "sortNumber": 0,
+            "spotFilter": 1,
+            "discountFilter": 1,
+            "hasDataFile": False,
+        }
+        data = json.dumps(req_data).encode()
+        req = urllib.request.Request(
+            SZLCSC_SEARCH_API,
+            data=data,
+            headers={
+                **_HEADERS,
+                "Content-Type": "application/json",
+                "Origin": "https://so.szlcsc.com",
+                "Referer": "https://so.szlcsc.com/global.html",
+            },
+        )
+        try:
+            with _urlopen(req, timeout=15) as resp:
+                raw_bytes = resp.read()
+                if raw_bytes[:2] == b"\x1f\x8b":
+                    raw_bytes = gzip.decompress(raw_bytes)
+                raw = json.loads(raw_bytes.decode("utf-8"))
+        except (urllib.error.HTTPError, urllib.error.URLError) as e:
+            raise APIError(f"Search failed: {e}") from e
+
+        search_result = raw.get("result", {}).get("searchResult", {})
+        total = search_result.get("totalCount", 0)
+        items = search_result.get("productRecordList") or []
+
+        all_items.extend(items)
+        if len(items) < max_apipage:
+            break  # no more pages
+
+    results = []
+    for item in all_items[:page_size]:
+        pv = item.get("productVO", {})
+        # Price: first entry from productPriceList
+        price_list = pv.get("productPriceList") or []
+        unit_price = price_list[0].get("productPrice") if price_list else None
+
+        # Map Chinese SMT labels to Basic/Extended
+        smt_label = pv.get("smtLabel", "")
+        part_type = _SMT_LABEL_MAP.get(smt_label, "Extended")
+
+        product_id = pv.get("productId", "")
+        results.append(
+            {
+                "lcsc": pv.get("productCode", ""),
+                "name": pv.get("productName", ""),
+                "model": pv.get("productModel", ""),
+                "brand": pv.get("productGradePlateName", ""),
+                "package": pv.get("encapsulationModel", ""),
+                "category": pv.get("productType", ""),
+                "stock": pv.get("stockNumber", 0),
+                "type": part_type,
+                "price": unit_price,
+                "currency": "¥",
+                "description": pv.get("productName", ""),
+                "url": f"https://item.szlcsc.com/{product_id}.html" if product_id else "",
+                "datasheet": _extract_cn_datasheet(pv),
+                "image_url": pv.get("bigImageUrl", ""),
+            }
+        )
+
+    return {"total": total, "results": results}
+
+
 def filter_by_min_stock(results: list, min_stock: int) -> list:
     """Filter search results by minimum stock count.
 
@@ -379,11 +498,27 @@ def filter_by_type(results: list, part_type: str) -> list:
     return [r for r in results if r.get("type") == part_type]
 
 
-_ALLOWED_IMAGE_HOSTS = ("jlcpcb.com", "www.jlcpcb.com", "lcsc.com", "www.lcsc.com")
+_ALLOWED_IMAGE_HOSTS = (
+    "jlcpcb.com",
+    "www.jlcpcb.com",
+    "lcsc.com",
+    "www.lcsc.com",
+)
+
+_ALLOWED_DIRECT_IMAGE_HOSTS = ("alimg.szlcsc.com",)
 
 
-def fetch_product_image(lcsc_url: str) -> Optional[bytes]:
-    """Fetch product image from LCSC/JLCPCB product page. Returns JPEG bytes or None."""
+def fetch_product_image(lcsc_url: str, direct_image_url: str = "") -> Optional[bytes]:
+    """Fetch product image. Returns image bytes or None.
+
+    If *direct_image_url* is provided (e.g. from the CN search API's
+    ``bigImageUrl``), it is fetched directly — no HTML scraping needed.
+    Otherwise, *lcsc_url* is loaded as an HTML page and scraped for an
+    ``assets.lcsc.com`` image URL (the international path).
+    """
+    if direct_image_url:
+        return _fetch_direct_image(direct_image_url)
+
     if not lcsc_url:
         return None
     # SSRF protection: only allow fetching from known LCSC/JLCPCB domains
@@ -412,7 +547,7 @@ def fetch_product_image(lcsc_url: str) -> Optional[bytes]:
     except (urllib.error.HTTPError, urllib.error.URLError, OSError):
         return None
 
-    # Find product image URL
+    # Find product image URL on international LCSC CDN
     match = re.search(r'https://assets\.lcsc\.com/images/lcsc/900x900/[^\s"<>]+', html)
     if not match:
         return None
@@ -431,6 +566,34 @@ def fetch_product_image(lcsc_url: str) -> Optional[bytes]:
     )
     try:
         with _urlopen(req2, timeout=10) as resp:
+            return resp.read()
+    except (urllib.error.HTTPError, urllib.error.URLError, OSError):
+        return None
+
+
+def _fetch_direct_image(image_url: str) -> Optional[bytes]:
+    """Fetch an image directly from a CDN URL (e.g. alimg.szlcsc.com)."""
+    try:
+        from urllib.parse import urlparse
+
+        parsed = urlparse(image_url)
+        if parsed.hostname not in _ALLOWED_DIRECT_IMAGE_HOSTS:
+            return None
+        if parsed.scheme not in ("http", "https"):
+            return None
+    except Exception:
+        return None
+
+    req = urllib.request.Request(
+        image_url,
+        headers={
+            "User-Agent": _UA,
+            "Accept": "image/jpeg,image/png,image/*;q=0.8,*/*;q=0.5",
+            "Accept-Language": "en-US,en;q=0.9",
+        },
+    )
+    try:
+        with _urlopen(req, timeout=10) as resp:
             return resp.read()
     except (urllib.error.HTTPError, urllib.error.URLError, OSError):
         return None

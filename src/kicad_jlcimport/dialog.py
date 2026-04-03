@@ -22,6 +22,7 @@ from .easyeda.api import (
     filter_by_min_stock,
     filter_by_type,
     search_components,
+    search_components_cn,
 )
 from .gui.symbol_renderer import has_svg_support, render_svg_bitmap
 from .importer import import_component
@@ -1565,13 +1566,23 @@ class JLCImportDialog(wx.Dialog):
         # Search input row
         hbox_search = wx.BoxSizer(wx.HORIZONTAL)
         self.search_input = wx.TextCtrl(panel, style=wx.TE_PROCESS_ENTER)
-        self.search_input.SetHint("Search JLCPCB parts...")
+        _init_region = load_config().get("region", "global")
+        self.search_input.SetHint("Search SZLCSC parts..." if _init_region == "cn" else "Search JLCPCB parts...")
         self.search_input.Bind(wx.EVT_TEXT_ENTER, self._on_search)
         self.search_input.Bind(wx.EVT_TEXT, self._on_search_text_changed)
         hbox_search.Add(self.search_input, 1, wx.EXPAND | wx.RIGHT, 5)
         self.search_btn = wx.Button(panel, label="Search")
         self.search_btn.Bind(wx.EVT_BUTTON, self._on_search)
-        hbox_search.Add(self.search_btn, 0)
+        hbox_search.Add(self.search_btn, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 10)
+        self._region_choices = ["Global (JLCPCB)", "China (SZLCSC)"]
+        self._region_values = ["global", "cn"]
+        self.region_choice = wx.Choice(panel, choices=self._region_choices)
+        saved_region = load_config().get("region", "global")
+        sel = self._region_values.index(saved_region) if saved_region in self._region_values else 0
+        self.region_choice.SetSelection(sel)
+        self.region_choice.Bind(wx.EVT_CHOICE, self._on_region_change)
+        hbox_search.Add(wx.StaticText(panel, label="Region"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 4)
+        hbox_search.Add(self.region_choice, 0, wx.ALIGN_CENTER_VERTICAL)
         search_box.Add(hbox_search, 0, wx.EXPAND | wx.ALL, 5)
 
         # Filter row
@@ -1599,7 +1610,7 @@ class JLCImportDialog(wx.Dialog):
         self.package_choice.SetSelection(0)
         self.package_choice.Bind(wx.EVT_CHOICE, self._on_filter_change)
         hbox_filter.Add(self.package_choice, 0, wx.ALIGN_CENTER_VERTICAL)
-        search_box.Add(hbox_filter, 0, wx.LEFT | wx.RIGHT, 5)
+        search_box.Add(hbox_filter, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 5)
 
         vbox.Add(search_box, 0, wx.EXPAND | wx.ALL, 5)
 
@@ -2009,11 +2020,12 @@ class JLCImportDialog(wx.Dialog):
 
         self._search_request_id += 1
         request_id = self._search_request_id
+        search_fn = self._get_search_fn()
         self._start_search_pulse()
         self._search_overlay.show()
         threading.Thread(
             target=self._fetch_search_results,
-            args=(keyword, request_id),
+            args=(keyword, request_id, search_fn),
             daemon=True,
         ).start()
 
@@ -2038,14 +2050,19 @@ class JLCImportDialog(wx.Dialog):
         self.search_btn.SetLabel("Search")
         self.search_btn.Enable()
 
-    def _fetch_search_results(self, keyword, request_id):
+    def _get_search_fn(self):
+        """Return the search function for the currently selected region."""
+        idx = self.region_choice.GetSelection()
+        return search_components_cn if self._region_values[idx] == "cn" else search_components
+
+    def _fetch_search_results(self, keyword, request_id, search_fn):
         """Background thread: fetch search results from API."""
         try:
             try:
-                result = search_components(keyword, page_size=500)
+                result = search_fn(keyword, page_size=500)
             except SSLCertError:
                 self._handle_ssl_cert_error()
-                result = search_components(keyword, page_size=500)
+                result = search_fn(keyword, page_size=500)
             if not self._closing:
                 wx.CallAfter(self._on_search_complete, result, request_id)
         except APIError as e:
@@ -2192,6 +2209,16 @@ class JLCImportDialog(wx.Dialog):
     _on_min_stock_change = _on_filter_change
     _on_type_change = _on_filter_change
 
+    def _on_region_change(self, event):
+        """Persist region choice when user changes it."""
+        idx = self.region_choice.GetSelection()
+        region = self._region_values[idx]
+        cfg = load_config()
+        cfg["region"] = region
+        save_config(cfg)
+        hint = "Search SZLCSC parts..." if region == "cn" else "Search JLCPCB parts..."
+        self.search_input.SetHint(hint)
+
     def _on_dest_change(self, event):
         """Persist destination choice and refresh checkmarks."""
         self._persist_destination()
@@ -2211,7 +2238,7 @@ class JLCImportDialog(wx.Dialog):
             prefix = "\u2713 " if lcsc in self._imported_ids else ""
             self.results_list.InsertItem(i, prefix + lcsc)
             self.results_list.SetItem(i, 1, r["type"])
-            price_str = f"${r['price']:.4f}" if r["price"] else "N/A"
+            price_str = f"{r.get('currency', '$')}{r['price']:.4f}" if r["price"] else "N/A"
             self.results_list.SetItem(i, 2, price_str)
             stock_str = f"{r['stock']:,}" if r["stock"] else "N/A"
             self.results_list.SetItem(i, 3, stock_str)
@@ -2284,7 +2311,7 @@ class JLCImportDialog(wx.Dialog):
         self.detail_part.SetValue(r["model"])
         self.detail_brand.SetValue(r["brand"])
         self.detail_package.SetValue(r["package"])
-        price_str = f"${r['price']:.4f}" if r["price"] else "N/A"
+        price_str = f"{r.get('currency', '$')}{r['price']:.4f}" if r["price"] else "N/A"
         self.detail_price.SetValue(price_str)
         stock_str = f"{r['stock']:,}" if r["stock"] else "N/A"
         self.detail_stock.SetValue(stock_str)
@@ -2295,17 +2322,19 @@ class JLCImportDialog(wx.Dialog):
 
         self._lcsc_page_url = r.get("url", "")
         self.detail_lcsc_btn.Enable(bool(self._lcsc_page_url))
+        self.detail_lcsc_btn.SetLabel("SZLCSC Page" if "szlcsc.com" in self._lcsc_page_url else "LCSC Page")
 
         self.detail_import_btn.Enable()
 
         # Fetch image in background
         lcsc_url = r.get("url", "")
+        image_url = r.get("image_url", "")
         self._image_request_id += 1
         request_id = self._image_request_id
-        if lcsc_url:
+        if lcsc_url or image_url:
             if self._detail_page == 0:
                 self._show_skeleton()
-            threading.Thread(target=self._fetch_image, args=(lcsc_url, request_id), daemon=True).start()
+            threading.Thread(target=self._fetch_image, args=(lcsc_url, image_url, request_id), daemon=True).start()
         else:
             self._stop_skeleton()
             if self._detail_page == 0:
@@ -2440,7 +2469,7 @@ class JLCImportDialog(wx.Dialog):
         r = self._search_results[idx]
 
         # Update info
-        price_str = f"${r['price']:.4f}" if r["price"] else "N/A"
+        price_str = f"{r.get('currency', '$')}{r['price']:.4f}" if r["price"] else "N/A"
         stock_str = f"{r['stock']:,}" if r["stock"] else "N/A"
         info = (
             f"{r['lcsc']}  |  {r['model']}  |  {r['brand']}  |  {r['package']}  |  {price_str}  |  Stock: {stock_str}"
@@ -2462,10 +2491,13 @@ class JLCImportDialog(wx.Dialog):
 
         # Fetch photo image
         lcsc_url = r.get("url", "")
+        image_url = r.get("image_url", "")
         self._gallery_request_id += 1
         request_id = self._gallery_request_id
-        if lcsc_url:
-            threading.Thread(target=self._fetch_gallery_image, args=(lcsc_url, request_id), daemon=True).start()
+        if lcsc_url or image_url:
+            threading.Thread(
+                target=self._fetch_gallery_image, args=(lcsc_url, image_url, request_id), daemon=True
+            ).start()
         else:
             if self._gallery_page == 0:
                 self._stop_gallery_skeleton()
@@ -2618,14 +2650,14 @@ class JLCImportDialog(wx.Dialog):
         w, h = self.GetClientSize()
         return max(min(w - 100, h - 120), 100)
 
-    def _fetch_gallery_image(self, lcsc_url, request_id):
+    def _fetch_gallery_image(self, lcsc_url, image_url, request_id):
         """Fetch full-size image for gallery."""
         try:
             try:
-                img_data = fetch_product_image(lcsc_url)
+                img_data = fetch_product_image(lcsc_url, direct_image_url=image_url)
             except SSLCertError:
                 self._handle_ssl_cert_error()
-                img_data = fetch_product_image(lcsc_url)
+                img_data = fetch_product_image(lcsc_url, direct_image_url=image_url)
         except Exception:
             img_data = None
         if not self._closing and self._gallery_request_id == request_id:
@@ -2706,14 +2738,14 @@ class JLCImportDialog(wx.Dialog):
         if self._lcsc_page_url:
             webbrowser.open(self._lcsc_page_url)
 
-    def _fetch_image(self, lcsc_url, request_id):
+    def _fetch_image(self, lcsc_url, image_url, request_id):
         """Fetch product image in background thread."""
         try:
             try:
-                img_data = fetch_product_image(lcsc_url)
+                img_data = fetch_product_image(lcsc_url, direct_image_url=image_url)
             except SSLCertError:
                 self._handle_ssl_cert_error()
-                img_data = fetch_product_image(lcsc_url)
+                img_data = fetch_product_image(lcsc_url, direct_image_url=image_url)
         except Exception:
             img_data = None
         if not self._closing and self._image_request_id == request_id:
