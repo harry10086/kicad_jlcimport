@@ -137,6 +137,23 @@ class TestParseFootprintShapes:
         assert abs(pad.polygon_points[0] - mil_to_mm(-10)) < 1e-6
         assert abs(pad.polygon_points[1] - mil_to_mm(-10)) < 1e-6
 
+    def test_parse_polygon_pad_svg_path_with_arcs(self):
+        """POLYGON pad with SVG path containing arcs should be parsed correctly."""
+        # Rounded rectangle centered at (400, 300) with arc corners
+        svg = (
+            "M 390 290 L 410 290 A 5 5 0 0 1 415 295 "
+            "L 415 305 A 5 5 0 0 1 410 310 "
+            "L 390 310 A 5 5 0 0 1 385 305 "
+            "L 385 295 A 5 5 0 0 1 390 290 Z"
+        )
+        shape = f"PAD~POLYGON~400~300~30~20~1~~1~0~{svg}~0~id4"
+        fp = parse_footprint_shapes([shape], 400, 300)
+        assert len(fp.pads) == 1
+        pad = fp.pads[0]
+        assert pad.shape == "POLYGON"
+        # Arc parser generates many points (4 arcs × 8+ segments each + line endpoints)
+        assert len(pad.polygon_points) > 16
+
     def test_parse_polygon_pad_empty_coords(self):
         """POLYGON pad with empty polygon string gets empty polygon_points."""
         shape = "PAD~POLYGON~400~300~20~20~1~~1~0~~0~id3"
@@ -681,6 +698,25 @@ class TestParseSolidRegionArcDetection:
         # Should have arc-generated points (many more than 3)
         assert len(region.points) > 8
 
+    def test_npth_region_with_arcs(self):
+        """NPTH region with rounded corners (arc commands) should preserve arcs."""
+        # Rounded rectangle: straight edges with arc corners
+        path = (
+            "M 100 90 L 190 90 A 10 10 0 0 1 200 100 "
+            "L 200 190 A 10 10 0 0 1 190 200 "
+            "L 110 200 A 10 10 0 0 1 100 190 "
+            "L 100 100 A 10 10 0 0 1 110 90 Z"
+        )
+        shape = f"SOLIDREGION~99~~{path}~npth~gge1~~~~0"
+        parts = shape.split("~")
+        region = _parse_solid_region(parts)
+        assert region is not None
+        assert region.layer == "Edge.Cuts"
+        assert region.region_type == "npth"
+        # Arc parser generates many points for each corner arc;
+        # without arc support we'd only get 8 points (M + L endpoints)
+        assert len(region.points) > 16
+
 
 class TestC17451410PinRotations:
     """Test pin rotations for C17451410 (IS01EBFRGB) - has pins in all 4 directions."""
@@ -787,3 +823,19 @@ class TestParseSymPath:
         shape = "PT"
         result = _parse_sym_path(shape, 0, 0)
         assert result is None
+
+    def test_path_with_arcs(self):
+        """Symbol path with arc commands should produce many interpolated points."""
+        # Rounded triangle with arc corners, origin at (100, 200)
+        svg = (
+            "M 100 190 L 110 190 A 5 5 0 0 1 115 195 "
+            "L 115 205 A 5 5 0 0 1 110 210 "
+            "L 100 210 A 5 5 0 0 1 95 205 "
+            "L 95 195 A 5 5 0 0 1 100 190 Z"
+        )
+        shape = f"PT~{svg}~#880000~1~0~#880000~gge1~0~"
+        result = _parse_sym_path(shape, 100, 200)
+        assert result is not None
+        assert result.closed is True
+        # Arc parser generates many points; without arc support we'd get ≤8
+        assert len(result.points) > 16

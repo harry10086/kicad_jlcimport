@@ -235,14 +235,22 @@ def _parse_pad(parts: List[str]) -> EEPad:
 
     poly_points: List[float] = []
     if polygon_str and shape == "POLYGON":
-        try:
-            coords = [float(c) for c in polygon_str.strip().split(" ") if c]
-        except ValueError:
-            return None  # Reject pad with invalid polygon coordinates
-        # Store as pad-center-relative coordinates in mm (pairs of x, y)
-        for i in range(0, len(coords) - 1, 2):
-            poly_points.append(mil_to_mm(coords[i] - x))
-            poly_points.append(mil_to_mm(coords[i + 1] - y))
+        # polygon_str may be space-separated coords OR an SVG path (M/L/A commands)
+        if polygon_str.lstrip().startswith("M"):
+            # SVG path — use arc-aware parser for rounded corners / fillets
+            abs_points = _parse_svg_path_with_arcs(polygon_str)
+            for px, py in abs_points:
+                poly_points.append(px - mil_to_mm(x))
+                poly_points.append(py - mil_to_mm(y))
+        else:
+            try:
+                coords = [float(c) for c in polygon_str.strip().split(" ") if c]
+            except ValueError:
+                return None  # Reject pad with invalid polygon coordinates
+            # Store as pad-center-relative coordinates in mm (pairs of x, y)
+            for i in range(0, len(coords) - 1, 2):
+                poly_points.append(mil_to_mm(coords[i] - x))
+                poly_points.append(mil_to_mm(coords[i + 1] - y))
 
     return EEPad(
         shape=shape,
@@ -381,10 +389,17 @@ def _parse_solid_region(parts: List[str]) -> EESolidRegion:
     if not svg_path:
         return None
 
-    # Handle npth (edge cuts) and silkscreen solid regions
+    # Helper: detect SVG arc commands in a path string
+    has_arcs = re.search(r"[0-9]A\s*[\d.]", svg_path) or " A " in svg_path
+
+    # npth always means a board cutout (non-plated through-hole), regardless of
+    # which EasyEDA layer it was drawn on.
     if region_type == "npth":
-        # Parse M x y L x y L x y ... Z
-        points = _parse_svg_polygon(svg_path)
+        # Use arc-aware parser when path contains arc commands (rounded corners)
+        if has_arcs:
+            points = _parse_svg_path_with_arcs(svg_path)
+        else:
+            points = _parse_svg_polygon(svg_path)
         if not points:
             return None
         return EESolidRegion(layer="Edge.Cuts", points=points, region_type=region_type)
@@ -393,8 +408,7 @@ def _parse_solid_region(parts: List[str]) -> EESolidRegion:
     if layer in _SOLID_REGION_LAYERS and region_type == "solid":
         kicad_layer = LAYER_MAP.get(layer, "F.SilkS")
         # Check if path contains arc commands - if so, use arc parser
-        # Regex catches spaceless arcs like "3008.5A8.5" as well as " A "
-        if re.search(r"[0-9]A\s*[\d.]", svg_path) or " A " in svg_path:
+        if has_arcs:
             points = _parse_svg_path_with_arcs(svg_path)
             if points:
                 return EESolidRegion(layer=kicad_layer, points=points, region_type=region_type)
@@ -470,145 +484,148 @@ def _parse_svg_path_with_arcs(svg_path: str) -> List[Tuple[float, float]]:
         args = re.split(r"[,\s]+", token[1:].strip())
         args = [a for a in args if a]  # drop empty strings
 
-        if cmd == "M":
-            if len(args) < 2:
-                continue
-            cur_x, cur_y = float(args[0]), float(args[1])
-            points.append((mil_to_mm(cur_x), mil_to_mm(cur_y)))
-        elif cmd == "m":
-            if len(args) < 2:
-                continue
-            cur_x += float(args[0])
-            cur_y += float(args[1])
-            points.append((mil_to_mm(cur_x), mil_to_mm(cur_y)))
-
-        elif cmd == "L":
-            if len(args) < 2:
-                continue
-            cur_x, cur_y = float(args[0]), float(args[1])
-            points.append((mil_to_mm(cur_x), mil_to_mm(cur_y)))
-        elif cmd == "l":
-            if len(args) < 2:
-                continue
-            cur_x += float(args[0])
-            cur_y += float(args[1])
-            points.append((mil_to_mm(cur_x), mil_to_mm(cur_y)))
-
-        elif cmd == "H":
-            if len(args) < 1:
-                continue
-            cur_x = float(args[0])
-            points.append((mil_to_mm(cur_x), mil_to_mm(cur_y)))
-        elif cmd == "h":
-            if len(args) < 1:
-                continue
-            cur_x += float(args[0])
-            points.append((mil_to_mm(cur_x), mil_to_mm(cur_y)))
-
-        elif cmd == "V":
-            if len(args) < 1:
-                continue
-            cur_y = float(args[0])
-            points.append((mil_to_mm(cur_x), mil_to_mm(cur_y)))
-        elif cmd == "v":
-            if len(args) < 1:
-                continue
-            cur_y += float(args[0])
-            points.append((mil_to_mm(cur_x), mil_to_mm(cur_y)))
-
-        elif cmd in ("A", "a"):
-            # A rx ry rotation large-arc-flag sweep-flag ex ey
-            if len(args) < 7:
-                continue
-            rx = abs(float(args[0]))
-            ry = abs(float(args[1]))
-            phi = math.radians(float(args[2]))
-            fA = int(args[3])
-            fS = int(args[4])
-            if cmd == "A":
-                end_x, end_y = float(args[5]), float(args[6])
-            else:
-                end_x = cur_x + float(args[5])
-                end_y = cur_y + float(args[6])
-
-            if rx == 0 or ry == 0:
-                # Degenerate arc — treat as line
-                cur_x, cur_y = end_x, end_y
+        try:
+            if cmd == "M":
+                if len(args) < 2:
+                    continue
+                cur_x, cur_y = float(args[0]), float(args[1])
                 points.append((mil_to_mm(cur_x), mil_to_mm(cur_y)))
-                continue
+            elif cmd == "m":
+                if len(args) < 2:
+                    continue
+                cur_x += float(args[0])
+                cur_y += float(args[1])
+                points.append((mil_to_mm(cur_x), mil_to_mm(cur_y)))
 
-            # SVG spec F.6.5/F.6.6: endpoint-to-center parameterization
-            cos_phi = math.cos(phi)
-            sin_phi = math.sin(phi)
+            elif cmd == "L":
+                if len(args) < 2:
+                    continue
+                cur_x, cur_y = float(args[0]), float(args[1])
+                points.append((mil_to_mm(cur_x), mil_to_mm(cur_y)))
+            elif cmd == "l":
+                if len(args) < 2:
+                    continue
+                cur_x += float(args[0])
+                cur_y += float(args[1])
+                points.append((mil_to_mm(cur_x), mil_to_mm(cur_y)))
 
-            # Step 1: compute (x1', y1')
-            dx = (cur_x - end_x) / 2
-            dy = (cur_y - end_y) / 2
-            x1p = cos_phi * dx + sin_phi * dy
-            y1p = -sin_phi * dx + cos_phi * dy
+            elif cmd == "H":
+                if len(args) < 1:
+                    continue
+                cur_x = float(args[0])
+                points.append((mil_to_mm(cur_x), mil_to_mm(cur_y)))
+            elif cmd == "h":
+                if len(args) < 1:
+                    continue
+                cur_x += float(args[0])
+                points.append((mil_to_mm(cur_x), mil_to_mm(cur_y)))
 
-            # Step 2: compute (cx', cy')
-            x1p_sq = x1p * x1p
-            y1p_sq = y1p * y1p
-            rx_sq = rx * rx
-            ry_sq = ry * ry
+            elif cmd == "V":
+                if len(args) < 1:
+                    continue
+                cur_y = float(args[0])
+                points.append((mil_to_mm(cur_x), mil_to_mm(cur_y)))
+            elif cmd == "v":
+                if len(args) < 1:
+                    continue
+                cur_y += float(args[0])
+                points.append((mil_to_mm(cur_x), mil_to_mm(cur_y)))
 
-            # Scale radii up if endpoints are too far apart (F.6.6.3)
-            lam = x1p_sq / rx_sq + y1p_sq / ry_sq
-            if lam > 1:
-                scale = math.sqrt(lam)
-                rx *= scale
-                ry *= scale
+            elif cmd in ("A", "a"):
+                # A rx ry rotation large-arc-flag sweep-flag ex ey
+                if len(args) < 7:
+                    continue
+                rx = abs(float(args[0]))
+                ry = abs(float(args[1]))
+                phi = math.radians(float(args[2]))
+                fA = int(args[3])
+                fS = int(args[4])
+                if cmd == "A":
+                    end_x, end_y = float(args[5]), float(args[6])
+                else:
+                    end_x = cur_x + float(args[5])
+                    end_y = cur_y + float(args[6])
+
+                if rx == 0 or ry == 0:
+                    # Degenerate arc — treat as line
+                    cur_x, cur_y = end_x, end_y
+                    points.append((mil_to_mm(cur_x), mil_to_mm(cur_y)))
+                    continue
+
+                # SVG spec F.6.5/F.6.6: endpoint-to-center parameterization
+                cos_phi = math.cos(phi)
+                sin_phi = math.sin(phi)
+
+                # Step 1: compute (x1', y1')
+                dx = (cur_x - end_x) / 2
+                dy = (cur_y - end_y) / 2
+                x1p = cos_phi * dx + sin_phi * dy
+                y1p = -sin_phi * dx + cos_phi * dy
+
+                # Step 2: compute (cx', cy')
+                x1p_sq = x1p * x1p
+                y1p_sq = y1p * y1p
                 rx_sq = rx * rx
                 ry_sq = ry * ry
 
-            num = max(0, rx_sq * ry_sq - rx_sq * y1p_sq - ry_sq * x1p_sq)
-            den = rx_sq * y1p_sq + ry_sq * x1p_sq
-            sq = math.sqrt(num / den) if den > 0 else 0.0
-            if fA == fS:
-                sq = -sq
-            cxp = sq * rx * y1p / ry
-            cyp = -sq * ry * x1p / rx
+                # Scale radii up if endpoints are too far apart (F.6.6.3)
+                lam = x1p_sq / rx_sq + y1p_sq / ry_sq
+                if lam > 1:
+                    scale = math.sqrt(lam)
+                    rx *= scale
+                    ry *= scale
+                    rx_sq = rx * rx
+                    ry_sq = ry * ry
 
-            # Step 3: compute center (cx, cy) from (cx', cy')
-            cx = cos_phi * cxp - sin_phi * cyp + (cur_x + end_x) / 2
-            cy = sin_phi * cxp + cos_phi * cyp + (cur_y + end_y) / 2
+                num = max(0, rx_sq * ry_sq - rx_sq * y1p_sq - ry_sq * x1p_sq)
+                den = rx_sq * y1p_sq + ry_sq * x1p_sq
+                sq = math.sqrt(num / den) if den > 0 else 0.0
+                if fA == fS:
+                    sq = -sq
+                cxp = sq * rx * y1p / ry
+                cyp = -sq * ry * x1p / rx
 
-            # Step 4: compute theta1 and dtheta
-            ux = (x1p - cxp) / rx
-            uy = (y1p - cyp) / ry
-            vx = (-x1p - cxp) / rx
-            vy = (-y1p - cyp) / ry
+                # Step 3: compute center (cx, cy) from (cx', cy')
+                cx = cos_phi * cxp - sin_phi * cyp + (cur_x + end_x) / 2
+                cy = sin_phi * cxp + cos_phi * cyp + (cur_y + end_y) / 2
 
-            theta1 = math.atan2(uy, ux)
+                # Step 4: compute theta1 and dtheta
+                ux = (x1p - cxp) / rx
+                uy = (y1p - cyp) / ry
+                vx = (-x1p - cxp) / rx
+                vy = (-y1p - cyp) / ry
 
-            dot = ux * vx + uy * vy
-            cross = ux * vy - uy * vx
-            dtheta = math.atan2(cross, dot)
-            if fS == 0 and dtheta > 0:
-                dtheta -= 2 * math.pi
-            elif fS == 1 and dtheta < 0:
-                dtheta += 2 * math.pi
+                theta1 = math.atan2(uy, ux)
 
-            # Adaptive segment count: ~0.5 mil per segment, clamped 8–64
-            arc_length = abs(dtheta) * max(rx, ry)
-            segments = max(8, min(64, int(arc_length / 0.5)))
+                dot = ux * vx + uy * vy
+                cross = ux * vy - uy * vx
+                dtheta = math.atan2(cross, dot)
+                if fS == 0 and dtheta > 0:
+                    dtheta -= 2 * math.pi
+                elif fS == 1 and dtheta < 0:
+                    dtheta += 2 * math.pi
 
-            # Generate arc points on rotated ellipse
-            for i in range(1, segments + 1):
-                angle = theta1 + dtheta * i / segments
-                # Point on axis-aligned ellipse
-                ex = rx * math.cos(angle)
-                ey = ry * math.sin(angle)
-                # Rotate by phi and translate to center
-                px = cos_phi * ex - sin_phi * ey + cx
-                py = sin_phi * ex + cos_phi * ey + cy
-                points.append((mil_to_mm(px), mil_to_mm(py)))
+                # Adaptive segment count: ~0.5 mil per segment, clamped 8–64
+                arc_length = abs(dtheta) * max(rx, ry)
+                segments = max(8, min(64, int(arc_length / 0.5)))
 
-            cur_x, cur_y = end_x, end_y
+                # Generate arc points on rotated ellipse
+                for i in range(1, segments + 1):
+                    angle = theta1 + dtheta * i / segments
+                    # Point on axis-aligned ellipse
+                    ex = rx * math.cos(angle)
+                    ey = ry * math.sin(angle)
+                    # Rotate by phi and translate to center
+                    px = cos_phi * ex - sin_phi * ey + cx
+                    py = sin_phi * ex + cos_phi * ey + cy
+                    points.append((mil_to_mm(px), mil_to_mm(py)))
 
-        elif cmd in ("Z", "z"):
-            pass  # KiCad polygons auto-close
+                cur_x, cur_y = end_x, end_y
+
+            elif cmd in ("Z", "z"):
+                pass  # KiCad polygons auto-close
+        except (ValueError, IndexError):
+            continue  # skip malformed SVG command
 
     return points
 
@@ -938,24 +955,32 @@ def _parse_sym_path(shape_str: str, origin_x: float, origin_y: float) -> EEPolyl
     if not svg_path:
         return None
 
-    # Parse SVG path manually to apply origin offset correctly
-    # (can't use _parse_svg_polygon directly as it converts to mm before we apply offset)
-    points = []
-    path = svg_path.replace("Z", "").replace("z", "").strip()
-    tokens = re.split(r"[ML]\s*", path)
-    for token in tokens:
-        token = token.strip()
-        if not token:
-            continue
-        # Split on whitespace or commas for consistency with _parse_svg_polygon
-        coords = re.split(r"[,\s]+", token)
-        if len(coords) >= 2:
-            try:
-                x = float(coords[0])
-                y = float(coords[1])
-                points.append((mil_to_mm(x - origin_x), -mil_to_mm(y - origin_y)))
-            except ValueError:
+    # Use arc-aware parser when path contains arc commands
+    has_arcs = re.search(r"[0-9]A\s*[\d.]", svg_path) or " A " in svg_path
+    if has_arcs:
+        # _parse_svg_path_with_arcs returns absolute mm coordinates;
+        # apply origin offset and Y-axis flip for symbol coordinate system
+        ox_mm = mil_to_mm(origin_x)
+        oy_mm = mil_to_mm(origin_y)
+        raw = _parse_svg_path_with_arcs(svg_path)
+        points = [(px - ox_mm, -(py - oy_mm)) for px, py in raw]
+    else:
+        # Simple M/L path — parse manually to apply origin offset correctly
+        points = []
+        path = svg_path.replace("Z", "").replace("z", "").strip()
+        tokens = re.split(r"[ML]\s*", path)
+        for token in tokens:
+            token = token.strip()
+            if not token:
                 continue
+            coords = re.split(r"[,\s]+", token)
+            if len(coords) >= 2:
+                try:
+                    x = float(coords[0])
+                    y = float(coords[1])
+                    points.append((mil_to_mm(x - origin_x), -mil_to_mm(y - origin_y)))
+                except ValueError:
+                    continue
 
     if len(points) < 2:
         return None
