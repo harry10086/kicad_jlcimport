@@ -60,17 +60,16 @@ source install.sh      # macOS/Linux
 ```
 
 ## Recent Updates
-![Search and details](images/search.png)
 Based on recent git history:
 - `v1.5.3`: 修复无法浏览 KiCAD10 内置库的错误，修复了部分用户库封装无法预览的问题，并更新了依赖。
 - `v1.5.2`: 优化搜索结果加载数量，放大窗口，清理UI和CI。
-- `v1.5.1`：基线更新到了1.5.0，并修复了搜索结果和网站数量不一致的问题。
-                 增加了符号图和封装图的预览，3D 预览不好做，暂时不做。
-- `v1.5.0`：[https://github.com/jvanderberg/kicad_jlcimport/pull/86](https://github.com/jvanderberg/kicad_jlcimport/pull/86)
-- `v1.4.1`：把 LCSC 改成了国内 szlcsc.com，速度更快，库存和价格也都是国内的。但每次加载数量减少到100。
-            修改了加载图标。
-            修改了预览图片的关闭按钮。
-            价格都改成了人民币 ¥，库存也都是国内库存。
+- `v1.5.1`: 基线更新到了1.5.0，并修复了搜索结果和网站数量不一致的问题。
+           增加了符号图和封装图的预览，3D 预览不好做，暂时不做。
+- `v1.5.0`: [https://github.com/jvanderberg/kicad_jlcimport/pull/86](https://github.com/jvanderberg/kicad_jlcimport/pull/86)
+- `v1.4.1`: 把 LCSC 改成了国内 szlcsc.com，速度更快，库存和价格也都是国内的。但每次加载数量减少到100。
+           修改了加载图标。
+           修改了预览图片的关闭按钮。
+           价格都改成了人民币 ¥，库存也都是国内库存。
 - `v1.4.0`: KiCad footprint browser with live preview, footprint/3D model renaming, KiCad library footprint reuse, SpinnerOverlay deadlock fix, multi-unit symbol crash fix, and pinned ruff version.
 - `v1.2.10`: fixed Python 3.9 annotation evaluation in library handling.
 - `v1.2.9`: made the plugin dialog non-modal and added multi-unit symbol support.
