@@ -491,9 +491,28 @@ def _iter_footprint_libraries(
     tables.append((os.path.join(get_global_config_dir(kicad_version), "fp-lib-table"), ""))
 
     seen: set[tuple[str, str]] = set()
-    for table_path, table_project_dir in tables:
+    seen_tables: set[str] = set()  # prevent infinite recursion on Table refs
+
+    def _collect_from_table(table_path: str, table_project_dir: str) -> None:
+        norm_table = os.path.normpath(table_path)
+        if norm_table in seen_tables:
+            return
+        seen_tables.add(norm_table)
         for lib_name, lib_type, uri in _read_fp_lib_entries(table_path):
-            if lib_type.lower() != "kicad":
+            lt = lib_type.lower()
+            if lt == "table":
+                # KiCad 10 hierarchical table: URI points to another
+                # fp-lib-table file.  Expand env vars in the URI and
+                # recurse into it to collect the actual library entries.
+                sub_path = _expand_lib_uri(uri, table_project_dir, kicad_version)
+                if not sub_path:
+                    # _expand_lib_uri returns "" when a variable can't be resolved.
+                    # Fall back to the raw URI in case it is already an absolute path.
+                    sub_path = uri
+                if os.path.isfile(sub_path):
+                    _collect_from_table(sub_path, os.path.dirname(sub_path))
+                continue
+            if lt != "kicad":
                 continue
             path = _expand_lib_uri(uri, table_project_dir, kicad_version)
             if not path or not path.lower().endswith(".pretty") or not os.path.isdir(path):
@@ -503,6 +522,9 @@ def _iter_footprint_libraries(
                 continue
             seen.add(key)
             candidates.append(key)
+
+    for table_path, table_project_dir in tables:
+        _collect_from_table(table_path, table_project_dir)
 
     # Inject JLCImport .pretty directories that exist on disk but are missing
     # from the lib-tables.  This covers the window between the first import

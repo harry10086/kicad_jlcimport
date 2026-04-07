@@ -324,11 +324,18 @@ def _parse_kicad_mod(path: str, project_dir: str = "", kicad_version: int = DEFA
     result["tags"] = _field("tags")
 
     def _layer(block: str) -> str:
-        m = re.search(r'\(layer\s+"([^"]+)"\)', block)
+        # KiCad 8/9/10 use quotes: (layer "F.SilkS")
+        # KiCad 7 and older don't: (layer F.SilkS)
+        m = re.search(r'\(layer\s+"?([^"\s)]+)"?\)', block)
         return m.group(1) if m else ""
 
     def _sw(block: str) -> float:
+        # KiCad 8/9/10: (stroke (width 0.12) (type solid))
         m = re.search(rf"\(stroke\s*\(width\s+({N})\)", block, re.DOTALL)
+        if m:
+            return _f(m.group(1))
+        # KiCad 7 and older: just (width 0.12) directly inside the primitive
+        m = re.search(rf"\(width\s+({N})\)", block, re.DOTALL)
         return _f(m.group(1)) if m else 0.1
 
     # ── fp_line ─────────────────────────────────────────────────────────
@@ -400,6 +407,12 @@ def _parse_kicad_mod(path: str, project_dir: str = "", kicad_version: int = DEFA
                     _sw(block),
                 )
             )
+        else:
+            # Fallback for KiCad 7 and older fp_arc format: (start) (end) (angle)
+            # Actually KiCad 7 represents arc using (start center) (end start_pt) (angle sweep)
+            # but that's very different. Since preview for old arcs is mostly for cosmetic
+            # user libs, we can just skip or draw a line. We'll skip to ignore complex old arcs.
+            pass
 
     # ── fp_poly ─────────────────────────────────────────────────────────
     for block in _extract_blocks(text, "fp_poly"):
@@ -420,7 +433,7 @@ def _parse_kicad_mod(path: str, project_dir: str = "", kicad_version: int = DEFA
     # Use independent re.search calls so attribute order inside a pad block
     # doesn't matter — (drill ...) often appears before (size ...) in
     # ThermalVias footprints, which breaks a single re.match pattern.
-    _head_pat = re.compile(r'\(pad\s+"([^"]*)"\s+(\w+)\s+(\w+)', re.DOTALL)
+    _head_pat = re.compile(r'\(pad\s+"?([^"\s)]*)"?\s+(\w+)\s+(\w+)', re.DOTALL)
     _at_pat = re.compile(rf"\(at\s+({N})\s+({N})(?:\s+({N}))?\)", re.DOTALL)
     _size_pat = re.compile(rf"\(size\s+({N})\s+({N})\)", re.DOTALL)
     _drill_pat = re.compile(rf"\(drill(?:\s+oval)?\s+({N})", re.DOTALL)
