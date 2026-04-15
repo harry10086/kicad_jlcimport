@@ -1610,6 +1610,15 @@ class JLCImportDialog(wx.Dialog):
         self.search_input.Bind(wx.EVT_TEXT_ENTER, self._on_search)
         self.search_input.Bind(wx.EVT_TEXT, self._on_search_text_changed)
         hbox_search.Add(self.search_input, 1, wx.EXPAND | wx.RIGHT, 5)
+        # Symbol shortcut buttons: insert Ω / μ at cursor position in search box
+        self._btn_ohm = wx.Button(panel, label="\u03a9", style=wx.BU_EXACTFIT)
+        self._btn_ohm.SetToolTip("Insert \u03a9 (Ohm) into search")
+        self._btn_ohm.Bind(wx.EVT_BUTTON, lambda e: self._insert_symbol("\u03a9"))
+        hbox_search.Add(self._btn_ohm, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 3)
+        self._btn_micro = wx.Button(panel, label="\u03bc", style=wx.BU_EXACTFIT)
+        self._btn_micro.SetToolTip("Insert \u03bc (micro) into search")
+        self._btn_micro.Bind(wx.EVT_BUTTON, lambda e: self._insert_symbol("\u03bc"))
+        hbox_search.Add(self._btn_micro, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
         self.search_btn = wx.Button(panel, label="Search")
         self.search_btn.Bind(wx.EVT_BUTTON, self._on_search)
         hbox_search.Add(self.search_btn, 0)
@@ -2004,6 +2013,14 @@ class JLCImportDialog(wx.Dialog):
         self._category_popup.SetPosition(wx.Point(screen_pos.x, screen_pos.y + sz.height))
         self._category_popup.SetSize(sz.width, height)
         self._category_popup.Popup()
+
+    def _insert_symbol(self, char: str) -> None:
+        """Insert *char* at the current cursor position in the search input."""
+        ctrl = self.search_input
+        pos = ctrl.GetInsertionPoint()
+        ctrl.SetValue(ctrl.GetValue()[:pos] + char + ctrl.GetValue()[pos:])
+        ctrl.SetInsertionPoint(pos + len(char))
+        ctrl.SetFocus()
 
     def _on_search_text_changed(self, event):
         """Show category suggestions as user types."""

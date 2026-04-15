@@ -61,8 +61,10 @@ source install.sh      # macOS/Linux
 
 ## Recent Updates
 Based on recent git history:
+- `v1.5.4`：修复 bug：导入立创库时因为单位转换（mm<->mil）导致尺寸出现小数点后 .0001 这样的尺寸偏移，原理图符号封装会因为对不齐栅格而无法连线，PCB封装倒是影响不大。
+搜索框增加两个按钮，方便输入` Ω 和 μ` 两个希腊字母。
 - `v1.5.3`: 修复无法浏览 KiCAD10 内置库的错误，修复了部分用户库封装无法预览的问题，并更新了依赖。
-- `v1.5.2`: 优化搜索结果加载数量，放大窗口，清理UI和CI。
+- `v1.5.2`: 优化搜索结果加载数量（60/30，因为立创每页显示 30 个元器件），放大窗口，清理UI和CI。
 - `v1.5.1`: 基线更新到了1.5.0，并修复了搜索结果和网站数量不一致的问题。
            增加了符号图和封装图的预览，3D 预览不好做，暂时不做。
 - `v1.5.0`: [https://github.com/jvanderberg/kicad_jlcimport/pull/86](https://github.com/jvanderberg/kicad_jlcimport/pull/86)

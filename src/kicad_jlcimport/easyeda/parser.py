@@ -50,13 +50,22 @@ _SOLID_REGION_LAYERS = {"3", "4", "12"}
 
 
 # EasyEDA stores coordinates in 10-mil units (1 unit = 10 mils = 0.254 mm).
-# Dividing by 3.937 converts EasyEDA units to millimeters (3.937 ≈ 1/0.254).
-MILS_TO_MM_DIVISOR = 3.937
+# Multiplying by 0.254 converts EasyEDA units to millimeters.
+# NOTE: Do NOT use division by 3.937 — that introduces a systematic
+# error of ~0.0000508 mm per unit which accumulates and causes symbol
+# pin endpoints to not land on the KiCad grid, breaking wire connections.
+EE_UNIT_TO_MM = 0.254
 
 
 def mil_to_mm(mil: float) -> float:
-    """Convert EasyEDA units (10-mil) to millimeters."""
-    return mil / MILS_TO_MM_DIVISOR
+    """Convert EasyEDA units (10-mil) to millimeters.
+
+    Uses multiplication by 0.254 (exact) instead of division by 3.937
+    (periodic decimal ≈ 0.254000508) to avoid floating-point drift.
+    Results are rounded to 4 decimal places (0.1 µm) to eliminate
+    residual IEEE 754 noise.
+    """
+    return round(mil * EE_UNIT_TO_MM, 4)
 
 
 _SVG_ARC_RE = re.compile(

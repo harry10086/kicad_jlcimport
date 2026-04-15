@@ -340,6 +340,8 @@ class JLCImportTUI(App):
         width: 100%;
     }
     #search-input { width: 1fr; }
+    #btn-ohm { margin-left: 1; min-width: 3; width: 3; color: #ffdd88; }
+    #btn-micro { margin-left: 0; min-width: 3; width: 3; color: #ffdd88; }
     #search-btn { margin-left: 1; }
     #category-suggestions {
         display: none;
@@ -504,6 +506,8 @@ class JLCImportTUI(App):
                         placeholder="Search 立创商城 parts...",
                         id="search-input",
                     )
+                    yield Button("Ω", id="btn-ohm")
+                    yield Button("μ", id="btn-micro")
                     yield Button("Search", id="search-btn", variant="primary")
                 with Horizontal(id="filter-row"):
                     with RadioSet(id="type-filter"):
@@ -688,6 +692,14 @@ class JLCImportTUI(App):
         suggestions = self.query_one("#category-suggestions", OptionList)
         suggestions.remove_class("visible")
 
+    def _insert_symbol(self, char: str) -> None:
+        """Insert *char* at the current cursor position in the search input."""
+        search_input = self.query_one("#search-input", Input)
+        pos = search_input.cursor_position
+        search_input.value = search_input.value[:pos] + char + search_input.value[pos:]
+        search_input.cursor_position = pos + len(char)
+        search_input.focus()
+
     def on_input_blurred(self, event: Input.Blurred):
         """Persist lib name when input loses focus."""
         if event.input.id == "lib-name-input":
@@ -763,6 +775,10 @@ class JLCImportTUI(App):
         button_id = event.button.id
         if button_id == "search-btn":
             self._do_search()
+        elif button_id == "btn-ohm":
+            self._insert_symbol("Ω")
+        elif button_id == "btn-micro":
+            self._insert_symbol("μ")
         elif button_id == "detail-import-btn":
             self._do_import_action()
         elif button_id == "detail-datasheet-btn":

@@ -24,14 +24,15 @@ from ..easyeda.ee_types import EE3DModel
 # ============================================================================
 
 # EasyEDA uses a coordinate system where 1 unit = 10 mils = 0.254mm
-# Conversion factor: 1 / 0.254 = 3.937 (to convert EasyEDA units to mm)
-# Note: 1 mil = 0.001 inch = 0.0254mm, so 10 mils = 0.254mm
-_EE_UNITS_TO_MM = 3.937
+# Multiply by 0.254 to convert EasyEDA units to mm.
+# NOTE: Do NOT use division by 3.937 — that introduces ~0.0000508 mm
+# systematic error per unit, causing 3D model position offsets.
+_EE_UNIT_TO_MM = 0.254
 
 # SVGNODE z field uses the same unit system (10 mils = 0.254mm per unit)
 # This was discovered by comparing EasyEDA UI values with raw data
 # Example: z=-13.7795 EasyEDA units = -13.7795 × 0.254mm = -3.5mm
-_Z_EE_UNITS_TO_MM = 3.937
+_Z_EE_UNIT_TO_MM = 0.254
 
 # ============================================================================
 # Spurious Offset Detection Thresholds
@@ -76,7 +77,7 @@ def _is_spurious_offset(model_origin_diff_y: float, height: float) -> bool:
     """Check if model origin offset is spurious (EasyEDA data error).
 
     Three types of spurious offsets:
-    1. Very small offsets (< 0.5mm) - noise/measurement errors
+    1. Very small offsets (≤ 0.5mm) - noise/measurement errors
     2. Physically unreasonable offsets for short parts (offset > 40% of height)
     3. Absurdly large offsets (> 50mm) - obvious data errors
 
@@ -89,7 +90,7 @@ def _is_spurious_offset(model_origin_diff_y: float, height: float) -> bool:
     """
     abs_offset = abs(model_origin_diff_y)
 
-    if abs_offset < _SPURIOUS_OFFSET_MIN_MM:
+    if abs_offset <= _SPURIOUS_OFFSET_MIN_MM:
         return True
 
     if height > 0 and height < _SHORT_PART_HEIGHT_MM:
@@ -189,8 +190,8 @@ def compute_model_transform(
     cy_eff = cy if (height > 0 and abs(cy) / height > _SIGNIFICANT_CY_HEIGHT_RATIO) else 0.0
 
     # --- Effective origin diff: zero out spurious offsets (check both X and Y) ---
-    model_origin_diff_x = (model.origin_x - fp_origin_x) / _EE_UNITS_TO_MM
-    model_origin_diff_y = (model.origin_y - fp_origin_y) / _EE_UNITS_TO_MM
+    model_origin_diff_x = round((model.origin_x - fp_origin_x) * _EE_UNIT_TO_MM, 4)
+    model_origin_diff_y = round((model.origin_y - fp_origin_y) * _EE_UNIT_TO_MM, 4)
     # Use magnitude of offset vector to determine if spurious
     origin_diff_magnitude = (model_origin_diff_x**2 + model_origin_diff_y**2) ** 0.5
     is_spurious = _is_spurious_offset(origin_diff_magnitude, height)
@@ -198,7 +199,7 @@ def compute_model_transform(
     diff_eff_y = 0.0 if is_spurious else model_origin_diff_y
 
     # --- Z offset (universal formula) ---
-    z_offset = -z_min + (model.z / _Z_EE_UNITS_TO_MM)
+    z_offset = round(-z_min + (model.z * _Z_EE_UNIT_TO_MM), 4)
 
     # --- Geometry offset: rotates with the model ---
     # Only apply Z-axis rotation - X/Y rotations are handled by KiCad's model orientation
