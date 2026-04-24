@@ -2007,6 +2007,8 @@ class JLCImportDialog(wx.Dialog):
         packages = sorted({r.get("package", "") for r in self._raw_search_results if r.get("package")})
         self.package_choice.Set(["All"] + packages)
         self.package_choice.SetSelection(0)
+        self.package_choice.InvalidateBestSize()
+        self._main_panel.Layout()
 
     def _get_package_filter(self) -> str:
         """Return the selected package filter value."""
