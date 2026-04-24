@@ -243,6 +243,11 @@ def get_global_lib_dir(kicad_version: int = DEFAULT_KICAD_VERSION) -> str:
         if not os.path.isdir(custom):
             raise ValueError(f"Custom global library directory does not exist: {custom}")
         return custom
+    return _default_3rdparty_dir(kicad_version)
+
+
+def _default_3rdparty_dir(kicad_version: int = DEFAULT_KICAD_VERSION) -> str:
+    """Return the default 3rd-party library directory (ignoring any custom override)."""
     ver = version_dir_name(kicad_version)
     return os.path.join(_kicad_data_base(), ver, "3rdparty")
 

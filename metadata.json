@@ -6,9 +6,9 @@
   "identifier": "com.github.jvanderberg.kicad-jlcimport",
   "type": "plugin",
   "author": {
-    "name": "Josh Vanderberg (original author), harry10086 (current maintainer)",
+    "name": "Josh Vanderberg (harry fork)",
     "contact": {
-      "web": "https://github.com/jvanderberg"
+      "web": "https://github.com/jvanderberg/kicad_jlcimport"
     }
   },
   "license": "MIT",
@@ -19,7 +19,7 @@
   },
   "versions": [
     {
-      "version": "1.5.4",
+      "version": "1.5.5",
       "status": "stable",
       "kicad_version": "8.0",
       "runtime": "swig"

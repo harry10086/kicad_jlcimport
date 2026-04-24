@@ -10,10 +10,10 @@ from kicad_jlcimport.kicad.footprint_writer import write_footprint
 from kicad_jlcimport.kicad.symbol_writer import write_symbol, write_symbol_library
 
 
-def test_convert_all_testdata():
+def test_convert_all_testdata(tmp_path):
     """Convert all testdata JSON to KiCad files and SVGs."""
     testdata_dir = Path("testdata")
-    output_dir = Path("/tmp/kicad_preview")
+    output_dir = tmp_path / "kicad_preview"
     output_dir.mkdir(exist_ok=True)
 
     # Find all unique part IDs
@@ -95,7 +95,7 @@ def test_convert_all_testdata():
         print()
 
     # Also convert C442826 if data exists
-    c442826_json = Path("/tmp/c442826_data.json")
+    c442826_json = tmp_path / "c442826_data.json"
     if c442826_json.exists():
         print("C442826:")
         with open(c442826_json) as f:

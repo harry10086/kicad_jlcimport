@@ -15,10 +15,11 @@ class TestMakeSslContext:
     """Tests for _make_ssl_context."""
 
     def test_creates_verified_context(self):
-        # The function is called at module import; verify the global is usable
-        assert api._SSL_CTX is not None
-        assert api._SSL_CTX.check_hostname is True
-        assert api._SSL_CTX.verify_mode == ssl.CERT_REQUIRED
+        # SSL context is lazily initialized; trigger it via _get_ssl_ctx()
+        ctx = api._get_ssl_ctx()
+        assert ctx is not None
+        assert ctx.check_hostname is True
+        assert ctx.verify_mode == ssl.CERT_REQUIRED
 
     def test_prefers_bundled_cacerts(self, monkeypatch, tmp_path):
         """When cacerts.pem exists and is valid, it should be used."""
@@ -72,6 +73,8 @@ class TestUrlopen:
         mock_response = MagicMock()
         # Ensure a verified context is set
         monkeypatch.setattr(api, "_SSL_CTX", ssl.create_default_context())
+        monkeypatch.setattr(api, "_SSL_CTX_INITIALIZED", True)
+        monkeypatch.setattr(api, "_SSL_AVAILABLE", True)
 
         with patch("urllib.request.urlopen", return_value=mock_response) as mock_urlopen:
             api._urlopen("https://example.com", timeout=10)
@@ -81,6 +84,8 @@ class TestUrlopen:
 
     def test_urlopen_warns_when_no_context(self, monkeypatch):
         monkeypatch.setattr(api, "_SSL_CTX", None)
+        monkeypatch.setattr(api, "_SSL_CTX_INITIALIZED", True)
+        monkeypatch.setattr(api, "_SSL_AVAILABLE", True)
 
         mock_response = MagicMock()
         with patch("urllib.request.urlopen", return_value=mock_response):
@@ -89,6 +94,8 @@ class TestUrlopen:
 
     def test_urlopen_unverified_when_no_context(self, monkeypatch):
         monkeypatch.setattr(api, "_SSL_CTX", None)
+        monkeypatch.setattr(api, "_SSL_CTX_INITIALIZED", True)
+        monkeypatch.setattr(api, "_SSL_AVAILABLE", True)
 
         mock_response = MagicMock()
         with patch("urllib.request.urlopen", return_value=mock_response) as mock_urlopen:
@@ -512,6 +519,8 @@ class TestSSLCertError:
     def test_urlopen_raises_ssl_cert_error_on_verification_failure(self, monkeypatch):
         """_urlopen raises SSLCertError when the cert fails verification."""
         monkeypatch.setattr(api, "_SSL_CTX", ssl.create_default_context())
+        monkeypatch.setattr(api, "_SSL_CTX_INITIALIZED", True)
+        monkeypatch.setattr(api, "_SSL_AVAILABLE", True)
         monkeypatch.setattr(api, "_allow_unverified", False)
 
         cert_err = ssl.SSLCertVerificationError("certificate verify failed")
@@ -524,6 +533,8 @@ class TestSSLCertError:
     def test_urlopen_reraises_non_cert_url_error(self, monkeypatch):
         """_urlopen re-raises URLError normally for non-cert failures."""
         monkeypatch.setattr(api, "_SSL_CTX", ssl.create_default_context())
+        monkeypatch.setattr(api, "_SSL_CTX_INITIALIZED", True)
+        monkeypatch.setattr(api, "_SSL_AVAILABLE", True)
         monkeypatch.setattr(api, "_allow_unverified", False)
 
         url_err = urllib.error.URLError("Connection refused")
@@ -535,6 +546,8 @@ class TestSSLCertError:
     def test_allow_unverified_ssl_enables_unverified_context(self, monkeypatch):
         """After allow_unverified_ssl(), _urlopen uses an unverified context."""
         monkeypatch.setattr(api, "_SSL_CTX", ssl.create_default_context())
+        monkeypatch.setattr(api, "_SSL_CTX_INITIALIZED", True)
+        monkeypatch.setattr(api, "_SSL_AVAILABLE", True)
         monkeypatch.setattr(api, "_allow_unverified", False)
 
         api.allow_unverified_ssl()
@@ -552,6 +565,8 @@ class TestSSLCertError:
     def test_full_flow_cert_error_then_allow_retry(self, monkeypatch):
         """Full flow: cert error → allow_unverified → retry succeeds."""
         monkeypatch.setattr(api, "_SSL_CTX", ssl.create_default_context())
+        monkeypatch.setattr(api, "_SSL_CTX_INITIALIZED", True)
+        monkeypatch.setattr(api, "_SSL_AVAILABLE", True)
         monkeypatch.setattr(api, "_allow_unverified", False)
 
         cert_err = ssl.SSLCertVerificationError("certificate verify failed")

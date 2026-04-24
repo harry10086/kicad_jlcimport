@@ -32,7 +32,7 @@ def test_cli_import_project_writes_kicad_library(tmp_path, monkeypatch, capsys):
         pins = [object(), object()]
         rectangles = []
 
-    monkeypatch.setattr(importer, "fetch_full_component", lambda _lcsc: fake_comp)
+    monkeypatch.setattr(importer, "fetch_full_component", lambda _lcsc, **kwargs: fake_comp)
     monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *_a, **_k: _Footprint())
     monkeypatch.setattr(importer, "parse_symbol_shapes", lambda *_a, **_k: _Symbol())
     monkeypatch.setattr(importer, "write_footprint", lambda *_a, **_k: "fp\n")
@@ -85,7 +85,7 @@ def test_cli_import_global_does_not_require_project_dir(tmp_path, monkeypatch, c
         tracks = []
         model = None
 
-    monkeypatch.setattr(importer, "fetch_full_component", lambda _lcsc: fake_comp)
+    monkeypatch.setattr(importer, "fetch_full_component", lambda _lcsc, **kwargs: fake_comp)
     monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *_a, **_k: _Footprint())
     monkeypatch.setattr(importer, "write_footprint", lambda *_a, **_k: "fp\n")
     monkeypatch.setattr(cli, "get_global_lib_dir", lambda _v=9: str(tmp_path))
@@ -137,7 +137,7 @@ def test_cli_import_project_skips_existing_3d_models_without_overwrite(tmp_path,
         tracks = []
         model = None
 
-    monkeypatch.setattr(importer, "fetch_full_component", lambda _lcsc: fake_comp)
+    monkeypatch.setattr(importer, "fetch_full_component", lambda _lcsc, **kwargs: fake_comp)
     monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *_a, **_k: _Footprint())
     monkeypatch.setattr(importer, "write_footprint", lambda *_a, **_k: "fp\n")
 
@@ -212,7 +212,7 @@ def test_cli_import_with_kicad_v8(tmp_path, monkeypatch, capsys):
         pins = [object()]
         rectangles = []
 
-    monkeypatch.setattr(importer, "fetch_full_component", lambda _lcsc: fake_comp)
+    monkeypatch.setattr(importer, "fetch_full_component", lambda _lcsc, **kwargs: fake_comp)
     monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *_a, **_k: _Footprint())
     monkeypatch.setattr(importer, "parse_symbol_shapes", lambda *_a, **_k: _Symbol())
     monkeypatch.setattr(importer, "write_footprint", lambda *_a, **_k: "fp\n")
@@ -266,7 +266,7 @@ def test_cli_global_lib_dir_overrides_default(tmp_path, monkeypatch, capsys):
         tracks = []
         model = None
 
-    monkeypatch.setattr(importer, "fetch_full_component", lambda _lcsc: fake_comp)
+    monkeypatch.setattr(importer, "fetch_full_component", lambda _lcsc, **kwargs: fake_comp)
     monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *_a, **_k: _Footprint())
     monkeypatch.setattr(importer, "write_footprint", lambda *_a, **_k: "fp\n")
     monkeypatch.setattr(importer, "update_global_lib_tables", lambda *_a, **_k: None)
@@ -320,7 +320,7 @@ def test_cli_global_lib_dir_implies_global(tmp_path, monkeypatch, capsys):
         tracks = []
         model = None
 
-    monkeypatch.setattr(importer, "fetch_full_component", lambda _lcsc: fake_comp)
+    monkeypatch.setattr(importer, "fetch_full_component", lambda _lcsc, **kwargs: fake_comp)
     monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *_a, **_k: _Footprint())
     monkeypatch.setattr(importer, "write_footprint", lambda *_a, **_k: "fp\n")
     monkeypatch.setattr(importer, "update_global_lib_tables", lambda *_a, **_k: None)

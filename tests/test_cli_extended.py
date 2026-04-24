@@ -361,7 +361,7 @@ class TestCmdImport:
             tracks = []
             model = None
 
-        monkeypatch.setattr(importer, "fetch_full_component", lambda _lcsc: fake_comp)
+        monkeypatch.setattr(importer, "fetch_full_component", lambda _lcsc, **kwargs: fake_comp)
         monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *_a, **_k: _Footprint())
         monkeypatch.setattr(importer, "write_footprint", lambda *_a, **_k: "fp\n")
 
@@ -406,7 +406,7 @@ class TestCmdImport:
             tracks = []
             model = None
 
-        monkeypatch.setattr(importer, "fetch_full_component", lambda _lcsc: fake_comp)
+        monkeypatch.setattr(importer, "fetch_full_component", lambda _lcsc, **kwargs: fake_comp)
         monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *_a, **_k: _Footprint())
         monkeypatch.setattr(importer, "write_footprint", lambda *_a, **_k: "fp content\n")
 
@@ -452,7 +452,7 @@ class TestCmdImport:
             tracks = []
             model = None
 
-        monkeypatch.setattr(importer, "fetch_full_component", lambda _lcsc: fake_comp)
+        monkeypatch.setattr(importer, "fetch_full_component", lambda _lcsc, **kwargs: fake_comp)
         monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *_a, **_k: _Footprint())
         monkeypatch.setattr(importer, "write_footprint", lambda *_a, **_k: "(footprint test)\n")
 
@@ -500,7 +500,7 @@ class TestCmdImport:
             pins = []
             rectangles = []
 
-        monkeypatch.setattr(importer, "fetch_full_component", lambda _lcsc: fake_comp)
+        monkeypatch.setattr(importer, "fetch_full_component", lambda _lcsc, **kwargs: fake_comp)
         monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *_a, **_k: _Footprint())
         monkeypatch.setattr(importer, "parse_symbol_shapes", lambda *_a, **_k: _Symbol())
         monkeypatch.setattr(importer, "write_footprint", lambda *_a, **_k: "fp\n")
@@ -550,7 +550,7 @@ class TestCmdImport:
             pins = []
             rectangles = []
 
-        monkeypatch.setattr(importer, "fetch_full_component", lambda _lcsc: fake_comp)
+        monkeypatch.setattr(importer, "fetch_full_component", lambda _lcsc, **kwargs: fake_comp)
         monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *_a, **_k: _Footprint())
         monkeypatch.setattr(importer, "parse_symbol_shapes", lambda *_a, **_k: _Symbol())
         monkeypatch.setattr(importer, "write_footprint", lambda *_a, **_k: "(footprint test)\n")
@@ -597,7 +597,7 @@ class TestCmdImport:
             tracks = []
             model = None
 
-        monkeypatch.setattr(importer, "fetch_full_component", lambda _lcsc: fake_comp)
+        monkeypatch.setattr(importer, "fetch_full_component", lambda _lcsc, **kwargs: fake_comp)
         monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *_a, **_k: _Footprint())
         monkeypatch.setattr(importer, "write_footprint", lambda *_a, **_k: "fp\n")
 
@@ -619,7 +619,7 @@ class TestCmdImport:
         import kicad_jlcimport.importer as importer
         from kicad_jlcimport.easyeda.api import APIError
 
-        def raise_api_error(_):
+        def raise_api_error(_, **kwargs):
             raise APIError("Component not found")
 
         monkeypatch.setattr(importer, "fetch_full_component", raise_api_error)
