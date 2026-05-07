@@ -481,6 +481,7 @@ def search_components(
                 "description": item.get("describe", ""),
                 "url": item.get("lcscGoodsUrl", ""),
                 "datasheet": item.get("dataManualUrl", ""),
+                "image_url": item.get("componentImageUrl", ""),
             }
         )
 
@@ -595,6 +596,7 @@ def search_components_cn(keyword: str, page: int = 1, page_size: int = 50) -> di
                     "description": vo.get("productName", ""),
                     "url": url,
                     "datasheet": "",
+                    "image_url": vo.get("bigImageUrl", vo.get("breviaryImageUrl", "")),
                 }
             )
 
@@ -651,6 +653,23 @@ def fetch_product_image(lcsc_url: str) -> Optional[bytes]:
     """Fetch product image from LCSC/JLCPCB product page. Returns JPEG bytes or None."""
     if not lcsc_url:
         return None
+
+    # If the URL is already a direct image link
+    if lcsc_url.startswith("https://") and lcsc_url.split("?")[0].lower().endswith(('.jpg', '.png', '.jpeg', '.webp')):
+        req = urllib.request.Request(
+            lcsc_url,
+            headers={
+                "User-Agent": _UA,
+                "Accept": "image/jpeg,image/png,image/*,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.9",
+            },
+        )
+        try:
+            with _urlopen(req, timeout=10) as resp:
+                return resp.read()
+        except (urllib.error.HTTPError, urllib.error.URLError, OSError, APIError):
+            return None
+
     # SSRF protection: only allow fetching from known LCSC/JLCPCB domains
     try:
         from urllib.parse import urlparse

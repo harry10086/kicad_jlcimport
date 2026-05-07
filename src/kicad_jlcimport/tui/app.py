@@ -1161,10 +1161,12 @@ class JLCImportTUI(App):
         # Fetch image
         self._image_request_id += 1
         request_id = self._image_request_id
+        image_url = r.get("image_url", "")
         lcsc_url = r.get("url", "")
-        if lcsc_url:
+        fetch_url = image_url if image_url else lcsc_url
+        if fetch_url:
             self._start_skeleton()
-            self._fetch_detail_image(lcsc_url, request_id)
+            self._fetch_detail_image(fetch_url, request_id)
         else:
             self._stop_skeleton()
             self.query_one("#detail-image", TIImage).image = make_no_image(100, 100)

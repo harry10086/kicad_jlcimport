@@ -2148,13 +2148,15 @@ class JLCImportDialog(wx.Dialog):
         self.detail_import_btn.Enable()
 
         # Fetch image in background
+        image_url = r.get("image_url", "")
         lcsc_url = r.get("url", "")
+        fetch_url = image_url if image_url else lcsc_url
         self._image_request_id += 1
         request_id = self._image_request_id
-        if lcsc_url:
+        if fetch_url:
             if self._detail_page == 0:
                 self._show_skeleton()
-            threading.Thread(target=self._fetch_image, args=(lcsc_url, request_id), daemon=True).start()
+            threading.Thread(target=self._fetch_image, args=(fetch_url, request_id), daemon=True).start()
         else:
             self._stop_skeleton()
             if self._detail_page == 0:
@@ -2313,11 +2315,13 @@ class JLCImportDialog(wx.Dialog):
         self._show_gallery_skeleton()
 
         # Fetch photo image
+        image_url = r.get("image_url", "")
         lcsc_url = r.get("url", "")
+        fetch_url = image_url if image_url else lcsc_url
         self._gallery_request_id += 1
         request_id = self._gallery_request_id
-        if lcsc_url:
-            threading.Thread(target=self._fetch_gallery_image, args=(lcsc_url, request_id), daemon=True).start()
+        if fetch_url:
+            threading.Thread(target=self._fetch_gallery_image, args=(fetch_url, request_id), daemon=True).start()
         else:
             if self._gallery_page == 0:
                 self._stop_gallery_skeleton()

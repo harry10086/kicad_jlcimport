@@ -61,6 +61,7 @@ source install.sh      # macOS/Linux
 
 ## Recent Updates
 Based on recent git history:
+- `v1.5.7`: 修复：立创商城无法预览图片。因为商品详情页面增加了 阿里云 WAF (Web Application Firewall) 进行反爬虫保护。
 - `v1.5.6`：优化搜索 Package 筛选下拉框显示宽度。
 - `v1.5.5`：合并了上游 `v1.6.1`、`v1.6.2` 和 `v1.6.3` 的修复补丁。修复了网络请求 SSL 问题、修复了包含圆角（SVG Arc）的 EasyEDA 封装解析错误、优化了内部封装解析逻辑，并修复了全局库注册和 3D 模型路径自定义的问题。
 - `v1.5.4`：修复 bug：导入立创库时因为单位转换（mm<->mil）导致尺寸出现小数点后 .0001 这样的尺寸偏移，原理图符号封装会因为对不齐栅格而无法连线，PCB 封装倒是影响不大。

@@ -134,15 +134,17 @@ class GalleryScreen(Screen):
     def _fetch_image(self, index: int):
         """Fetch image in background thread."""
         r = self._results[index]
+        image_url = r.get("image_url", "")
         lcsc_url = r.get("url", "")
+        fetch_url = image_url if image_url else lcsc_url
         img_data = None
-        if lcsc_url:
+        if fetch_url:
             try:
                 try:
-                    img_data = fetch_product_image(lcsc_url)
+                    img_data = fetch_product_image(fetch_url)
                 except SSLCertError:
                     allow_unverified_ssl()
-                    img_data = fetch_product_image(lcsc_url)
+                    img_data = fetch_product_image(fetch_url)
             except Exception:
                 pass
         self._image_cache[index] = img_data
