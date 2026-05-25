@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import os
 from concurrent.futures import ThreadPoolExecutor
-from typing import Callable, Dict, List, Optional
+from typing import Callable
 
 from .easyeda.api import download_step, download_wrl_source, fetch_full_component
 from .easyeda.parser import parse_footprint_shapes, parse_symbol_shapes
 from .kicad.footprint_writer import write_footprint
 from .kicad.library import (
+    _default_3rdparty_dir,
     add_symbol_to_lib,
     ensure_lib_structure,
     find_best_matching_footprint,
@@ -17,7 +18,6 @@ from .kicad.library import (
     save_footprint,
     update_global_lib_tables,
     update_project_lib_tables,
-    _default_3rdparty_dir,
 )
 from .kicad.model3d import compute_model_transform, save_models
 from .kicad.symbol_writer import write_symbol
@@ -184,6 +184,7 @@ def import_component(
 
     # Compute metadata that will be written to KiCad files
     metadata = {
+        "value": name,
         "description": _build_description(comp),
         "keywords": _build_keywords(comp),
         "manufacturer": comp.get("manufacturer", ""),
@@ -215,6 +216,7 @@ def import_component(
     fp_name = sanitize_name(raw_fp_name) if raw_fp_name else name
     model_name = sanitize_name(raw_model_name) if raw_model_name else fp_name
     metadata.pop("__component_name", None)
+    value = metadata.pop("value", "").strip() or name
 
     # Check for existing files and ask user to confirm overwrite.
     # This runs after metadata editing so fp_name reflects any user rename.
@@ -315,6 +317,7 @@ def import_component(
                 write_symbol(
                     symbol,
                     name,
+                    value=value,
                     prefix=comp["prefix"],
                     footprint_ref=footprint_ref,
                     lcsc_id=lcsc_id,

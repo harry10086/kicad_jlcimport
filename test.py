@@ -1,5 +1,5 @@
-import urllib.request
 import re
+import urllib.request
 
 url = 'https://item.szlcsc.com/421842.html'
 req = urllib.request.Request(url, headers={
@@ -9,7 +9,7 @@ req = urllib.request.Request(url, headers={
 })
 try:
     html = urllib.request.urlopen(req).read().decode('utf-8')
-    all_imgs = re.findall(r'https://[^\"''<>\s]+\.(?:jpg|png|webp)', html)
+    all_imgs = re.findall(r'https://[^\"'r'<>\s]+\.(?:jpg|png|webp)', html)
     for img in set(all_imgs):
         if 'szlcsc' in img or 'lcsc' in img:
             print("IMG:", img)

@@ -511,7 +511,6 @@ def search_components_cn(
         anything else -> ''
     """
 def search_components_cn(keyword: str, page: int = 1, page_size: int = 50) -> dict:
-    import builtins
     import math
 
     results = []
@@ -519,7 +518,7 @@ def search_components_cn(keyword: str, page: int = 1, page_size: int = 50) -> di
     max_apipage = 30
     needed_pages = math.ceil(page_size / max_apipage)
     start_p = (page - 1) * needed_pages + 1
-    
+
     for current_p in range(start_p, start_p + needed_pages):
         req_data = {
             "currentPage": current_p,
@@ -530,7 +529,7 @@ def search_components_cn(keyword: str, page: int = 1, page_size: int = 50) -> di
             "discountFilter": 1,
             "hasDataFile": False,
         }
-        
+
         req = urllib.request.Request(
             SZLCSC_SEARCH_API,
             data=json.dumps(req_data).encode("utf-8"),
@@ -565,7 +564,7 @@ def search_components_cn(keyword: str, page: int = 1, page_size: int = 50) -> di
         search_result = (raw.get("result") or {}).get("searchResult") or {}
         if current_p == 1:
             total = search_result.get("totalCount", 0)
-            
+
         items = search_result.get("productRecordList") or []
         if not items:
             break

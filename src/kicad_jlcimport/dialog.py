@@ -26,7 +26,7 @@ from .easyeda.api import (
 from .gui.symbol_renderer import has_svg_support, render_svg_bitmap
 from .importer import import_component
 from .kicad.footprint_parser import _parse_kicad_mod
-from .kicad.library import get_global_lib_dir, load_config, resolve_kicad_var, save_config
+from .kicad.library import get_global_lib_dir, load_config, save_config
 from .kicad.version import DEFAULT_KICAD_VERSION, SUPPORTED_VERSIONS
 
 
@@ -1035,6 +1035,10 @@ class MetadataEditDialog(wx.Dialog):
         grid = wx.FlexGridSizer(cols=2, hgap=8, vgap=8)
         grid.AddGrowableCol(1)
 
+        grid.Add(wx.StaticText(self, label="Value"), 0, wx.ALIGN_CENTER_VERTICAL)
+        self._value = wx.TextCtrl(self, value=metadata.get("value", ""))
+        grid.Add(self._value, 1, wx.EXPAND)
+
         grid.Add(wx.StaticText(self, label="Description"), 0, wx.ALIGN_TOP)
         self._desc = wx.TextCtrl(self, value=metadata.get("description", ""), style=wx.TE_MULTILINE, size=(-1, 60))
         grid.Add(self._desc, 1, wx.EXPAND)
@@ -1145,6 +1149,7 @@ class MetadataEditDialog(wx.Dialog):
     def get_metadata(self) -> dict:
         """Return the edited metadata dict."""
         result = {
+            "value": self._value.GetValue(),
             "description": self._desc.GetValue(),
             "keywords": self._keywords.GetValue(),
             "manufacturer": self._manufacturer.GetValue(),
@@ -1236,14 +1241,14 @@ class _SpinnerOverlay(wx.Window):
 
         cx, cy = w / 2.0, h / 2.0
         r = self._ARC_RADIUS
-        
+
         gc.SetAntialiasMode(wx.ANTIALIAS_DEFAULT)
         # Use a smooth path for the arc to ensure no pixel gaps
         path = gc.CreatePath()
         start_angle = math.radians(self._angle)
         end_angle = math.radians(self._angle + self._ARC_SWEEP)
         path.AddArc(cx, cy, r, start_angle, end_angle, True)
-        
+
         pen = gc.CreatePen(wx.GraphicsPenInfo(color).Width(self._ARC_WIDTH).Cap(wx.CAP_ROUND))
         gc.SetPen(pen)
         gc.StrokePath(path)
@@ -1255,7 +1260,7 @@ class _SpinnerOverlay(wx.Window):
         lum = (bg.Red() * 299 + bg.Green() * 587 + bg.Blue() * 114) // 1000
         grey = 200 if lum < 128 else 80
         dc.SetPen(wx.Pen(wx.Colour(grey, grey, grey), self._ARC_WIDTH))
-        
+
         cx, cy = w / 2.0, h / 2.0
         r = self._ARC_RADIUS
         for i in range(self._SEGMENTS):
@@ -1263,8 +1268,12 @@ class _SpinnerOverlay(wx.Window):
             t1 = self._angle + frac * self._ARC_SWEEP
             t2 = self._angle + (i + 1) / self._SEGMENTS * self._ARC_SWEEP
             a1, a2 = math.radians(t1), math.radians(t2)
-            dc.DrawLine(int(cx + r * math.cos(a1)), int(cy + r * math.sin(a1)),
-                        int(cx + r * math.cos(a2)), int(cy + r * math.sin(a2)))
+            dc.DrawLine(
+                int(cx + r * math.cos(a1)),
+                int(cy + r * math.sin(a1)),
+                int(cx + r * math.cos(a2)),
+                int(cy + r * math.sin(a2)),
+            )
 
 
 class JLCImportDialog(wx.Dialog):
@@ -1305,12 +1314,12 @@ class JLCImportDialog(wx.Dialog):
     def _on_close(self, event):
         if self._closing:
             return
-            
+
         # Prevent closing the entire plugin if we are in full-screen gallery view
         if hasattr(self, "_gallery_panel") and self._gallery_panel.IsShown():
             self._exit_gallery()
             return
-            
+
         # Warn if an import is in progress (main panel disabled during import)
         if not self._main_panel.IsEnabled():
             if (
@@ -1748,7 +1757,7 @@ class JLCImportDialog(wx.Dialog):
                     "Consider downloading the latest version of this plugin which "
                     "may include updated CA certificates.",
                     "TLS Certificate Warning",
-        )
+                )
                 wx.CallAfter(
                     self._log,
                     "TLS certificate verification disabled for this session.",
@@ -1894,20 +1903,20 @@ class JLCImportDialog(wx.Dialog):
 
         results = result["results"]
         has_more = len(results) >= page_size
-        
+
         if page == 1:
             self._raw_search_results = results
             self._sort_col = 3  # sorted by stock
             self._sort_ascending = False
         else:
             self._raw_search_results.extend(results)
-            
+
         # Re-sort full list
         self._raw_search_results.sort(key=lambda r: r["stock"] or 0, reverse=True)
 
         self._populate_package_choices()
         self._apply_filters()
-        
+
         if has_more:
             self.load_more_btn.Enable()
         else:

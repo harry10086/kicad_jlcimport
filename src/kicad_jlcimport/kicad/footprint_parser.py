@@ -9,6 +9,7 @@ import re
 from .library import resolve_kicad_var
 from .version import DEFAULT_KICAD_VERSION
 
+
 def _extract_blocks(text: str, keyword: str) -> list:
     """Extract all top-level s-expression blocks starting with (keyword ...}.
 

@@ -1006,7 +1006,7 @@ class TestConfirmMetadata:
         received = []
 
         def capture_metadata(metadata):
-            received.append(metadata)
+            received.append(metadata.copy())
             return metadata
 
         self._patch_importer(monkeypatch, fake_comp, self._make_fake_footprint(), self._make_fake_symbol())
@@ -1022,6 +1022,7 @@ class TestConfirmMetadata:
 
         assert len(received) == 1
         meta = received[0]
+        assert meta["value"] == "TestPart"
         assert meta["description"] == "Test description"
         assert meta["manufacturer"] == "ACME"
         assert "ACME" in meta["keywords"]
@@ -1043,6 +1044,7 @@ class TestConfirmMetadata:
 
         def edit_metadata(metadata):
             return {
+                "value": "CustomValue",
                 "description": "Custom description",
                 "keywords": "custom kw",
                 "manufacturer": "Custom Mfg",
@@ -1066,6 +1068,7 @@ class TestConfirmMetadata:
             confirm_metadata=edit_metadata,
         )
 
+        assert sym_kwargs["value"] == "CustomValue"
         assert sym_kwargs["description"] == "Custom description"
         assert sym_kwargs["keywords"] == "custom kw"
         assert sym_kwargs["manufacturer"] == "Custom Mfg"

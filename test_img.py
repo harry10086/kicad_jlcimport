@@ -1,5 +1,5 @@
-import urllib.request
 import re
+import urllib.request
 
 url = 'https://item.szlcsc.com/421842.html'
 req = urllib.request.Request(url, headers={

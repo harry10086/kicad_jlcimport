@@ -196,7 +196,7 @@ class MetadataEditScreen(Screen):
     #meta-dialog {
         width: 70;
         height: auto;
-        max-height: 20;
+        max-height: 24;
         background: #1a1a1a;
         border: solid #333333;
         padding: 1 2;
@@ -210,7 +210,7 @@ class MetadataEditScreen(Screen):
         margin-top: 1;
         color: #aaaaaa;
     }
-    #meta-desc, #meta-keywords, #meta-manufacturer {
+    #meta-value, #meta-desc, #meta-keywords, #meta-manufacturer {
         margin: 0;
     }
     #meta-buttons {
@@ -227,6 +227,8 @@ class MetadataEditScreen(Screen):
     def compose(self) -> ComposeResult:
         with Vertical(id="meta-dialog"):
             yield Static("Edit Metadata", id="meta-title")
+            yield Static("Value", classes="meta-label")
+            yield Input(value=self._metadata.get("value", ""), id="meta-value")
             yield Static("Description", classes="meta-label")
             yield Input(value=self._metadata.get("description", ""), id="meta-desc")
             yield Static("Keywords", classes="meta-label")
@@ -252,6 +254,7 @@ class MetadataEditScreen(Screen):
     def _accept(self):
         self.dismiss(
             {
+                "value": self.query_one("#meta-value", Input).value,
                 "description": self.query_one("#meta-desc", Input).value,
                 "keywords": self.query_one("#meta-keywords", Input).value,
                 "manufacturer": self.query_one("#meta-manufacturer", Input).value,

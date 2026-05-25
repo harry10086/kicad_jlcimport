@@ -67,6 +67,7 @@ def write_symbol(
     total_units: int = 1,
     include_pin_dots: bool = False,
     hide_properties: bool = False,
+    value: str = "",
 ) -> str:
     """Generate a complete (symbol ...) block.
 
@@ -93,7 +94,8 @@ def write_symbol(
         lines.append(f"      (effects (font (size 1.27 1.27)){hide_suffix})")
         lines.append("    )")
         val_y = _estimate_bottom(symbol) - 2.0
-        lines.append(f'    (property "Value" "{name}" (at {_fmt(ref_x)} {_fmt(val_y)} 0)')
+        val = value if value else name
+        lines.append(f'    (property "Value" "{_escape(val)}" (at {_fmt(ref_x)} {_fmt(val_y)} 0)')
         lines.append(f"      (effects (font (size 1.27 1.27)){hide_suffix})")
         lines.append("    )")
         if footprint_ref:
