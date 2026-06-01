@@ -1427,3 +1427,171 @@ class TestReuseFootprint:
         assert result is not None
         assert seen_packages == ["QFN-80-1EP_10x10mm_P0.4mm_EP3.4x3.4mm"]
         assert symbol_kwargs["footprint_ref"] == "Package_DFN_QFN:QFN-80-1EP_10x10mm_P0.4mm_EP3.4x3.4mm"
+
+    def test_import_with_3d_model_format_prefer_wrl(self, tmp_path, monkeypatch):
+        """Test import with 3D model selecting Prefer WRL format (index 0)."""
+        log_messages = []
+        fake_comp = {
+            "title": "TestPart",
+            "prefix": "U",
+            "description": "Test description",
+            "datasheet": "https://example.com/ds.pdf",
+            "manufacturer": "ACME",
+            "manufacturer_part": "MPN123",
+            "footprint_data": {"dataStr": {"shape": []}},
+            "fp_origin_x": 0,
+            "fp_origin_y": 0,
+            "symbol_data_list": [],
+            "sym_origin_x": 0,
+            "sym_origin_y": 0,
+            "uuid_3d": "model_uuid_123",
+        }
+        fake_fp = EEFootprint()
+        fake_fp.pads.append(EEPad(shape="RECT", x=0, y=0, width=1, height=1, layer="1", number="1", drill=0, rotation=0))
+        written_model_paths = []
+
+        def fake_save(dir, name, step_data=None, wrl_source=None):
+            assert step_data is None
+            assert wrl_source is not None
+            return (
+                None,
+                os.path.join(dir, f"{name}.wrl"),
+            )
+
+        def fake_write_footprint(*a, **k):
+            written_model_paths.append(k.get("model_path"))
+            return "(footprint TestPart)\n"
+
+        monkeypatch.setattr(importer, "fetch_full_component", lambda _, **kw: fake_comp)
+        monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *a, **k: fake_fp)
+        monkeypatch.setattr(importer, "write_footprint", fake_write_footprint)
+        monkeypatch.setattr(importer, "download_step", lambda _: b"STEP")
+        monkeypatch.setattr(importer, "download_wrl_source", lambda _: "wrl-src")
+        monkeypatch.setattr(importer, "save_models", fake_save)
+
+        importer.import_component(
+            "C123",
+            str(tmp_path),
+            "TestLib",
+            use_global=False,
+            log=lambda msg: log_messages.append(msg),
+            confirm_metadata=lambda meta: dict(meta, __model_format=0),
+        )
+
+        assert len(written_model_paths) == 1
+        # Should be WRL path
+        assert written_model_paths[0].endswith(".wrl")
+        assert "WRL saved" in " ".join(log_messages)
+
+    def test_import_with_3d_model_format_prefer_step(self, tmp_path, monkeypatch):
+        """Test import with 3D model selecting Prefer STEP format (index 1)."""
+        log_messages = []
+        fake_comp = {
+            "title": "TestPart",
+            "prefix": "U",
+            "description": "Test description",
+            "datasheet": "https://example.com/ds.pdf",
+            "manufacturer": "ACME",
+            "manufacturer_part": "MPN123",
+            "footprint_data": {"dataStr": {"shape": []}},
+            "fp_origin_x": 0,
+            "fp_origin_y": 0,
+            "symbol_data_list": [],
+            "sym_origin_x": 0,
+            "sym_origin_y": 0,
+            "uuid_3d": "model_uuid_123",
+        }
+        fake_fp = EEFootprint()
+        fake_fp.pads.append(EEPad(shape="RECT", x=0, y=0, width=1, height=1, layer="1", number="1", drill=0, rotation=0))
+        written_model_paths = []
+
+        def fake_save(dir, name, step_data=None, wrl_source=None):
+            assert step_data is not None
+            assert wrl_source is None
+            return (
+                os.path.join(dir, f"{name}.step"),
+                None,
+            )
+
+        def fake_write_footprint(*a, **k):
+            written_model_paths.append(k.get("model_path"))
+            return "(footprint TestPart)\n"
+
+        monkeypatch.setattr(importer, "fetch_full_component", lambda _, **kw: fake_comp)
+        monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *a, **k: fake_fp)
+        monkeypatch.setattr(importer, "write_footprint", fake_write_footprint)
+        monkeypatch.setattr(importer, "download_step", lambda _: b"STEP")
+        monkeypatch.setattr(importer, "download_wrl_source", lambda _: "wrl-src")
+        monkeypatch.setattr(importer, "save_models", fake_save)
+
+        importer.import_component(
+            "C123",
+            str(tmp_path),
+            "TestLib",
+            use_global=False,
+            log=lambda msg: log_messages.append(msg),
+            confirm_metadata=lambda meta: dict(meta, __model_format=1),
+        )
+
+        assert len(written_model_paths) == 1
+        # Should be STEP path
+        assert written_model_paths[0].endswith(".step")
+        assert "STEP saved" in " ".join(log_messages)
+
+    def test_import_with_3d_model_format_both(self, tmp_path, monkeypatch):
+        """Test import with 3D model selecting both formats (index 2)."""
+        log_messages = []
+        fake_comp = {
+            "title": "TestPart",
+            "prefix": "U",
+            "description": "Test description",
+            "datasheet": "https://example.com/ds.pdf",
+            "manufacturer": "ACME",
+            "manufacturer_part": "MPN123",
+            "footprint_data": {"dataStr": {"shape": []}},
+            "fp_origin_x": 0,
+            "fp_origin_y": 0,
+            "symbol_data_list": [],
+            "sym_origin_x": 0,
+            "sym_origin_y": 0,
+            "uuid_3d": "model_uuid_123",
+        }
+        fake_fp = EEFootprint()
+        fake_fp.pads.append(EEPad(shape="RECT", x=0, y=0, width=1, height=1, layer="1", number="1", drill=0, rotation=0))
+        written_model_paths = []
+
+        def fake_save(dir, name, step_data=None, wrl_source=None):
+            assert step_data is not None
+            assert wrl_source is not None
+            return (
+                os.path.join(dir, f"{name}.step"),
+                os.path.join(dir, f"{name}.wrl"),
+            )
+
+        def fake_write_footprint(*a, **k):
+            written_model_paths.append(k.get("model_path"))
+            return "(footprint TestPart)\n"
+
+        monkeypatch.setattr(importer, "fetch_full_component", lambda _, **kw: fake_comp)
+        monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *a, **k: fake_fp)
+        monkeypatch.setattr(importer, "write_footprint", fake_write_footprint)
+        monkeypatch.setattr(importer, "download_step", lambda _: b"STEP")
+        monkeypatch.setattr(importer, "download_wrl_source", lambda _: "wrl-src")
+        monkeypatch.setattr(importer, "save_models", fake_save)
+
+        importer.import_component(
+            "C123",
+            str(tmp_path),
+            "TestLib",
+            use_global=False,
+            log=lambda msg: log_messages.append(msg),
+            confirm_metadata=lambda meta: dict(meta, __model_format=2),
+        )
+
+        assert len(written_model_paths) == 1
+        paths = written_model_paths[0]
+        # Should be a list with both WRL and STEP paths
+        assert isinstance(paths, list)
+        assert len(paths) == 2
+        assert any(p.endswith(".wrl") for p in paths)
+        assert any(p.endswith(".step") for p in paths)

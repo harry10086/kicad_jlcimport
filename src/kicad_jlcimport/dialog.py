@@ -1021,7 +1021,7 @@ class MetadataEditDialog(wx.Dialog):
         super().__init__(
             parent,
             title="Edit Metadata",
-            size=(540, 460),
+            size=(540, 480),
             style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
         )
         self._build_ui(metadata)
@@ -1073,6 +1073,21 @@ class MetadataEditDialog(wx.Dialog):
         )
         grid.Add(self._model_name, 1, wx.EXPAND)
 
+        # 3D model format selection dropdown
+        self._model_format_label = wx.StaticText(self, label="3D model format")
+        grid.Add(self._model_format_label, 0, wx.ALIGN_CENTER_VERTICAL)
+        choices = [
+            "Prefer WRL format",
+            "Prefer STEP format",
+            "Import both formats",
+        ]
+        self._model_format = wx.Choice(self, choices=choices)
+        self._model_format.SetSelection(0)
+        self._model_format.SetToolTip(
+            "Select 3D model format:\n1. Prefer WRL: use WRL if available, fallback to STEP.\n2. Prefer STEP: use STEP if available, fallback to WRL.\n3. Both: import both formats.\nGreyed out when using a KiCad library footprint."
+        )
+        grid.Add(self._model_format, 1, wx.EXPAND)
+
         vbox.Add(grid, 1, wx.EXPAND | wx.ALL, 10)
 
         # ── Footprint selection ──────────────────────────────────────
@@ -1123,7 +1138,7 @@ class MetadataEditDialog(wx.Dialog):
         to make that clear.
         """
         easyeda_active = self._rb_import.GetValue()
-        for ctrl in (self._fp_name, self._model_name, self._fp_name_label, self._model_name_label):
+        for ctrl in (self._fp_name, self._model_name, self._fp_name_label, self._model_name_label, self._model_format, self._model_format_label):
             ctrl.Enable(easyeda_active)
 
     def _on_browse_footprint(self, event) -> None:
@@ -1162,6 +1177,7 @@ class MetadataEditDialog(wx.Dialog):
             # Only pass name overrides when actually importing from EasyEDA
             result["__footprint_name"] = self._fp_name.GetValue().strip()
             result["__model_name"] = self._model_name.GetValue().strip()
+            result["__model_format"] = self._model_format.GetSelection()
         return result
 
 

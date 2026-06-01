@@ -1,6 +1,6 @@
 """Generate KiCad .kicad_mod footprint files (v8 and v9)."""
 
-from typing import Tuple
+from typing import Iterable, Tuple, Union
 
 from ..easyeda.ee_types import EEFootprint
 from ..easyeda.parser import compute_arc_midpoint
@@ -17,7 +17,7 @@ def write_footprint(
     description: str = "",
     keywords: str = "",
     datasheet: str = "",
-    model_path: str = "",
+    model_path: Union[str, Iterable[str]] = "",
     model_offset: Tuple[float, float, float] = (0, 0, 0),
     model_rotation: Tuple[float, float, float] = (0, 0, 0),
     kicad_version: int = DEFAULT_KICAD_VERSION,
@@ -182,13 +182,16 @@ def write_footprint(
 
     # 3D model
     if model_path:
+        paths = [model_path] if isinstance(model_path, str) else model_path
         ox, oy, oz = model_offset
         rx, ry, rz = model_rotation
-        lines.append(f'  (model "{model_path}"')
-        lines.append(f"    (offset (xyz {_fmt(ox)} {_fmt(oy)} {_fmt(oz)}))")
-        lines.append("    (scale (xyz 1 1 1))")
-        lines.append(f"    (rotate (xyz {_fmt(rx)} {_fmt(ry)} {_fmt(rz)}))")
-        lines.append("  )")
+        for path in paths:
+            if path:
+                lines.append(f'  (model "{path}"')
+                lines.append(f"    (offset (xyz {_fmt(ox)} {_fmt(oy)} {_fmt(oz)}))")
+                lines.append("    (scale (xyz 1 1 1))")
+                lines.append(f"    (rotate (xyz {_fmt(rx)} {_fmt(ry)} {_fmt(rz)}))")
+                lines.append("  )")
 
     if has_embedded_fonts(kicad_version):
         lines.append("  (embedded_fonts no)")

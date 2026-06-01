@@ -196,7 +196,7 @@ class MetadataEditScreen(Screen):
     #meta-dialog {
         width: 70;
         height: auto;
-        max-height: 24;
+        max-height: 28;
         background: #1a1a1a;
         border: solid #333333;
         padding: 1 2;
@@ -235,6 +235,13 @@ class MetadataEditScreen(Screen):
             yield Input(value=self._metadata.get("keywords", ""), id="meta-keywords")
             yield Static("Manufacturer", classes="meta-label")
             yield Input(value=self._metadata.get("manufacturer", ""), id="meta-manufacturer")
+            yield Static("3D Format", classes="meta-label")
+            choices = [
+                ("Prefer WRL format", 0),
+                ("Prefer STEP format", 1),
+                ("Import both formats", 2),
+            ]
+            yield Select(choices, value=0, id="meta-model-format", allow_blank=False)
             with Horizontal(id="meta-buttons"):
                 yield Button("OK", id="meta-ok", variant="success")
                 yield Button("Cancel", id="meta-cancel")
@@ -258,6 +265,7 @@ class MetadataEditScreen(Screen):
                 "description": self.query_one("#meta-desc", Input).value,
                 "keywords": self.query_one("#meta-keywords", Input).value,
                 "manufacturer": self.query_one("#meta-manufacturer", Input).value,
+                "__model_format": self.query_one("#meta-model-format", Select).value,
             }
         )
 

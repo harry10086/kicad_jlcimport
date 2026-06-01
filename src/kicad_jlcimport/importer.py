@@ -85,7 +85,7 @@ def _check_existing_files(
     return existing
 
 
-def _global_model_path(lib_dir: str, lib_name: str, model_name: str, kicad_version: int) -> str:
+def _global_model_path(lib_dir: str, lib_name: str, model_name: str, kicad_version: int, ext: str = "wrl") -> str:
     """Build the 3D model path for a global library import.
 
     Uses the ``${KICADxx_3RD_PARTY}`` variable when the library lives in the
@@ -94,8 +94,8 @@ def _global_model_path(lib_dir: str, lib_name: str, model_name: str, kicad_versi
     """
     default_dir = _default_3rdparty_dir(kicad_version)
     if os.path.normpath(lib_dir) == os.path.normpath(default_dir):
-        return f"${{KICAD{kicad_version}_3RD_PARTY}}/{lib_name}.3dshapes/{model_name}.wrl"
-    return os.path.join(lib_dir, f"{lib_name}.3dshapes", f"{model_name}.wrl").replace("\\", "/")
+        return f"${{KICAD{kicad_version}_3RD_PARTY}}/{lib_name}.3dshapes/{model_name}.{ext}"
+    return os.path.join(lib_dir, f"{lib_name}.3dshapes", f"{model_name}.{ext}").replace("\\", "/")
 
 
 def import_component(
@@ -208,6 +208,7 @@ def import_component(
     metadata.pop("__footprint_candidate_ref", None)
     metadata.pop("__reuse_existing_footprint", None)
     metadata.pop("__manually_chosen_footprint", None)
+    model_format = metadata.pop("__model_format", 2)
     # Apply user-edited footprint / 3D-model name overrides (EasyEDA import only).
     # Check for empty strings BEFORE sanitize_name — sanitize_name("") returns
     # "unnamed" which is truthy, so the `or name` fallback would never trigger.
@@ -356,6 +357,7 @@ def import_component(
             metadata,
             fp_name=fp_name,
             model_name=model_name,
+            model_format=model_format,
         )
 
     return _import_to_library(
@@ -380,6 +382,7 @@ def import_component(
         footprint_ref,
         fp_name=fp_name,
         model_name=model_name,
+        model_format=model_format,
     )
 
 
@@ -401,6 +404,7 @@ def _export_only(
     metadata=None,
     fp_name=None,
     model_name=None,
+    model_format=0,
 ):
     """Write raw .kicad_mod, .kicad_sym, and 3D models to a flat directory."""
     # fp_name: filename for .kicad_mod (defaults to component name)
@@ -410,8 +414,16 @@ def _export_only(
     os.makedirs(out_dir, exist_ok=True)
 
     # Model path for export is relative within the output dir
-    # Use WRL instead of STEP for consistency with offset calculations (which use OBJ/WRL geometry)
-    model_path = f"3dmodels/{model_name}.wrl" if uuid_3d else ""
+    model_path = ""
+    if uuid_3d:
+        wrl_ref = f"3dmodels/{model_name}.wrl"
+        step_ref = f"3dmodels/{model_name}.step"
+        if model_format == 0:
+            model_path = wrl_ref
+        elif model_format == 1:
+            model_path = step_ref
+        elif model_format == 2:
+            model_path = [wrl_ref, step_ref]
 
     fp_content = write_footprint(
         footprint,
@@ -445,14 +457,34 @@ def _export_only(
 
     if uuid_3d:
         models_dir = os.path.join(out_dir, "3dmodels")
-        # Download STEP and WRL in parallel
-        with ThreadPoolExecutor(max_workers=2) as pool:
-            step_future = pool.submit(download_step, uuid_3d)
-            wrl_future = pool.submit(download_wrl_source, uuid_3d) if wrl_source is None else None
-            step_data = step_future.result()
-            if wrl_future is not None:
-                wrl_source = wrl_future.result()
-        step_path, wrl_path = save_models(models_dir, model_name, step_data, wrl_source)
+        step_data = None
+        wrl_data_source = wrl_source
+
+        if model_format == 0:  # Prefer WRL
+            if wrl_data_source is None:
+                wrl_data_source = download_wrl_source(uuid_3d)
+            step_path, wrl_path = save_models(models_dir, model_name, None, wrl_data_source)
+        elif model_format == 1:  # Prefer STEP
+            try:
+                step_data = download_step(uuid_3d)
+            except Exception:
+                step_data = None
+
+            if step_data is not None:
+                step_path, wrl_path = save_models(models_dir, model_name, step_data, None)
+            else:
+                if wrl_data_source is None:
+                    wrl_data_source = download_wrl_source(uuid_3d)
+                step_path, wrl_path = save_models(models_dir, model_name, None, wrl_data_source)
+        else:  # Both
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                step_future = pool.submit(download_step, uuid_3d)
+                wrl_future = pool.submit(download_wrl_source, uuid_3d) if wrl_source is None else None
+                step_data = step_future.result()
+                if wrl_future is not None:
+                    wrl_data_source = wrl_future.result()
+            step_path, wrl_path = save_models(models_dir, model_name, step_data, wrl_data_source)
+
         if step_path:
             log(f"  Saved: {step_path}")
         if wrl_path:
@@ -483,6 +515,7 @@ def _import_to_library(
     footprint_ref="",
     fp_name=None,
     model_name=None,
+    model_format=0,
 ):
     """Import into KiCad library structure with lib-table updates.
 
@@ -510,27 +543,63 @@ def _import_to_library(
         wrl_existed = os.path.exists(wrl_dest)
 
         log("Downloading 3D model...")
-        need_step = overwrite or not step_existed
-        need_wrl = wrl_source is None and (overwrite or not wrl_existed)
-        # Download STEP and WRL in parallel when both are needed
-        if need_step and need_wrl:
-            with ThreadPoolExecutor(max_workers=2) as pool:
-                step_future = pool.submit(download_step, uuid_3d)
-                wrl_future = pool.submit(download_wrl_source, uuid_3d)
-                step_data = step_future.result()
-                wrl_source = wrl_future.result()
-        else:
-            step_data = download_step(uuid_3d) if need_step else None
-            if need_wrl:
-                wrl_source = download_wrl_source(uuid_3d)
-        step_path, wrl_path = save_models(paths["models_dir"], model_name, step_data, wrl_source)
+        step_data = None
+        wrl_data_source = wrl_source
 
-        # Use WRL instead of STEP for consistency with offset calculations (which use OBJ/WRL geometry)
-        if wrl_path:
-            if use_global:
-                model_path = _global_model_path(lib_dir, lib_name, model_name, kicad_version)
+        if model_format == 0:  # Prefer WRL
+            # WRL source is usually already fetched in the parent for transform computation
+            if wrl_data_source is None:
+                wrl_data_source = download_wrl_source(uuid_3d)
+            step_path, wrl_path = save_models(paths["models_dir"], model_name, None, wrl_data_source)
+        elif model_format == 1:  # Prefer STEP
+            need_step = overwrite or not step_existed
+            if need_step:
+                try:
+                    step_data = download_step(uuid_3d)
+                except Exception:
+                    step_data = None
+
+            step_available = (step_data is not None) or step_existed
+            if step_available:
+                step_path, wrl_path = save_models(paths["models_dir"], model_name, step_data, None)
             else:
-                model_path = f"${{KIPRJMOD}}/{lib_name}.3dshapes/{model_name}.wrl"
+                need_wrl = overwrite or not wrl_existed
+                if need_wrl and wrl_data_source is None:
+                    wrl_data_source = download_wrl_source(uuid_3d)
+                step_path, wrl_path = save_models(paths["models_dir"], model_name, None, wrl_data_source)
+        else:  # Both
+            need_step = overwrite or not step_existed
+            need_wrl = wrl_data_source is None and (overwrite or not wrl_existed)
+            if need_step and need_wrl:
+                with ThreadPoolExecutor(max_workers=2) as pool:
+                    step_future = pool.submit(download_step, uuid_3d)
+                    wrl_future = pool.submit(download_wrl_source, uuid_3d)
+                    step_data = step_future.result()
+                    wrl_data_source = wrl_future.result()
+            else:
+                if need_step:
+                    step_data = download_step(uuid_3d)
+                if need_wrl:
+                    wrl_data_source = download_wrl_source(uuid_3d)
+            step_path, wrl_path = save_models(paths["models_dir"], model_name, step_data, wrl_data_source)
+
+        def get_model_path_by_ext(ext: str) -> str:
+            if use_global:
+                return _global_model_path(lib_dir, lib_name, model_name, kicad_version, ext=ext)
+            else:
+                return f"${{KIPRJMOD}}/{lib_name}.3dshapes/{model_name}.{ext}"
+
+        wrl_ref = get_model_path_by_ext("wrl") if wrl_path else ""
+        step_ref = get_model_path_by_ext("step") if step_path else ""
+
+        if model_format == 0:
+            model_path = wrl_ref or step_ref
+        elif model_format == 1:
+            model_path = step_ref or wrl_ref
+        elif model_format == 2:
+            model_path = [p for p in (wrl_ref, step_ref) if p]
+
+        if wrl_path:
             if wrl_existed and not overwrite:
                 log(f"  WRL skipped: {wrl_path} (exists, overwrite=off)")
             else:
