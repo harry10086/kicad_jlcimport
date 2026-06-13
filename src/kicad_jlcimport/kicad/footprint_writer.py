@@ -60,18 +60,18 @@ def write_footprint(
     lines.append("    (effects (font (size 1 1) (thickness 0.15)))")
     lines.append("  )")
     if datasheet:
-        lines.append(f'  (property "Datasheet" "{datasheet}" (at 0 0 0) (layer "F.Fab") (hide yes) (uuid "{_uuid()}")')
-        lines.append("    (effects (font (size 1 1) (thickness 0.15)))")
+        lines.append(f'  (property "Datasheet" "{datasheet}" (at 0 0 0) (layer "F.Fab") (uuid "{_uuid()}")')
+        lines.append("    (effects (font (size 1 1) (thickness 0.15)) (hide yes))")
         lines.append("  )")
     if description:
         lines.append(
-            f'  (property "Description" "{_escape(description)}" (at 0 0 0) (layer "F.Fab") (hide yes) (uuid "{_uuid()}")'
+            f'  (property "Description" "{_escape(description)}" (at 0 0 0) (layer "F.Fab") (uuid "{_uuid()}")'
         )
-        lines.append("    (effects (font (size 1 1) (thickness 0.15)))")
+        lines.append("    (effects (font (size 1 1) (thickness 0.15)) (hide yes))")
         lines.append("  )")
     if lcsc_id:
-        lines.append(f'  (property "LCSC" "{lcsc_id}" (at 0 0 0) (layer "F.Fab") (hide yes) (uuid "{_uuid()}")')
-        lines.append("    (effects (font (size 1 1) (thickness 0.15)))")
+        lines.append(f'  (property "LCSC" "{lcsc_id}" (at 0 0 0) (layer "F.Fab") (uuid "{_uuid()}")')
+        lines.append("    (effects (font (size 1 1) (thickness 0.15)) (hide yes))")
         lines.append("  )")
 
     lines.append(f"  (attr {attr})")

@@ -187,9 +187,23 @@ class TestWriteFootprint:
         result = write_footprint(
             fp, "Test", lcsc_id="C123456", description="A test part", datasheet="https://example.com/ds.pdf"
         )
-        assert '(property "LCSC" "C123456"' in result
-        assert '(property "Description"' in result
-        assert '(property "Datasheet"' in result
+        # Verify LCSC property has F.Fab layer and is hidden inside effects
+        assert '(property "LCSC" "C123456" (at 0 0 0) (layer "F.Fab")' in result
+        lcsc_index = result.index('(property "LCSC"')
+        lcsc_block = result[lcsc_index : lcsc_index + 200]
+        assert '(effects (font (size 1 1) (thickness 0.15)) (hide yes))' in lcsc_block
+
+        # Verify Description property has F.Fab layer and is hidden inside effects
+        assert '(property "Description" "A test part" (at 0 0 0) (layer "F.Fab")' in result
+        desc_index = result.index('(property "Description"')
+        desc_block = result[desc_index : desc_index + 200]
+        assert '(effects (font (size 1 1) (thickness 0.15)) (hide yes))' in desc_block
+
+        # Verify Datasheet property has F.Fab layer and is hidden inside effects
+        assert '(property "Datasheet" "https://example.com/ds.pdf" (at 0 0 0) (layer "F.Fab")' in result
+        ds_index = result.index('(property "Datasheet"')
+        ds_block = result[ds_index : ds_index + 200]
+        assert '(effects (font (size 1 1) (thickness 0.15)) (hide yes))' in ds_block
 
     def test_model_reference(self):
         fp = _make_footprint()
