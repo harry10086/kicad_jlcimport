@@ -1428,6 +1428,127 @@ class TestReuseFootprint:
         assert seen_packages == ["QFN-80-1EP_10x10mm_P0.4mm_EP3.4x3.4mm"]
         assert symbol_kwargs["footprint_ref"] == "Package_DFN_QFN:QFN-80-1EP_10x10mm_P0.4mm_EP3.4x3.4mm"
 
+    def test_copy_and_customize_reused_footprint(self, tmp_path, monkeypatch):
+        fake_comp = self._make_fake_comp()
+        fake_comp["datasheet"] = "https://item.szlcsc.com/236104.html"
+        symbol_kwargs = {}
+
+        monkeypatch.setattr(importer, "fetch_full_component", lambda _, **kw: fake_comp)
+        monkeypatch.setattr(importer, "find_best_matching_footprint", lambda *a, **k: "Package_DIP:DIP-8_W7.62mm")
+        monkeypatch.setattr(importer, "parse_symbol_shapes", lambda *a, **k: self._make_fake_symbol())
+        monkeypatch.setattr(
+            importer, "write_symbol", lambda *a, **k: symbol_kwargs.update(k) or '  (symbol "TestPart")\n'
+        )
+
+        # Create dummy local footprint library and file
+        dummy_pretty = tmp_path / "dummy_Package_DIP.pretty"
+        dummy_pretty.mkdir(parents=True, exist_ok=True)
+        dummy_fp_file = dummy_pretty / "DIP-8_W7.62mm.kicad_mod"
+        
+        dummy_fp_content = """(footprint "DIP-8_W7.62mm" (version 20240108) (generator pcbnew)
+  (layer "F.Cu")
+  (descr "Original Description")
+  (tags "Original Tags")
+  (property "Reference" "REF**" (at 0 -2.5 0) (layer "F.SilkS") (uuid "123") (effects (font (size 1 1) (thickness 0.15))))
+  (property "Value" "DIP-8_W7.62mm" (at 0 2.5 0) (layer "F.Fab") (uuid "456") (effects (font (size 1 1) (thickness 0.15))))
+  (property "Footprint" "" (at 0 0 0) (layer "F.Fab") (uuid "789") (effects (font (size 1.27 1.27)) hide))
+  (property "Datasheet" "http://original-datasheet.pdf" (at 0 0 0) (layer "F.Fab") (uuid "abc") (effects (font (size 1.27 1.27)) hide))
+)
+"""
+        dummy_fp_file.write_text(dummy_fp_content, encoding="utf-8")
+
+        # Mock footprint search to return our dummy library
+        monkeypatch.setattr(
+            importer,
+            "_iter_footprint_libraries",
+            lambda *a, **k: [("Package_DIP", str(dummy_pretty))]
+        )
+
+        result = importer.import_component(
+            "C123",
+            str(tmp_path),
+            "TestLib",
+            overwrite=True,
+            log=lambda msg: None,
+            confirm_reuse_footprint=lambda package, ref: True,
+        )
+
+        assert result is not None
+        # Symbol should point to the copied footprint in TestLib
+        assert symbol_kwargs["footprint_ref"] == "TestLib:TestPart"
+        
+        # Verify the copied footprint file
+        copied_fp_path = tmp_path / "TestLib.pretty" / "TestPart.kicad_mod"
+        assert copied_fp_path.exists()
+        copied_content = copied_fp_path.read_text(encoding="utf-8")
+        
+        assert '(footprint "TestPart"' in copied_content
+        assert '(descr "Test description")' in copied_content
+        # Datasheet property should be updated
+        assert '(property "Datasheet" "https://item.szlcsc.com/236104.html"' in copied_content
+        # Other properties should be inserted/updated
+        assert '(property "LCSC" "C123"' in copied_content
+        assert '(property "Manufacturer" "ACME"' in copied_content
+        assert '(property "Manufacturer Part" "MPN123"' in copied_content
+
+    def test_datasheet_precedence(self, tmp_path, monkeypatch):
+        fake_comp = self._make_fake_comp()
+        fake_comp["datasheet"] = "https://item.szlcsc.com/incorrect.html" # community link
+        symbol_kwargs = {}
+
+        def capture_sym(*args, **kwargs):
+            symbol_kwargs.update(kwargs)
+            return '  (symbol "TestPart")\n'
+
+        monkeypatch.setattr(importer, "fetch_full_component", lambda _, **kw: fake_comp)
+        monkeypatch.setattr(importer, "parse_symbol_shapes", lambda *a, **k: self._make_fake_symbol())
+        monkeypatch.setattr(importer, "write_symbol", capture_sym)
+        
+        class MockFootprint:
+            pads = []
+            tracks = []
+            model = None
+            
+        monkeypatch.setattr(importer, "parse_footprint_shapes", lambda *a, **k: MockFootprint())
+        monkeypatch.setattr(importer, "write_footprint", lambda *a, **k: "(footprint TestPart)\n")
+
+        # Mock the search_components search result with correct links
+        fake_search_result = {
+            "datasheet": "https://example.com/correct_manual.pdf",
+            "url": "https://item.szlcsc.com/correct_detail.html"
+        }
+
+        # Import component with search result
+        result = importer.import_component(
+            "C123",
+            str(tmp_path),
+            "TestLib",
+            search_result=fake_search_result,
+            log=lambda msg: None,
+        )
+
+        assert result is not None
+        # Should prefer datasheet if present
+        assert symbol_kwargs["datasheet"] == "https://example.com/correct_manual.pdf"
+
+        # Import component with search result containing only url (e.g. from Chinese search tab)
+        fake_search_result_cn = {
+            "datasheet": "",
+            "url": "https://item.szlcsc.com/correct_detail.html"
+        }
+
+        result_cn = importer.import_component(
+            "C123",
+            str(tmp_path),
+            "TestLib",
+            search_result=fake_search_result_cn,
+            log=lambda msg: None,
+        )
+
+        assert result_cn is not None
+        # Should fall back to the catalog URL if datasheet is empty
+        assert symbol_kwargs["datasheet"] == "https://item.szlcsc.com/correct_detail.html"
+
     def test_import_with_3d_model_format_prefer_wrl(self, tmp_path, monkeypatch):
         """Test import with 3D model selecting Prefer WRL format (index 0)."""
         log_messages = []

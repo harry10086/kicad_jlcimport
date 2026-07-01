@@ -6,7 +6,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from typing import Callable
 
-from .easyeda.api import download_step, download_wrl_source, fetch_full_component
+from .easyeda.api import download_step, download_wrl_source, fetch_full_component, search_components, search_components_cn
 from .easyeda.parser import parse_footprint_shapes, parse_symbol_shapes
 from .kicad.footprint_writer import write_footprint
 from .kicad.library import (
@@ -18,6 +18,8 @@ from .kicad.library import (
     save_footprint,
     update_global_lib_tables,
     update_project_lib_tables,
+    _iter_footprint_libraries,
+    _update_footprint_properties,
 )
 from .kicad.model3d import compute_model_transform, save_models
 from .kicad.symbol_writer import write_symbol
@@ -157,14 +159,30 @@ def import_component(
         log(f"Fetching component {lcsc_id}...")
         comp = fetch_full_component(lcsc_id, pre_fetched_uuids=pre_fetched_uuids)
 
+    if not search_result and lcsc_id:
+        try:
+            res = search_components(lcsc_id)
+            if res and res.get("results"):
+                search_result = res["results"][0]
+            else:
+                res = search_components_cn(lcsc_id)
+                if res and res.get("results"):
+                    search_result = res["results"][0]
+        except Exception:
+            pass
+
     # Merge richer metadata from search result when available
     if search_result:
         if search_result.get("brand"):
             comp["manufacturer"] = search_result["brand"]
         if search_result.get("description"):
             comp["description"] = search_result["description"]
-        if search_result.get("datasheet"):
-            comp["datasheet"] = search_result["datasheet"]
+        
+        # Prioritize official PDF datasheet or catalog page URL over EasyEDA community link
+        datasheet_link = search_result.get("datasheet") or search_result.get("url")
+        if datasheet_link:
+            comp["datasheet"] = datasheet_link
+            
         # Some EasyEDA payloads omit package while JLC search results include it.
         if search_result.get("package") and not comp.get("package"):
             comp["package"] = search_result["package"]
@@ -232,6 +250,7 @@ def import_component(
     # This is overwritten below by candidate_ref if the user chose a KiCad
     # library footprint, so no guard against reuse_existing_footprint is needed.
     footprint_ref = f"{lib_name}:{fp_name}"
+    reuse_candidate_ref = None
 
     if candidate_ref:
         if reuse_choice_from_metadata is True:
@@ -239,8 +258,24 @@ def import_component(
         elif reuse_choice_from_metadata is None and confirm_reuse_footprint:
             reuse_existing_footprint = confirm_reuse_footprint(package, candidate_ref)
         if reuse_existing_footprint:
-            footprint_ref = candidate_ref
-            log(f"Reusing existing footprint: {footprint_ref}")
+            log(f"Reusing existing footprint: {candidate_ref}")
+            # Locate the footprint file on disk to see if we can copy/customize it
+            src_fp_path = None
+            lib_name_part, fp_name_part = candidate_ref.split(":", 1)
+            for name_lib, path_lib in _iter_footprint_libraries(lib_dir if not use_global else "", kicad_version):
+                if name_lib == lib_name_part:
+                    candidate_path = os.path.join(path_lib, f"{fp_name_part}.kicad_mod")
+                    if os.path.exists(candidate_path):
+                        src_fp_path = candidate_path
+                        break
+            if src_fp_path:
+                reuse_candidate_ref = candidate_ref
+                footprint_ref = f"{lib_name}:{fp_name}"
+                log(f"Will copy and customize footprint: {candidate_ref} -> {footprint_ref}")
+            else:
+                # Fallback to direct library reference if the source footprint file cannot be found
+                log(f"Warning: Could not find source footprint file for {candidate_ref}. Referencing directly instead.")
+                footprint_ref = candidate_ref
     log(f"Component: {title}")
     log(f"Prefix: {comp['prefix']}, Name: {name}")
 
@@ -358,6 +393,7 @@ def import_component(
             fp_name=fp_name,
             model_name=model_name,
             model_format=model_format,
+            reuse_candidate_ref=reuse_candidate_ref,
         )
 
     return _import_to_library(
@@ -383,6 +419,7 @@ def import_component(
         fp_name=fp_name,
         model_name=model_name,
         model_format=model_format,
+        reuse_candidate_ref=reuse_candidate_ref,
     )
 
 
@@ -405,6 +442,7 @@ def _export_only(
     fp_name=None,
     model_name=None,
     model_format=0,
+    reuse_candidate_ref=None,
 ):
     """Write raw .kicad_mod, .kicad_sym, and 3D models to a flat directory."""
     # fp_name: filename for .kicad_mod (defaults to component name)
@@ -425,23 +463,53 @@ def _export_only(
         elif model_format == 2:
             model_path = [wrl_ref, step_ref]
 
-    fp_content = write_footprint(
-        footprint,
-        fp_name,
-        lcsc_id=lcsc_id,
-        description=metadata["description"],
-        keywords=metadata["keywords"],
-        datasheet=comp.get("datasheet", ""),
-        model_path=model_path,
-        model_offset=model_offset,
-        model_rotation=model_rotation,
-        kicad_version=kicad_version,
-    )
+    fp_content = ""
+    if reuse_candidate_ref:
+        # Copy and customize local footprint
+        src_fp_path = None
+        lib_name_part, fp_name_part = reuse_candidate_ref.split(":", 1)
+        for name_lib, path_lib in _iter_footprint_libraries(out_dir, kicad_version):
+            if name_lib == lib_name_part:
+                candidate_path = os.path.join(path_lib, f"{fp_name_part}.kicad_mod")
+                if os.path.exists(candidate_path):
+                    src_fp_path = candidate_path
+                    break
+        if src_fp_path:
+            try:
+                with open(src_fp_path, "r", encoding="utf-8", errors="replace") as sf:
+                    src_content = sf.read()
+                fp_content = _update_footprint_properties(
+                    src_content,
+                    fp_name=fp_name,
+                    lcsc_id=lcsc_id,
+                    description=metadata.get("description", ""),
+                    keywords=metadata.get("keywords", ""),
+                    datasheet=comp.get("datasheet", ""),
+                    manufacturer=metadata.get("manufacturer", ""),
+                    manufacturer_part=comp.get("manufacturer_part", ""),
+                )
+            except Exception as e:
+                log(f"Error copying footprint for export: {e}")
 
-    fp_path = os.path.join(out_dir, f"{fp_name}.kicad_mod")
-    with open(fp_path, "w") as f:
-        f.write(fp_content)
-    log(f"  Saved: {fp_path}")
+    if not fp_content and footprint:
+        fp_content = write_footprint(
+            footprint,
+            fp_name,
+            lcsc_id=lcsc_id,
+            description=metadata["description"],
+            keywords=metadata["keywords"],
+            datasheet=comp.get("datasheet", ""),
+            model_path=model_path,
+            model_offset=model_offset,
+            model_rotation=model_rotation,
+            kicad_version=kicad_version,
+        )
+
+    if fp_content:
+        fp_path = os.path.join(out_dir, f"{fp_name}.kicad_mod")
+        with open(fp_path, "w") as f:
+            f.write(fp_content)
+        log(f"  Saved: {fp_path}")
 
     if sym_content:
         sym_path = os.path.join(out_dir, f"{name}.kicad_sym")
@@ -516,6 +584,7 @@ def _import_to_library(
     fp_name=None,
     model_name=None,
     model_format=0,
+    reuse_candidate_ref=None,
 ):
     """Import into KiCad library structure with lib-table updates.
 
@@ -533,9 +602,11 @@ def _import_to_library(
 
     # Download 3D models
     model_path = ""
-    if reuse_existing_footprint:
+    if reuse_existing_footprint and not reuse_candidate_ref:
         log(f"Using existing footprint reference: {footprint_ref}")
         log("Skipping footprint and 3D model file generation.")
+    elif reuse_candidate_ref:
+        log(f"Copying and customizing local footprint from: {reuse_candidate_ref}")
     elif uuid_3d:
         step_dest = os.path.join(paths["models_dir"], f"{model_name}.step")
         wrl_dest = os.path.join(paths["models_dir"], f"{model_name}.wrl")
@@ -634,6 +705,39 @@ def _import_to_library(
             log(f"  Saved: {fp_path}")
         else:
             log(f"  Skipped: {fp_path} (exists, overwrite=off)")
+    elif reuse_candidate_ref:
+        # Copy and customize local footprint
+        log("Writing copied footprint...")
+        src_fp_path = None
+        lib_name_part, fp_name_part = reuse_candidate_ref.split(":", 1)
+        for name_lib, path_lib in _iter_footprint_libraries(lib_dir if not use_global else "", kicad_version):
+            if name_lib == lib_name_part:
+                candidate_path = os.path.join(path_lib, f"{fp_name_part}.kicad_mod")
+                if os.path.exists(candidate_path):
+                    src_fp_path = candidate_path
+                    break
+        if src_fp_path:
+            try:
+                with open(src_fp_path, "r", encoding="utf-8", errors="replace") as sf:
+                    src_content = sf.read()
+                fp_content = _update_footprint_properties(
+                    src_content,
+                    fp_name=fp_name,
+                    lcsc_id=lcsc_id,
+                    description=metadata.get("description", ""),
+                    keywords=metadata.get("keywords", ""),
+                    datasheet=comp.get("datasheet", ""),
+                    manufacturer=metadata.get("manufacturer", ""),
+                    manufacturer_part=comp.get("manufacturer_part", ""),
+                )
+                fp_path = os.path.join(paths["fp_dir"], f"{fp_name}.kicad_mod")
+                fp_saved = save_footprint(paths["fp_dir"], fp_name, fp_content, overwrite)
+                if fp_saved:
+                    log(f"  Saved copied footprint: {fp_path}")
+                else:
+                    log(f"  Skipped copied footprint: {fp_path} (exists, overwrite=off)")
+            except Exception as e:
+                log(f"Error copying footprint: {e}")
 
     # Write symbol (always uses component name, not fp_name)
     if sym_content:

@@ -755,3 +755,114 @@ def sanitize_name(title: str) -> str:
     if not name:
         name = "unnamed"
     return name
+
+
+def _find_sexpr_block(text: str, keyword: str, name: str = None) -> tuple[int, int, str] | None:
+    """Find the start and end indices and content of an s-expression block.
+
+    If name is specified, it matches a block starting with (keyword "name" ...).
+    """
+    if name:
+        pattern = re.compile(rf'\({re.escape(keyword)}\s+"?{re.escape(name)}"?\b')
+    else:
+        pattern = re.compile(rf'\({re.escape(keyword)}\b')
+
+    for m in pattern.finditer(text):
+        start = m.start()
+        depth = 0
+        for i in range(start, len(text)):
+            if text[i] == "(":
+                depth += 1
+            elif text[i] == ")":
+                depth -= 1
+                if depth == 0:
+                    return start, i + 1, text[start : i + 1]
+    return None
+
+
+def _update_footprint_properties(
+    content: str,
+    fp_name: str,
+    lcsc_id: str = "",
+    description: str = "",
+    keywords: str = "",
+    datasheet: str = "",
+    manufacturer: str = "",
+    manufacturer_part: str = "",
+) -> str:
+    """Modify the properties and name of a copied KiCad library footprint.
+
+    Replaces (or inserts) Datasheet, Description, LCSC, Manufacturer, and
+    Manufacturer Part properties using the metadata from the LCSC component, and
+    renames the footprint inside the S-expression block.
+    """
+    # 1. Update footprint name in the first block
+    # e.g., (footprint "SOIC-8") or (module SOIC-8)
+    content = re.sub(
+        r'^\s*\((footprint|module)\s+"?[^"\s)]+"?',
+        rf'(\1 "{fp_name}"',
+        content,
+        count=1
+    )
+
+    # 2. Update (descr ...) and (tags ...) blocks if present
+    from ._format import escape_sexpr as _escape
+
+    if description:
+        descr_m = re.search(r'\(descr\s+"[^"]*"\)', content)
+        if descr_m:
+            content = content.replace(descr_m.group(0), f'(descr "{_escape(description)}")')
+        else:
+            # Insert after generator or layer
+            gen_m = re.search(r'\(generator_version\s+"[^"]*"\)', content) or re.search(r'\(generator\s+"[^"]*"\)', content) or re.search(r'\(layer\s+"[^"]*"\)', content)
+            if gen_m:
+                content = content.replace(gen_m.group(0), gen_m.group(0) + f'\n  (descr "{_escape(description)}")')
+
+    if keywords:
+        tags_m = re.search(r'\(tags\s+"[^"]*"\)', content)
+        if tags_m:
+            content = content.replace(tags_m.group(0), f'(tags "{_escape(keywords)}")')
+        else:
+            descr_m = re.search(r'\(descr\s+"[^"]*"\)', content)
+            if descr_m:
+                content = content.replace(descr_m.group(0), descr_m.group(0) + f'\n  (tags "{_escape(keywords)}")')
+
+    # 3. Update / Insert properties
+    properties_to_set = {
+        "Datasheet": datasheet,
+        "Description": description,
+        "LCSC": lcsc_id,
+        "Manufacturer": manufacturer,
+        "Manufacturer Part": manufacturer_part,
+    }
+    properties_to_set = {k: v for k, v in properties_to_set.items() if v}
+
+    for key, val in properties_to_set.items():
+        # Find exact property block for this key using robust bracket counting
+        block_info = _find_sexpr_block(content, "property", key)
+        if block_info:
+            start_idx, end_idx, text = block_info
+            # Match start of property block and capture key prefix (to preserve effects/uuid/etc)
+            pm = re.match(r'^(\(property\s+"' + re.escape(key) + r'"\s+)"[^"]*"', text)
+            if pm:
+                new_text = pm.group(1) + f'"{_escape(val)}"' + text[pm.end():]
+                content = content[:start_idx] + new_text + content[end_idx:]
+        else:
+            # Not found, let's insert it after the "Value" property block.
+            val_info = _find_sexpr_block(content, "property", "Value")
+            if val_info:
+                val_start, val_end, val_text = val_info
+                from ._format import gen_uuid as _uuid
+                new_prop = f'\n  (property "{key}" "{_escape(val)}" (at 0 0 0) (layer "F.Fab") (uuid "{_uuid()}")\n    (effects (font (size 1 1) (thickness 0.15)) (hide yes))\n  )'
+                content = content[:val_end] + new_prop + content[val_end:]
+            else:
+                # Fallback: insert after (tags ...) or (descr ...) or (layer ...)
+                fallback_m = re.search(r'\(tags\s+"[^"]*"\)', content) or re.search(r'\(descr\s+"[^"]*"\)', content) or re.search(r'\(layer\s+"[^"]*"\)', content)
+                if fallback_m:
+                    from ._format import gen_uuid as _uuid
+                    new_prop = f'\n  (property "{key}" "{_escape(val)}" (at 0 0 0) (layer "F.Fab") (uuid "{_uuid()}")\n    (effects (font (size 1 1) (thickness 0.15)) (hide yes))\n  )'
+                    content = content.replace(fallback_m.group(0), fallback_m.group(0) + new_prop)
+
+    return content
+
+

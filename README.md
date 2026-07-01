@@ -61,6 +61,7 @@ source install.sh      # macOS/Linux
 
 ## Recent Updates
 Based on recent git history:
+- `v1.5.10`：修复：在导入元件时使用KiCad已有的相同封装，属性里 datasheets 链接指向新元件的链接，不再是原来封装的链接。
 - `v1.5.9`：增加：导入 3D 封装格式可选。默认选择 wrl 格式，因为文件体积小。
 - `v1.5.8`: 增加：导入元件封装时可以编辑元件值 value，默认是厂家型号，对于电阻电容电感这些就不合适，现在导入界面就可以先手动修改了。
 - `v1.5.7`: 修复：立创商城无法预览图片。因为商品详情页面增加了 阿里云 WAF (Web Application Firewall) 进行反爬虫保护。
