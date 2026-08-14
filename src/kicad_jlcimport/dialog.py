@@ -27,7 +27,43 @@ from .gui.symbol_renderer import has_svg_support, render_svg_bitmap
 from .importer import import_component
 from .kicad.footprint_parser import _parse_kicad_mod
 from .kicad.library import get_global_lib_dir, load_config, save_config
-from .kicad.version import DEFAULT_KICAD_VERSION, SUPPORTED_VERSIONS
+def _bytes_to_wx_image(img_data: bytes) -> Optional[wx.Image]:
+    """Convert raw image bytes to wx.Image, handling JPEG, PNG, WEBP, GIF silently without wxLog errors."""
+    if not img_data:
+        return None
+
+    # Silence wxWidgets error log popups/messages (e.g., 'Not a JPEG/PNG file')
+    no_log = wx.LogNull()
+    try:
+        try:
+            wx.InitAllImageHandlers()
+        except Exception:
+            pass
+
+        # Try automatic format detection first (handles WebP, JPEG, PNG, GIF, BMP)
+        img = wx.Image(io.BytesIO(img_data), type=wx.BITMAP_TYPE_ANY)
+        if img.IsOk():
+            return img
+
+        # Try explicit format handlers as fallbacks
+        types_to_try = [
+            wx.BITMAP_TYPE_JPEG,
+            wx.BITMAP_TYPE_PNG,
+            wx.BITMAP_TYPE_GIF,
+            wx.BITMAP_TYPE_BMP,
+        ]
+        if hasattr(wx, "BITMAP_TYPE_WEBP"):
+            types_to_try.append(getattr(wx, "BITMAP_TYPE_WEBP"))
+
+        for tp in types_to_try:
+            img = wx.Image(io.BytesIO(img_data), type=tp)
+            if img.IsOk():
+                return img
+    except Exception:
+        pass
+    finally:
+        del no_log
+    return None
 
 
 class _CategoryPopup(wx.PopupWindow):
@@ -2583,10 +2619,8 @@ class JLCImportDialog(wx.Dialog):
                 self._show_gallery_no_image()
             return
         try:
-            img = wx.Image(io.BytesIO(img_data), type=wx.BITMAP_TYPE_JPEG)
-            if not img.IsOk():
-                img = wx.Image(io.BytesIO(img_data), type=wx.BITMAP_TYPE_PNG)
-            if img.IsOk():
+            img = _bytes_to_wx_image(img_data)
+            if img and img.IsOk():
                 size = self._get_gallery_image_size()
                 w, h = img.GetWidth(), img.GetHeight()
                 scale = min(size / w, size / h)
@@ -2675,11 +2709,8 @@ class JLCImportDialog(wx.Dialog):
             self.Layout()
             return
         try:
-            stream = io.BytesIO(img_data)
-            img = wx.Image(stream, type=wx.BITMAP_TYPE_JPEG)
-            if not img.IsOk():
-                img = wx.Image(io.BytesIO(img_data), type=wx.BITMAP_TYPE_PNG)
-            if img.IsOk():
+            img = _bytes_to_wx_image(img_data)
+            if img and img.IsOk():
                 self._full_image_data = img_data
                 thumb = img.Scale(160, 160, wx.IMAGE_QUALITY_HIGH)
                 self._photo_bitmap = wx.Bitmap(thumb)
