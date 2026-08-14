@@ -61,6 +61,12 @@ source install.sh      # macOS/Linux
 
 ## Recent Updates
 Based on recent git history:
+- `v1.6.7`：合并了上游 `v1.6.4`、`v1.6.5`、`v1.6.6` 和 `v1.6.7` 的修复补丁：
+    * JLCPCB 搜索支持，默认选择中文立创商城（SZLCSC）：GUI 界面增加 Global (JLCPCB) / China (SZLCSC) 切换，CLI 增加 --region cn 选项，支持人民币 ¥ 价格显示。
+    * AppImage 与 SSL 兼容增强：延迟导入 ssl 模块并增加 curl 子进程降级逻辑，解决 Linux / KiCad AppImage 运行时的 SSL 冲突。
+    * NPTH 及 SVG 圆弧解析修复：完美支持 NPTH 异形区域、多边形焊盘和符号元素中的 SVG 圆弧指令。
+    * KiCad 10 表类型 (Table) 嵌套引申：支持 KiCad 10 的 (type "Table") 嵌套 fp-lib-table 库文件解析。
+    * 网格精度对齐与几何归一化：采用精确的 0.254 转换因子，解决原本微米级网格偏差导致原理图网络标签无法自动吸附网格的问题。
 - `v1.5.10`：修复：在导入元件时使用KiCad已有的相同封装，属性里 datasheets 链接指向新元件的链接，不再是原来封装的链接。
 - `v1.5.9`：增加：导入 3D 封装格式可选。默认选择 wrl 格式，因为文件体积小。
 - `v1.5.8`: 增加：导入元件封装时可以编辑元件值 value，默认是厂家型号，对于电阻电容电感这些就不合适，现在导入界面就可以先手动修改了。
