@@ -1382,8 +1382,9 @@ class JLCImportDialog(wx.Dialog):
 
         # Search input row
         hbox_search = wx.BoxSizer(wx.HORIZONTAL)
+        _init_region = load_config().get("region", "global")
         self.search_input = wx.TextCtrl(panel, style=wx.TE_PROCESS_ENTER)
-        self.search_input.SetHint("Search JLCPCB parts...")
+        self.search_input.SetHint("Search SZLCSC parts..." if _init_region == "cn" else "Search JLCPCB parts...")
         self.search_input.Bind(wx.EVT_TEXT_ENTER, self._on_search)
         self.search_input.Bind(wx.EVT_TEXT, self._on_search_text_changed)
         hbox_search.Add(self.search_input, 1, wx.EXPAND | wx.RIGHT, 5)
@@ -1396,6 +1397,17 @@ class JLCImportDialog(wx.Dialog):
         self._btn_micro.SetToolTip("Insert \u03bc (micro) into search")
         self._btn_micro.Bind(wx.EVT_BUTTON, lambda e: self._insert_symbol("\u03bc"))
         hbox_search.Add(self._btn_micro, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
+
+        self._region_choices = ["Global (JLCPCB)", "China (SZLCSC)"]
+        self._region_values = ["global", "cn"]
+        self.region_choice = wx.Choice(panel, choices=self._region_choices)
+        saved_region = load_config().get("region", "global")
+        sel = self._region_values.index(saved_region) if saved_region in self._region_values else 0
+        self.region_choice.SetSelection(sel)
+        self.region_choice.Bind(wx.EVT_CHOICE, self._on_region_change)
+        hbox_search.Add(wx.StaticText(panel, label="Region"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 4)
+        hbox_search.Add(self.region_choice, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
+
         self.search_btn = wx.Button(panel, label="Search")
         self.search_btn.Bind(wx.EVT_BUTTON, self._on_search)
         hbox_search.Add(self.search_btn, 0)
@@ -1823,6 +1835,21 @@ class JLCImportDialog(wx.Dialog):
             self._category_popup.Dismiss()
             self.search_input.SetInsertionPointEnd()
 
+    def _on_region_change(self, event):
+        """Persist region choice when user changes it."""
+        idx = self.region_choice.GetSelection()
+        region = self._region_values[idx]
+        cfg = load_config()
+        cfg["region"] = region
+        save_config(cfg)
+        hint = "Search SZLCSC parts..." if region == "cn" else "Search JLCPCB parts..."
+        self.search_input.SetHint(hint)
+
+    def _get_search_func(self):
+        """Return the search function for the currently selected region."""
+        idx = self.region_choice.GetSelection()
+        return search_components_cn if self._region_values[idx] == "cn" else _api_module.search_components
+
     def _on_search(self, event):
         self._category_popup.Dismiss()
         keyword = self.search_input.GetValue().strip()
@@ -1846,9 +1873,10 @@ class JLCImportDialog(wx.Dialog):
         request_id = self._search_request_id
         self._start_search_pulse()
         self._search_overlay.show()
+        search_func = self._get_search_func()
         threading.Thread(
             target=self._fetch_search_results,
-            args=(keyword, request_id, 1, 60),
+            args=(keyword, request_id, 1, 60, search_func),
             daemon=True,
         ).start()
 
@@ -1866,9 +1894,10 @@ class JLCImportDialog(wx.Dialog):
         request_id = self._search_request_id
         self._start_search_pulse()
         self._search_overlay.show()
+        search_func = self._get_search_func()
         threading.Thread(
             target=self._fetch_search_results,
-            args=(keyword, request_id, self._current_page, 30),
+            args=(keyword, request_id, self._current_page, 30, search_func),
             daemon=True,
         ).start()
 
@@ -1893,14 +1922,16 @@ class JLCImportDialog(wx.Dialog):
         self.search_btn.SetLabel("Search")
         self.search_btn.Enable()
 
-    def _fetch_search_results(self, keyword, request_id, page=1, page_size=60):
+    def _fetch_search_results(self, keyword, request_id, page=1, page_size=60, search_func=None):
         """Background thread: fetch search results from API."""
+        if search_func is None:
+            search_func = _api_module.search_components
         try:
             try:
-                result = search_components_cn(keyword, page, page_size=page_size)
+                result = search_func(keyword, page, page_size=page_size)
             except SSLCertError:
                 self._handle_ssl_cert_error()
-                result = search_components_cn(keyword, page, page_size=page_size)
+                result = search_func(keyword, page, page_size=page_size)
             if not self._closing:
                 wx.CallAfter(self._on_search_complete, result, request_id, page, page_size)
         except APIError as e:
