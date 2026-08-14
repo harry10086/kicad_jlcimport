@@ -1488,7 +1488,7 @@ class JLCImportDialog(wx.Dialog):
         self._min_stock_choices = [0, 1, 10, 100, 1000, 10000, 100000]
         self._min_stock_labels = ["Any", "1+", "10+", "100+", "1000+", "10000+", "100000+"]
         self.min_stock_choice = wx.Choice(panel, choices=self._min_stock_labels)
-        self.min_stock_choice.SetSelection(1)  # Default to "1+" (in stock)
+        self.min_stock_choice.SetSelection(0)  # Default to "Any"
         self.min_stock_choice.Bind(wx.EVT_CHOICE, self._on_min_stock_change)
         hbox_filter.Add(self.min_stock_choice, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 20)
         hbox_filter.Add(wx.StaticText(panel, label="Package"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
