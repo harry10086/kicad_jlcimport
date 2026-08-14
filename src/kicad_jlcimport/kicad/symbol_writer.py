@@ -3,12 +3,20 @@
 import math
 from typing import List
 
-from ..easyeda.ee_types import EESymbol
-from ..easyeda.parser import compute_arc_midpoint
-from ._format import escape_sexpr as _escape
-from ._format import fmt_float as _fmt
-from ._format import fmt_geometry as _geom
-from .version import DEFAULT_KICAD_VERSION, has_generator_version, symbol_format_version
+try:
+    from ..easyeda.ee_types import EESymbol
+    from ..easyeda.parser import compute_arc_midpoint
+    from ._format import escape_sexpr as _escape
+    from ._format import fmt_float as _fmt
+    from ._format import fmt_geometry as _geom
+    from .version import DEFAULT_KICAD_VERSION, has_generator_version, symbol_format_version
+except (ImportError, ValueError):
+    from easyeda.ee_types import EESymbol
+    from easyeda.parser import compute_arc_midpoint
+    from kicad._format import escape_sexpr as _escape
+    from kicad._format import fmt_float as _fmt
+    from kicad._format import fmt_geometry as _geom
+    from kicad.version import DEFAULT_KICAD_VERSION, has_generator_version, symbol_format_version
 
 
 def _rounded_rect_points(x1: float, y1: float, x2: float, y2: float, r: float) -> List[tuple]:

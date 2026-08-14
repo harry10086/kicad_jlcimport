@@ -2,13 +2,22 @@
 
 from typing import Iterable, Tuple, Union
 
-from ..easyeda.ee_types import EEFootprint
-from ..easyeda.parser import compute_arc_midpoint
-from ._format import escape_sexpr as _escape
-from ._format import fmt_float as _fmt
-from ._format import fmt_geometry as _geom
-from ._format import gen_uuid as _uuid
-from .version import DEFAULT_KICAD_VERSION, footprint_format_version, has_embedded_fonts, has_generator_version
+try:
+    from ..easyeda.ee_types import EEFootprint
+    from ..easyeda.parser import compute_arc_midpoint
+    from ._format import escape_sexpr as _escape
+    from ._format import fmt_float as _fmt
+    from ._format import fmt_geometry as _geom
+    from ._format import gen_uuid as _uuid
+    from .version import DEFAULT_KICAD_VERSION, footprint_format_version, has_embedded_fonts, has_generator_version
+except (ImportError, ValueError):
+    from easyeda.ee_types import EEFootprint
+    from easyeda.parser import compute_arc_midpoint
+    from kicad._format import escape_sexpr as _escape
+    from kicad._format import fmt_float as _fmt
+    from kicad._format import fmt_geometry as _geom
+    from kicad._format import gen_uuid as _uuid
+    from kicad.version import DEFAULT_KICAD_VERSION, footprint_format_version, has_embedded_fonts, has_generator_version
 
 
 def write_footprint(

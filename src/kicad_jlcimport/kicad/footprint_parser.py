@@ -6,8 +6,12 @@ import math
 import os
 import re
 
-from .library import resolve_kicad_var
-from .version import DEFAULT_KICAD_VERSION
+try:
+    from .library import resolve_kicad_var
+    from .version import DEFAULT_KICAD_VERSION
+except (ImportError, ValueError):
+    from library import resolve_kicad_var
+    from version import DEFAULT_KICAD_VERSION
 
 
 def _extract_blocks(text: str, keyword: str) -> list:

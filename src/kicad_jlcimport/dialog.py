@@ -12,21 +12,40 @@ import webbrowser
 
 import wx
 
-from .categories import CATEGORIES
-from .easyeda import api as _api_module
-from .easyeda.api import (
-    APIError,
-    SSLCertError,
-    fetch_component_uuids,
-    fetch_product_image,
-    filter_by_min_stock,
-    filter_by_type,
-    search_components_cn,
-)
-from .gui.symbol_renderer import has_svg_support, render_svg_bitmap
-from .importer import import_component
-from .kicad.footprint_parser import _parse_kicad_mod
-from .kicad.library import get_global_lib_dir, load_config, save_config
+try:
+    from .categories import CATEGORIES
+    from .easyeda import api as _api_module
+    from .easyeda.api import (
+        APIError,
+        SSLCertError,
+        fetch_component_uuids,
+        fetch_product_image,
+        filter_by_min_stock,
+        filter_by_type,
+        search_components_cn,
+    )
+    from .gui.symbol_renderer import has_svg_support, render_svg_bitmap
+    from .importer import import_component
+    from .kicad.footprint_parser import _parse_kicad_mod
+    from .kicad.library import get_global_lib_dir, load_config, save_config
+    from .kicad.version import DEFAULT_KICAD_VERSION, SUPPORTED_VERSIONS
+except (ImportError, ValueError):
+    from categories import CATEGORIES
+    from easyeda import api as _api_module
+    from easyeda.api import (
+        APIError,
+        SSLCertError,
+        fetch_component_uuids,
+        fetch_product_image,
+        filter_by_min_stock,
+        filter_by_type,
+        search_components_cn,
+    )
+    from gui.symbol_renderer import has_svg_support, render_svg_bitmap
+    from importer import import_component
+    from kicad.footprint_parser import _parse_kicad_mod
+    from kicad.library import get_global_lib_dir, load_config, save_config
+    from kicad.version import DEFAULT_KICAD_VERSION, SUPPORTED_VERSIONS
 def _bytes_to_wx_image(img_data: bytes) -> Optional[wx.Image]:
     """Convert raw image bytes to wx.Image, handling JPEG, PNG, WEBP, GIF silently without wxLog errors."""
     if not img_data:
@@ -794,7 +813,10 @@ class FootprintBrowserDialog(wx.Dialog):
             size=(1000, 600),
             style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
         )
-        from .kicad.library import _iter_footprint_libraries
+        try:
+            from .kicad.library import _iter_footprint_libraries
+        except (ImportError, ValueError):
+            from kicad.library import _iter_footprint_libraries
 
         self._libs: list[tuple[str, str]] = list(
             _iter_footprint_libraries(

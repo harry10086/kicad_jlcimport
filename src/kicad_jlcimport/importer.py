@@ -6,24 +6,46 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from typing import Callable
 
-from .easyeda.api import download_step, download_wrl_source, fetch_full_component, search_components, search_components_cn
-from .easyeda.parser import parse_footprint_shapes, parse_symbol_shapes
-from .kicad.footprint_writer import write_footprint
-from .kicad.library import (
-    _default_3rdparty_dir,
-    add_symbol_to_lib,
-    ensure_lib_structure,
-    find_best_matching_footprint,
-    sanitize_name,
-    save_footprint,
-    update_global_lib_tables,
-    update_project_lib_tables,
-    _iter_footprint_libraries,
-    _update_footprint_properties,
-)
-from .kicad.model3d import compute_model_transform, save_models
-from .kicad.symbol_writer import write_symbol
-from .kicad.version import DEFAULT_KICAD_VERSION, has_generator_version, symbol_format_version
+try:
+    from .easyeda.api import download_step, download_wrl_source, fetch_full_component, search_components, search_components_cn
+    from .easyeda.parser import parse_footprint_shapes, parse_symbol_shapes
+    from .kicad.footprint_writer import write_footprint
+    from .kicad.library import (
+        _default_3rdparty_dir,
+        add_symbol_to_lib,
+        ensure_lib_structure,
+        find_best_matching_footprint,
+        sanitize_name,
+        save_footprint,
+        update_global_lib_tables,
+        update_project_lib_tables,
+        _iter_footprint_libraries,
+        _update_footprint_properties,
+    )
+    from .kicad.model3d import compute_model_transform, save_models
+    from .kicad.symbol_writer import write_symbol
+except (ImportError, ValueError):
+    from easyeda.api import download_step, download_wrl_source, fetch_full_component, search_components, search_components_cn
+    from easyeda.parser import parse_footprint_shapes, parse_symbol_shapes
+    from kicad.footprint_writer import write_footprint
+    from kicad.library import (
+        _default_3rdparty_dir,
+        add_symbol_to_lib,
+        ensure_lib_structure,
+        find_best_matching_footprint,
+        sanitize_name,
+        save_footprint,
+        update_global_lib_tables,
+        update_project_lib_tables,
+        _iter_footprint_libraries,
+        _update_footprint_properties,
+    )
+    from kicad.model3d import compute_model_transform, save_models
+    from kicad.symbol_writer import write_symbol
+try:
+    from .kicad.version import DEFAULT_KICAD_VERSION, has_generator_version, symbol_format_version
+except (ImportError, ValueError):
+    from kicad.version import DEFAULT_KICAD_VERSION, has_generator_version, symbol_format_version
 
 
 def _build_description(comp: dict) -> str:

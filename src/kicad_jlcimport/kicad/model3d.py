@@ -17,7 +17,10 @@ import math
 import os
 from typing import Optional, Tuple
 
-from ..easyeda.ee_types import EE3DModel
+try:
+    from ..easyeda.ee_types import EE3DModel
+except (ImportError, ValueError):
+    from easyeda.ee_types import EE3DModel
 
 # ============================================================================
 # Unit Conversion Constants

@@ -5,8 +5,12 @@ import os
 import pcbnew
 import wx
 
-from .dialog import JLCImportDialog
-from .kicad.version import detect_kicad_version_from_pcbnew
+try:
+    from .dialog import JLCImportDialog
+    from .kicad.version import detect_kicad_version_from_pcbnew
+except (ImportError, ValueError):
+    from dialog import JLCImportDialog
+    from kicad.version import detect_kicad_version_from_pcbnew
 
 
 class JLCImportPlugin(pcbnew.ActionPlugin):

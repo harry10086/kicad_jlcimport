@@ -5,21 +5,38 @@ import math
 import re
 from typing import List, Tuple
 
-from .ee_types import (
-    EE3DModel,
-    EEArc,
-    EECircle,
-    EEFootprint,
-    EEHole,
-    EEPad,
-    EEPin,
-    EEPolyline,
-    EERectangle,
-    EESolidRegion,
-    EESymbol,
-    EEText,
-    EETrack,
-)
+try:
+    from .ee_types import (
+        EE3DModel,
+        EEArc,
+        EECircle,
+        EEFootprint,
+        EEHole,
+        EEPad,
+        EEPin,
+        EEPolyline,
+        EERectangle,
+        EESolidRegion,
+        EESymbol,
+        EEText,
+        EETrack,
+    )
+except (ImportError, ValueError):
+    from ee_types import (
+        EE3DModel,
+        EEArc,
+        EECircle,
+        EEFootprint,
+        EEHole,
+        EEPad,
+        EEPin,
+        EEPolyline,
+        EERectangle,
+        EESolidRegion,
+        EESymbol,
+        EEText,
+        EETrack,
+    )
 
 # EasyEDA layer ID -> KiCad layer name
 LAYER_MAP = {

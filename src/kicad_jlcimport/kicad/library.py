@@ -7,7 +7,10 @@ import os
 import re
 import sys
 
-from .version import DEFAULT_KICAD_VERSION, has_generator_version, symbol_format_version, version_dir_name
+try:
+    from .version import DEFAULT_KICAD_VERSION, has_generator_version, symbol_format_version, version_dir_name
+except (ImportError, ValueError):
+    from kicad.version import DEFAULT_KICAD_VERSION, has_generator_version, symbol_format_version, version_dir_name
 
 _DEFAULT_CONFIG = {"lib_name": "JLCImport", "global_lib_dir": "", "use_global": False, "region": "cn"}
 
@@ -800,7 +803,10 @@ def _update_footprint_properties(
     )
 
     # 2. Update (descr ...) and (tags ...) blocks if present
-    from ._format import escape_sexpr as _escape
+    try:
+        from ._format import escape_sexpr as _escape
+    except (ImportError, ValueError):
+        from kicad._format import escape_sexpr as _escape
 
     if description:
         descr_m = re.search(r'\(descr\s+"[^"]*"\)', content)
@@ -846,14 +852,20 @@ def _update_footprint_properties(
             val_info = _find_sexpr_block(content, "property", "Value")
             if val_info:
                 val_start, val_end, val_text = val_info
-                from ._format import gen_uuid as _uuid
+                try:
+                    from ._format import gen_uuid as _uuid
+                except (ImportError, ValueError):
+                    from kicad._format import gen_uuid as _uuid
                 new_prop = f'\n  (property "{key}" "{_escape(val)}" (at 0 0 0) (layer "F.Fab") (uuid "{_uuid()}")\n    (effects (font (size 1 1) (thickness 0.15)) (hide yes))\n  )'
                 content = content[:val_end] + new_prop + content[val_end:]
             else:
                 # Fallback: insert after (tags ...) or (descr ...) or (layer ...)
                 fallback_m = re.search(r'\(tags\s+"[^"]*"\)', content) or re.search(r'\(descr\s+"[^"]*"\)', content) or re.search(r'\(layer\s+"[^"]*"\)', content)
                 if fallback_m:
-                    from ._format import gen_uuid as _uuid
+                    try:
+                        from ._format import gen_uuid as _uuid
+                    except (ImportError, ValueError):
+                        from kicad._format import gen_uuid as _uuid
                     new_prop = f'\n  (property "{key}" "{_escape(val)}" (at 0 0 0) (layer "F.Fab") (uuid "{_uuid()}")\n    (effects (font (size 1 1) (thickness 0.15)) (hide yes))\n  )'
                     content = content.replace(fallback_m.group(0), fallback_m.group(0) + new_prop)
 

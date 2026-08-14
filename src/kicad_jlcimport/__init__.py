@@ -6,7 +6,10 @@ except ImportError:
     pass  # pcbnew not available (running outside KiCad)
 else:
     try:
-        from .plugin import JLCImportPlugin
+        try:
+            from .plugin import JLCImportPlugin
+        except (ImportError, ValueError):
+            from plugin import JLCImportPlugin
 
         JLCImportPlugin().register()
     except Exception:
