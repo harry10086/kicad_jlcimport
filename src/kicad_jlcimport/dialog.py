@@ -1382,7 +1382,7 @@ class JLCImportDialog(wx.Dialog):
 
         # Search input row
         hbox_search = wx.BoxSizer(wx.HORIZONTAL)
-        _init_region = load_config().get("region", "global")
+        _init_region = load_config().get("region", "cn")
         self.search_input = wx.TextCtrl(panel, style=wx.TE_PROCESS_ENTER)
         self.search_input.SetHint("Search SZLCSC parts..." if _init_region == "cn" else "Search JLCPCB parts...")
         self.search_input.Bind(wx.EVT_TEXT_ENTER, self._on_search)
@@ -1398,10 +1398,10 @@ class JLCImportDialog(wx.Dialog):
         self._btn_micro.Bind(wx.EVT_BUTTON, lambda e: self._insert_symbol("\u03bc"))
         hbox_search.Add(self._btn_micro, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
 
-        self._region_choices = ["Global (JLCPCB)", "China (SZLCSC)"]
-        self._region_values = ["global", "cn"]
+        self._region_choices = ["China (SZLCSC / 立创商城)", "Global (JLCPCB)"]
+        self._region_values = ["cn", "global"]
         self.region_choice = wx.Choice(panel, choices=self._region_choices)
-        saved_region = load_config().get("region", "global")
+        saved_region = load_config().get("region", "cn")
         sel = self._region_values.index(saved_region) if saved_region in self._region_values else 0
         self.region_choice.SetSelection(sel)
         self.region_choice.Bind(wx.EVT_CHOICE, self._on_region_change)
@@ -2206,13 +2206,13 @@ class JLCImportDialog(wx.Dialog):
         # Fetch image in background
         image_url = r.get("image_url", "")
         lcsc_url = r.get("url", "")
-        fetch_url = image_url if image_url else lcsc_url
+        fetch_url = lcsc_url if lcsc_url else image_url
         self._image_request_id += 1
         request_id = self._image_request_id
-        if fetch_url:
+        if fetch_url or image_url:
             if self._detail_page == 0:
                 self._show_skeleton()
-            threading.Thread(target=self._fetch_image, args=(fetch_url, request_id), daemon=True).start()
+            threading.Thread(target=self._fetch_image, args=(fetch_url, request_id, image_url), daemon=True).start()
         else:
             self._stop_skeleton()
             if self._detail_page == 0:
@@ -2373,11 +2373,11 @@ class JLCImportDialog(wx.Dialog):
         # Fetch photo image
         image_url = r.get("image_url", "")
         lcsc_url = r.get("url", "")
-        fetch_url = image_url if image_url else lcsc_url
+        fetch_url = lcsc_url if lcsc_url else image_url
         self._gallery_request_id += 1
         request_id = self._gallery_request_id
-        if fetch_url:
-            threading.Thread(target=self._fetch_gallery_image, args=(fetch_url, request_id), daemon=True).start()
+        if fetch_url or image_url:
+            threading.Thread(target=self._fetch_gallery_image, args=(fetch_url, request_id, image_url), daemon=True).start()
         else:
             if self._gallery_page == 0:
                 self._stop_gallery_skeleton()
@@ -2559,14 +2559,14 @@ class JLCImportDialog(wx.Dialog):
         w, h = self.GetClientSize()
         return max(min(w - 100, h - 120), 100)
 
-    def _fetch_gallery_image(self, lcsc_url, request_id):
+    def _fetch_gallery_image(self, lcsc_url, request_id, direct_image_url=""):
         """Fetch full-size image for gallery."""
         try:
             try:
-                img_data = fetch_product_image(lcsc_url)
+                img_data = fetch_product_image(lcsc_url, direct_image_url=direct_image_url)
             except SSLCertError:
                 self._handle_ssl_cert_error()
-                img_data = fetch_product_image(lcsc_url)
+                img_data = fetch_product_image(lcsc_url, direct_image_url=direct_image_url)
         except Exception:
             img_data = None
         if not self._closing and self._gallery_request_id == request_id:
@@ -2647,14 +2647,14 @@ class JLCImportDialog(wx.Dialog):
         if self._lcsc_page_url:
             webbrowser.open(self._lcsc_page_url)
 
-    def _fetch_image(self, lcsc_url, request_id):
+    def _fetch_image(self, lcsc_url, request_id, direct_image_url=""):
         """Fetch product image in background thread."""
         try:
             try:
-                img_data = fetch_product_image(lcsc_url)
+                img_data = fetch_product_image(lcsc_url, direct_image_url=direct_image_url)
             except SSLCertError:
                 self._handle_ssl_cert_error()
-                img_data = fetch_product_image(lcsc_url)
+                img_data = fetch_product_image(lcsc_url, direct_image_url=direct_image_url)
         except Exception:
             img_data = None
         if not self._closing and self._image_request_id == request_id:

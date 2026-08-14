@@ -93,6 +93,21 @@ class TestFetchProductImageSSRF:
         assert result is None
         mock_urlopen.assert_called_once()
 
+    @patch("kicad_jlcimport.easyeda.api._urlopen", side_effect=URLError("network down"))
+    def test_allows_szlcsc_domain(self, mock_urlopen):
+        result = fetch_product_image("https://item.szlcsc.com/123456.html")
+        assert result is None
+        mock_urlopen.assert_called_once()
+
+    @patch("kicad_jlcimport.easyeda.api._urlopen", side_effect=URLError("network down"))
+    def test_allows_direct_szlcsc_image_url(self, mock_urlopen):
+        result = fetch_product_image(
+            "https://item.szlcsc.com/123456.html",
+            direct_image_url="https://alimg.szlcsc.com/upload/public/product/source/20210816/xxx.jpg",
+        )
+        assert result is None
+        assert mock_urlopen.call_count >= 1
+
 
 class TestFilterByMinStock:
     """Test minimum stock count filtering."""

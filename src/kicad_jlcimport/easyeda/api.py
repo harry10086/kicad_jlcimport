@@ -637,35 +637,44 @@ def filter_by_type(results: list, part_type: str) -> list:
     return [r for r in results if r.get("type") == part_type]
 
 
-_ALLOWED_IMAGE_HOSTS = (
-    "jlcpcb.com",
-    "www.jlcpcb.com",
-    "lcsc.com",
-    "www.lcsc.com",
-)
-
-_ALLOWED_DIRECT_IMAGE_HOSTS = ("alimg.szlcsc.com",)
+def _is_allowed_image_host(hostname: Optional[str]) -> bool:
+    """SSRF protection: check if hostname belongs to LCSC/SZLCSC/JLCPCB domains."""
+    if not hostname:
+        return False
+    host = hostname.lower()
+    return any(
+        host == domain or host.endswith("." + domain)
+        for domain in ("szlcsc.com", "lcsc.com", "jlcpcb.com")
+    )
 
 
 def fetch_product_image(lcsc_url: str, direct_image_url: str = "") -> Optional[bytes]:
     """Fetch product image. Returns image bytes or None.
 
     If *direct_image_url* is provided (e.g. from the CN search API's
-    ``bigImageUrl``), it is fetched directly — no HTML scraping needed.
-    Otherwise, *lcsc_url* is loaded as an HTML page and scraped for an
-    ``assets.lcsc.com`` image URL (the international path).
+    ``bigImageUrl``), it is fetched directly.
+    Otherwise, *lcsc_url* is checked (if it's a direct image URL) or fetched as
+    an HTML page and scraped for product image URLs.
     """
     if direct_image_url:
-        return _fetch_direct_image(direct_image_url)
+        img_bytes = _fetch_direct_image(direct_image_url)
+        if img_bytes:
+            return img_bytes
 
     if not lcsc_url:
         return None
-    # SSRF protection: only allow fetching from known LCSC/JLCPCB domains
+
+    # Check if lcsc_url itself is a direct image URL
+    url_lower = lcsc_url.split("?")[0].lower()
+    if url_lower.endswith((".jpg", ".jpeg", ".png", ".webp")) or "/upload/public/product/" in url_lower or "/images/lcsc/" in url_lower:
+        return _fetch_direct_image(lcsc_url)
+
+    # Scrape HTML page if lcsc_url is a web page URL (e.g. item.szlcsc.com or lcsc.com)
     try:
         from urllib.parse import urlparse
 
         parsed = urlparse(lcsc_url)
-        if parsed.hostname not in _ALLOWED_IMAGE_HOSTS:
+        if not _is_allowed_image_host(parsed.hostname):
             return None
         if parsed.scheme not in ("http", "https"):
             return None
@@ -677,46 +686,35 @@ def fetch_product_image(lcsc_url: str, direct_image_url: str = "") -> Optional[b
         headers={
             "User-Agent": _UA,
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9",
+            "Accept-Language": "zh-CN,zh;q=0.9,en-US,en;q=0.8",
         },
     )
     try:
         with _urlopen(req, timeout=10) as resp:
-            html = resp.read().decode("utf-8")
+            html = resp.read().decode("utf-8", errors="ignore")
     except (urllib.error.HTTPError, urllib.error.URLError, OSError, APIError):
         return None
 
-    # Find product image URL on international LCSC CDN
-    match = re.search(r'https://assets\.lcsc\.com/images/lcsc/900x900/[^\s"<>]+', html)
-    if not match:
-        return None
-
-    img_url = match.group(0)
-    if not img_url.startswith("https://assets.lcsc.com/"):
-        return None
-    req2 = urllib.request.Request(
-        img_url,
-        headers={
-            "User-Agent": _UA,
-            "Accept": "image/webp,image/apng,image/*,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Referer": lcsc_url,
-        },
+    # Find product image URL on domestic or international LCSC CDN
+    match = re.search(
+        r'https://(?:assets\.lcsc\.com/images/lcsc/900x900|alimg\.szlcsc\.com/upload/public/product/(?:source|breviary))/[^\s"<>]+(?:\.jpg|\.png|\.webp)?',
+        html,
     )
-    try:
-        with _urlopen(req2, timeout=10) as resp:
-            return resp.read()
-    except (urllib.error.HTTPError, urllib.error.URLError, OSError, APIError):
-        return None
+    if match:
+        return _fetch_direct_image(match.group(0))
+
+    return None
 
 
 def _fetch_direct_image(image_url: str) -> Optional[bytes]:
-    """Fetch an image directly from a CDN URL (e.g. alimg.szlcsc.com)."""
+    """Fetch an image directly from a CDN URL (e.g. alimg.szlcsc.com or assets.lcsc.com)."""
+    if not image_url:
+        return None
     try:
         from urllib.parse import urlparse
 
         parsed = urlparse(image_url)
-        if parsed.hostname not in _ALLOWED_DIRECT_IMAGE_HOSTS:
+        if not _is_allowed_image_host(parsed.hostname):
             return None
         if parsed.scheme not in ("http", "https"):
             return None
@@ -727,8 +725,9 @@ def _fetch_direct_image(image_url: str) -> Optional[bytes]:
         image_url,
         headers={
             "User-Agent": _UA,
-            "Accept": "image/jpeg,image/png,image/*;q=0.8,*/*;q=0.5",
-            "Accept-Language": "en-US,en;q=0.9",
+            "Accept": "image/jpeg,image/png,image/webp,image/*;q=0.8,*/*;q=0.5",
+            "Accept-Language": "zh-CN,zh;q=0.9,en-US,en;q=0.8",
+            "Referer": "https://item.szlcsc.com/",
         },
     )
     try:
